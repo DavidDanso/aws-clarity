@@ -3,7 +3,7 @@ import datetime
 from utils import assume_role, validate_role_arn
 from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
-# from scanner.misconfig import evaluate
+from scanner.misconfig import evaluate
 
 def handler(event, context):
     try:
@@ -29,8 +29,7 @@ def handler(event, context):
         }
 
         # Run misconfig and orphan evaluation 
-        # Skip for now per Milestone 3 constraint
-        # resources = evaluate(resources)
+        resources = evaluate(session, resources)
 
         # Build summary
         all_resources = [r for group in resources.values() for r in group]
@@ -78,25 +77,22 @@ if __name__ == "__main__":
     import sys
     import boto3
     # MOCK TEST ROUTINE to test payload shapes
-    # Test script if executed locally. If there is a real AWS credential, we inject it over AssumeRole 
-    # to test the full loop.
-
+    
     print("--- Local Debug Entry ---")
     local_session = boto3.Session(region_name="us-east-1")
     
-    # We will test ec2 temporarily natively
     try:
         identity = local_session.client("sts").get_caller_identity()["Account"]
         print(f"Identified execution identity: {identity}")
         
         # Test just the EC2 module internally to ensure the dict shape functions
-        result = ec2.scan(local_session)
-        print(f"Test EC2 result count: {len(result)}")
-        if len(result) > 0:
-            print("Successfully marshaled mock EC2 resource:")
-            print(json.dumps(result[0], default=str, indent=2))
-        else:
-            print("EC2 returned 0 items. Normal depending on account.")
+        result_ec2 = ec2.scan(local_session)
+        print(f"Test EC2 result count: {len(result_ec2)}")
+        
+        mock_payload = {"ec2_instances": result_ec2, "ebs_volumes": []}
+        eval_result = evaluate(local_session, mock_payload)
+        
+        print(f"Test evaluated successfully: returned {len(eval_result['ec2_instances'])}")
             
     except Exception as e:
         print(f"Skipping mock verification due to generic lack of credentials / {str(e)}")
