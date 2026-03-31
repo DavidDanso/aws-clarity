@@ -127,7 +127,7 @@ def evaluate(session, resources: dict) -> dict:
                     })
                 if not raw.get("storage_encrypted"):
                     issues.append({
-                        "severity": "CRITICAL",
+                        "severity": "WARNING",
                         "message": "RDS storage not encrypted",
                         "fix": "Encryption cannot be enabled on a running instance. Take a snapshot, copy it with encryption enabled, then restore."
                     })
@@ -141,7 +141,7 @@ def evaluate(session, resources: dict) -> dict:
             elif r_type == "ebs_volumes":
                 if not raw.get("encrypted"):
                     issues.append({
-                        "severity": "CRITICAL",
+                        "severity": "WARNING",
                         "message": "EBS volume not encrypted",
                         "fix": "Encrypted cannot be toggled on existing volumes. Create a snapshot, copy it with encryption, and create a new volume from it."
                     })
