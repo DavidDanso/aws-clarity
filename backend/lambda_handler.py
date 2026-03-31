@@ -3,7 +3,7 @@ import datetime
 from utils import assume_role, validate_role_arn
 from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
-from scanner.misconfig import evaluate
+# from scanner.misconfig import evaluate
 
 def handler(event, context):
     try:
@@ -16,21 +16,21 @@ def handler(event, context):
         # Get account ID from the assumed session
         account_id = session.client("sts").get_caller_identity()["Account"]
 
-        # Run all scanners (Mocked empty list for Milestone 2)
+        # Run all scanners
         resources = {
-            "ec2_instances": [],
-            "s3_buckets": [],
-            "rds_instances": [],
-            "ebs_volumes": [],
-            "elastic_ips": [],
-            "security_groups": [],
-            "snapshots": [],
-            "iam_roles": [],
+            "ec2_instances": ec2.scan(session),
+            "s3_buckets": s3.scan(session),
+            "rds_instances": rds.scan(session),
+            "ebs_volumes": ebs.scan(session),
+            "elastic_ips": elastic_ip.scan(session),
+            "security_groups": security_group.scan(session),
+            "snapshots": snapshots.scan(session),
+            "iam_roles": iam.scan(session),
         }
 
-        # Run misconfig and orphan evaluation on the mock resources
-        # (It will return the same empty dictionary in this case)
-        # resources = evaluate(resources) # Wait until milestone 3
+        # Run misconfig and orphan evaluation 
+        # Skip for now per Milestone 3 constraint
+        # resources = evaluate(resources)
 
         # Build summary
         all_resources = [r for group in resources.values() for r in group]
@@ -73,3 +73,30 @@ def _response(status_code, payload):
         },
         "body": json.dumps(payload, default=str),  # default=str handles datetime objects
     }
+
+if __name__ == "__main__":
+    import sys
+    import boto3
+    # MOCK TEST ROUTINE to test payload shapes
+    # Test script if executed locally. If there is a real AWS credential, we inject it over AssumeRole 
+    # to test the full loop.
+
+    print("--- Local Debug Entry ---")
+    local_session = boto3.Session(region_name="us-east-1")
+    
+    # We will test ec2 temporarily natively
+    try:
+        identity = local_session.client("sts").get_caller_identity()["Account"]
+        print(f"Identified execution identity: {identity}")
+        
+        # Test just the EC2 module internally to ensure the dict shape functions
+        result = ec2.scan(local_session)
+        print(f"Test EC2 result count: {len(result)}")
+        if len(result) > 0:
+            print("Successfully marshaled mock EC2 resource:")
+            print(json.dumps(result[0], default=str, indent=2))
+        else:
+            print("EC2 returned 0 items. Normal depending on account.")
+            
+    except Exception as e:
+        print(f"Skipping mock verification due to generic lack of credentials / {str(e)}")
