@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { validateRoleArn } from "../utils/formatters";
-import { scanAccount } from "../services/api";
+import { scanAccount, ERROR_MESSAGES } from "../services/api";
 
 const IAM_POLICY_JSON = `{
   "Version": "2012-10-17",
@@ -63,7 +63,7 @@ export default function SetupScreen({ onScanComplete }) {
       console.log("Scan results:", results);
       onScanComplete(results);
     } catch (err) {
-      setError(err.message);
+      setError(ERROR_MESSAGES[err.code] || err.message || "An unexpected error occurred.");
     } finally {
       setLoading(false);
     }

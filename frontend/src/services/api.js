@@ -18,9 +18,10 @@ export async function scanAccount(roleArn) {
 
     const data = await response.json();
 
-    if (!response.ok) {
-      const errorCode = data.error_code || "INTERNAL_ERROR";
-      throw new Error(ERROR_MESSAGES[errorCode] || ERROR_MESSAGES.INTERNAL_ERROR);
+    if (!response.ok || data.status === "error") {
+      const error = new Error(data.message || "Scan failed");
+      error.code = data.error_code || "UNKNOWN_ERROR";
+      throw error;
     }
 
     return data;
