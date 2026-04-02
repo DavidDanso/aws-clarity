@@ -5,8 +5,11 @@ from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedErr
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
 from scanner.misconfig import evaluate
 
+import time
+
 def handler(event, context):
     try:
+        start_time = time.time()
         body = json.loads(event.get("body") or "{}")
         role_arn = body.get("role_arn", "").strip()
 
@@ -16,12 +19,10 @@ def handler(event, context):
         # Get account ID from the assumed session
         account_id = session.client("sts").get_caller_identity()["Account"]
 
-        import time
-        start_time = time.time()
-        max_duration = 55.0
-        partial = False
+        # Run scanners with timeout protection
+        resources = {}
+        partial_scan = False
         
-        # Sequentially run scanners checking elapsed time
         scanners = {
             "ec2_instances": ec2.scan,
             "s3_buckets": s3.scan,
@@ -33,14 +34,16 @@ def handler(event, context):
             "iam_roles": iam.scan,
         }
         
-        resources = {}
-        for key, scan_func in scanners.items():
-            if time.time() - start_time > max_duration:
-                partial = True
+        for key, scanner_func in scanners.items():
+            if time.time() - start_time > 55:
+                partial_scan = True
                 break
-            resources[key] = scan_func(session)
-            
-        # Ensure all keys exist returning empty arrays if skipped
+            try:
+                resources[key] = scanner_func(session)
+            except Exception:
+                resources[key] = []
+                
+        # Fill skipped scanners with empty lists to maintain schema
         for key in scanners.keys():
             if key not in resources:
                 resources[key] = []
@@ -62,7 +65,7 @@ def handler(event, context):
             "account_id": account_id,
             "region": "us-east-1",
             "scanned_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "partial": partial,
+            "partial": partial_scan,
             "summary": summary,
             "resources": resources,
         }

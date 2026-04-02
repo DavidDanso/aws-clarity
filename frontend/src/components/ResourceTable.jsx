@@ -95,7 +95,13 @@ export default function ResourceTable({ resources, onInspect }) {
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 ? (
+            {flatList.length === 0 ? (
+              <tr>
+                <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                  No resources discovered in this scan.
+                </td>
+              </tr>
+            ) : filtered.length === 0 ? (
               <tr>
                 <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
                   No resources match the selected filters.
