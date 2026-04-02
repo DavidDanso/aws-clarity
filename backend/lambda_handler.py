@@ -16,17 +16,34 @@ def handler(event, context):
         # Get account ID from the assumed session
         account_id = session.client("sts").get_caller_identity()["Account"]
 
-        # Run all scanners
-        resources = {
-            "ec2_instances": ec2.scan(session),
-            "s3_buckets": s3.scan(session),
-            "rds_instances": rds.scan(session),
-            "ebs_volumes": ebs.scan(session),
-            "elastic_ips": elastic_ip.scan(session),
-            "security_groups": security_group.scan(session),
-            "snapshots": snapshots.scan(session),
-            "iam_roles": iam.scan(session),
+        import time
+        start_time = time.time()
+        max_duration = 55.0
+        partial = False
+        
+        # Sequentially run scanners checking elapsed time
+        scanners = {
+            "ec2_instances": ec2.scan,
+            "s3_buckets": s3.scan,
+            "rds_instances": rds.scan,
+            "ebs_volumes": ebs.scan,
+            "elastic_ips": elastic_ip.scan,
+            "security_groups": security_group.scan,
+            "snapshots": snapshots.scan,
+            "iam_roles": iam.scan,
         }
+        
+        resources = {}
+        for key, scan_func in scanners.items():
+            if time.time() - start_time > max_duration:
+                partial = True
+                break
+            resources[key] = scan_func(session)
+            
+        # Ensure all keys exist returning empty arrays if skipped
+        for key in scanners.keys():
+            if key not in resources:
+                resources[key] = []
 
         # Run misconfig and orphan evaluation 
         resources = evaluate(session, resources)
@@ -45,7 +62,7 @@ def handler(event, context):
             "account_id": account_id,
             "region": "us-east-1",
             "scanned_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "partial": False,
+            "partial": partial,
             "summary": summary,
             "resources": resources,
         }
