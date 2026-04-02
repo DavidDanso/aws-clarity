@@ -117,7 +117,7 @@ export default function SetupScreen({ onScanComplete }) {
                 Go to IAM → Roles → Create Role. Select "Another AWS Account"
                 and enter account ID{" "}
                 <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs">
-                  649655225479
+                  {import.meta.env.VITE_APP_ACCOUNT_ID}
                 </code>
                 . Set External ID to{" "}
                 <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs">

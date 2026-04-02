@@ -37,7 +37,7 @@ User ──┤  Browser  ├─────────►  Route53  ├──�
 The AWS Clarity backend relies on cross-account trust via `sts:AssumeRole`. 
 
 1. Go to **AWS IAM** -> **Roles** -> **Create Role**.
-2. Select **AWS account** (Another AWS account) and input your designated deployment account ID.
+2. Select **AWS account** (Another AWS account) and input your designated deployment account ID. # Replace with your app account ID (run: terraform output app_account_id)
 3. Check the box to require an **External ID** and utilize `aws-clarity-scan`.
 4. Create an inline policy with the following exact statement:
    ```json
