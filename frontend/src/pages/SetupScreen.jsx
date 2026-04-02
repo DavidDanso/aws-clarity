@@ -103,7 +103,17 @@ export default function SetupScreen({ onScanComplete }) {
         <h2 className="text-xl font-semibold mb-6 text-slate-100">
           Setup Guide
         </h2>
-        <div className="space-y-4 mb-8">
+        {/* Trust Banner */}
+        <div className="flex items-start gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-8">
+          <svg className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p className="text-sm text-blue-200/80 leading-relaxed">
+            AWS Clarity never sees your AWS credentials. Instead, you create a read-only role inside your own account — we knock on that door temporarily to read your resources, then the access expires automatically. We cannot create, modify, or delete anything.
+          </p>
+        </div>
+
+        <div className="space-y-6 mb-8">
           {/* Step 1 */}
           <div className="flex gap-4">
             <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold border border-cyan-500/30">
@@ -111,19 +121,18 @@ export default function SetupScreen({ onScanComplete }) {
             </div>
             <div>
               <p className="font-medium text-slate-200">
-                Create an IAM Role in the target account
+                Create a read-only role in your AWS account
               </p>
-              <p className="text-sm text-slate-400 mt-1">
-                Go to IAM → Roles → Create Role. Select "Another AWS Account"
-                and enter account ID{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs">
+              <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
+                In your AWS Console, go to IAM → Roles → Create Role. When asked for the trust type, select 'Another AWS Account'. This tells AWS that AWS Clarity (which lives in a separate AWS account) is allowed to request temporary read access to your account. Enter this App Account ID:{" "}
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
                   {import.meta.env.VITE_APP_ACCOUNT_ID}
                 </code>
-                . Set External ID to{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs">
+                . Then set the External ID to{" "}
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
                   aws-clarity-scan
-                </code>
-                .
+                </code>{" "}
+                — this is a secret handshake that ensures only AWS Clarity can use this role, not anyone else who might know the account ID.
               </p>
             </div>
           </div>
@@ -135,15 +144,18 @@ export default function SetupScreen({ onScanComplete }) {
             </div>
             <div>
               <p className="font-medium text-slate-200">
-                Attach this read-only permissions policy
+                Attach the read-only permissions policy
               </p>
-              <div className="mt-2 relative">
+              <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
+                Attach the policy below to your new role. Every permission in this list starts with Describe, List, or Get — none of them can create, change, or delete anything in your account. This is the minimum access needed to build your resource inventory.
+              </p>
+              <div className="mt-3 relative">
                 <pre className="bg-slate-950/80 border border-slate-700/60 rounded-lg p-4 text-xs text-slate-300 overflow-x-auto leading-relaxed">
                   {IAM_POLICY_JSON}
                 </pre>
                 <button
                   onClick={handleCopy}
-                  className="absolute top-2 right-2 px-3 py-1 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors cursor-pointer"
+                  className="absolute top-2 right-2 px-3 py-1 text-xs rounded-md bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors cursor-pointer shadow-sm"
                 >
                   {copied ? "Copied!" : "Copy"}
                 </button>
@@ -158,13 +170,14 @@ export default function SetupScreen({ onScanComplete }) {
             </div>
             <div>
               <p className="font-medium text-slate-200">
-                Paste the Role ARN below and scan
+                Copy your Role ARN and paste it below
               </p>
-              <p className="text-sm text-slate-400 mt-1">
-                Copy the ARN from the role summary page. It looks like:{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs">
-                  arn:aws:iam::123456789012:role/AwsClarityReadOnly
+              <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
+                After creating the role, AWS gives it a unique address called a Role ARN — it looks like{" "}
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
+                  arn:aws:iam::123456789012:role/AWSClarityReadOnly
                 </code>
+                . This is not a password or credential. It is simply the address that tells AWS Clarity where your read-only door is. Paste it in the field below and click Scan.
               </p>
             </div>
           </div>
