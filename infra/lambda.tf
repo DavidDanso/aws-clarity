@@ -1,14 +1,14 @@
 resource "aws_lambda_function" "scanner" {
-  function_name    = "${var.app_name}-backend"
-  role             = aws_iam_role.lambda_exec.arn
-  handler          = "lambda_handler.handler"
-  runtime          = "python3.12"
-  memory_size      = var.lambda_memory
-  timeout          = var.lambda_timeout
-  
+  function_name = "${var.app_name}-backend"
+  role          = aws_iam_role.lambda_exec.arn
+  handler       = "lambda_handler.handler"
+  runtime       = "python3.12"
+  memory_size   = var.lambda_memory
+  timeout       = var.lambda_timeout
+
   filename         = "lambda.zip"
   source_code_hash = filebase64sha256("lambda.zip")
-  
+
   environment {
     variables = {
       ENVIRONMENT = "prod"
