@@ -9,3 +9,15 @@ resource "aws_s3_bucket_public_access_block" "frontend" {
   ignore_public_acls      = true
   restrict_public_buckets = true
 }
+
+resource "null_resource" "empty_frontend_bucket" {
+  triggers = {
+    bucket = aws_s3_bucket.frontend.bucket
+  }
+
+  provisioner "local-exec" {
+    when        = destroy
+    interpreter = ["/bin/bash", "-c"]
+    command     = "aws s3 rm s3://${self.triggers.bucket}/ --recursive"
+  }
+}
