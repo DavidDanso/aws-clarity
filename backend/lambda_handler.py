@@ -19,11 +19,13 @@ def handler(event, context):
         # Get account ID from the assumed session
         account_id = session.client("sts").get_caller_identity()["Account"]
 
+        import concurrent.futures
+
         # Run scanners with timeout protection
         resources = {}
         partial_scan = False
         
-        scanners = {
+        scanner_map = {
             "ec2_instances": ec2.scan,
             "s3_buckets": s3.scan,
             "rds_instances": rds.scan,
@@ -33,18 +35,22 @@ def handler(event, context):
             "snapshots": snapshots.scan,
             "iam_roles": iam.scan,
         }
-        
-        for key, scanner_func in scanners.items():
-            if time.time() - start_time > 55:
-                partial_scan = True
-                break
-            try:
-                resources[key] = scanner_func(session)
-            except Exception:
-                resources[key] = []
-                
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            future_to_key = {executor.submit(fn, session): key for key, fn in scanner_map.items()}
+            for future in concurrent.futures.as_completed(future_to_key):
+                key = future_to_key[future]
+                if time.time() - start_time > 115:
+                    partial_scan = True
+                    break
+                try:
+                    resources[key] = future.result()
+                except Exception as e:
+                    print(f"Scanner {key} failed: {e}")
+                    resources[key] = []
+                    
         # Fill skipped scanners with empty lists to maintain schema
-        for key in scanners.keys():
+        for key in scanner_map.keys():
             if key not in resources:
                 resources[key] = []
 

@@ -10,7 +10,7 @@ variable "app_name" {
 
 variable "lambda_timeout" {
   type    = number
-  default = 60
+  default = 120
 }
 
 variable "lambda_memory" {
