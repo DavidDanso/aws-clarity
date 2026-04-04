@@ -97,7 +97,12 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "dynamodb:ListTables",
           "dynamodb:DescribeTable",
           "elasticache:DescribeCacheClusters",
-          "redshift:DescribeClusters"
+          "redshift:DescribeClusters",
+          "sqs:ListQueues",
+          "sqs:GetQueueAttributes",
+          "sns:ListTopics",
+          "sns:GetTopicAttributes",
+          "secretsmanager:ListSecrets"
         ]
         Resource = "*"
       }

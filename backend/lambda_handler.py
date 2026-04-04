@@ -5,6 +5,7 @@ from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedErr
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
 from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, load_balancers
 from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, redshift_clusters
+from scanner import sqs_queues, sns_topics, secrets_manager
 from scanner.misconfig import evaluate
 
 import time
@@ -45,6 +46,9 @@ def handler(event, context):
             "aurora_clusters": aurora_clusters.scan,
             "elasticache_clusters": elasticache_clusters.scan,
             "redshift_clusters": redshift_clusters.scan,
+            "sqs_queues": sqs_queues.scan,
+            "sns_topics": sns_topics.scan,
+            "secrets": secrets_manager.scan,
         }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
