@@ -6,6 +6,7 @@ from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, ia
 from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, load_balancers
 from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, redshift_clusters
 from scanner import sqs_queues, sns_topics, secrets_manager
+from scanner import auto_scaling_groups, ecs_clusters, eks_clusters, ecr_repositories, cloudformation_stacks
 from scanner.misconfig import evaluate
 
 import time
@@ -49,6 +50,11 @@ def handler(event, context):
             "sqs_queues": sqs_queues.scan,
             "sns_topics": sns_topics.scan,
             "secrets": secrets_manager.scan,
+            "auto_scaling_groups": auto_scaling_groups.scan,
+            "ecs_clusters": ecs_clusters.scan,
+            "eks_clusters": eks_clusters.scan,
+            "ecr_repositories": ecr_repositories.scan,
+            "cloudformation_stacks": cloudformation_stacks.scan,
         }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:

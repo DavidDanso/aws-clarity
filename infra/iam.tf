@@ -102,7 +102,14 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "sqs:GetQueueAttributes",
           "sns:ListTopics",
           "sns:GetTopicAttributes",
-          "secretsmanager:ListSecrets"
+          "secretsmanager:ListSecrets",
+          "autoscaling:DescribeAutoScalingGroups",
+          "ecs:ListClusters",
+          "ecs:DescribeClusters",
+          "eks:ListClusters",
+          "eks:DescribeCluster",
+          "ecr:DescribeRepositories",
+          "cloudformation:DescribeStacks"
         ]
         Resource = "*"
       }
