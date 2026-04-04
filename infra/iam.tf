@@ -87,12 +87,17 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "s3:GetBucketLocation",
           "s3:ListBucket",
           "rds:DescribeDBInstances",
+          "rds:DescribeDBClusters",
           "lambda:ListFunctions",
           "iam:ListRoles",
           "iam:GetRolePolicy",
           "iam:ListRolePolicies",
           "iam:ListAttachedRolePolicies",
-          "sts:GetCallerIdentity"
+          "sts:GetCallerIdentity",
+          "dynamodb:ListTables",
+          "dynamodb:DescribeTable",
+          "elasticache:DescribeCacheClusters",
+          "redshift:DescribeClusters"
         ]
         Resource = "*"
       }
