@@ -3,6 +3,7 @@ import datetime
 from utils import assume_role, validate_role_arn
 from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
+from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, load_balancers
 from scanner.misconfig import evaluate
 
 import time
@@ -34,6 +35,11 @@ def handler(event, context):
             "security_groups": security_group.scan,
             "snapshots": snapshots.scan,
             "iam_roles": iam.scan,
+            "lambda_functions": lambda_functions.scan,
+            "nat_gateways": nat_gateways.scan,
+            "vpcs": vpcs.scan,
+            "internet_gateways": internet_gateways.scan,
+            "load_balancers": load_balancers.scan,
         }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
