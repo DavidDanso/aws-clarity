@@ -67,6 +67,7 @@ export default function DashboardScreen({ scanResults, onRescan }) {
         <ResourceTable
           resources={allResources}
           onInspect={(resource) => setSelectedResource(resource)}
+          accountId={scanResults.account_id}
         />
       </div>
 
