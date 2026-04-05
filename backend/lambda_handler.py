@@ -7,6 +7,7 @@ from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, loa
 from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, redshift_clusters
 from scanner import sqs_queues, sns_topics, secrets_manager
 from scanner import auto_scaling_groups, ecs_clusters, eks_clusters, ecr_repositories, cloudformation_stacks
+from scanner import cloudwatch_alarms, eventbridge_rules, api_gateways
 from scanner.misconfig import evaluate
 
 import time
@@ -55,6 +56,9 @@ def handler(event, context):
             "eks_clusters": eks_clusters.scan,
             "ecr_repositories": ecr_repositories.scan,
             "cloudformation_stacks": cloudformation_stacks.scan,
+            "cloudwatch_alarms": cloudwatch_alarms.scan,
+            "eventbridge_rules": eventbridge_rules.scan,
+            "api_gateways": api_gateways.scan,
         }
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:

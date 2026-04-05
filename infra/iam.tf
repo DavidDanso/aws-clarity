@@ -109,7 +109,10 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "eks:ListClusters",
           "eks:DescribeCluster",
           "ecr:DescribeRepositories",
-          "cloudformation:DescribeStacks"
+          "cloudformation:DescribeStacks",
+          "cloudwatch:DescribeAlarms",
+          "events:ListRules",
+          "apigateway:GET"
         ]
         Resource = "*"
       }
