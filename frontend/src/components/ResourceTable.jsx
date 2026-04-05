@@ -7,31 +7,43 @@ const STATUS_BADGE = {
   ORPHANED: "bg-slate-500/20 text-slate-400 border-slate-500/30",
 };
 
-const TYPE_LABELS = {
+const RESOURCE_TYPE_LABELS = {
   ec2_instance: "EC2 Instance",
   s3_bucket: "S3 Bucket",
   rds_instance: "RDS Instance",
   ebs_volume: "EBS Volume",
   elastic_ip: "Elastic IP",
   security_group: "Security Group",
-  ebs_snapshot: "EBS Snapshot",
+  snapshot: "EBS Snapshot",
   iam_role: "IAM Role",
+  lambda_function: "Lambda Function",
+  nat_gateway: "NAT Gateway",
+  load_balancer: "Load Balancer",
+  dynamodb_table: "DynamoDB Table",
+  vpc: "VPC",
+  auto_scaling_group: "Auto Scaling Group",
+  ecs_cluster: "ECS Cluster",
+  eks_cluster: "EKS Cluster",
+  elasticache_cluster: "ElastiCache Cluster",
+  sqs_queue: "SQS Queue",
+  sns_topic: "SNS Topic",
+  secret: "Secrets Manager",
+  api_gateway: "API Gateway",
+  aurora_cluster: "Aurora Cluster",
+  cloudformation_stack: "CloudFormation Stack",
+  eventbridge_rule: "EventBridge Rule",
+  ecr_repository: "ECR Repository",
+  internet_gateway: "Internet Gateway",
+  cloudwatch_alarm: "CloudWatch Alarm",
+  redshift_cluster: "Redshift Cluster",
 };
 
 export default function ResourceTable({ resources, onInspect }) {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState("ALL");
 
-  // Flatten all resource arrays into a single list
-  const flatList = useMemo(() => {
-    const list = [];
-    for (const [, group] of Object.entries(resources)) {
-      for (const resource of group) {
-        list.push(resource);
-      }
-    }
-    return list;
-  }, [resources]);
+  // resources is now a pre-flattened array from DashboardScreen
+  const flatList = resources;
 
   // Get unique types and statuses for filter dropdowns
   const uniqueTypes = useMemo(() => [...new Set(flatList.map((r) => r.type))], [flatList]);
@@ -60,7 +72,7 @@ export default function ResourceTable({ resources, onInspect }) {
           <option value="ALL">All Types</option>
           {uniqueTypes.map((t) => (
             <option key={t} value={t}>
-              {TYPE_LABELS[t] || t}
+              {RESOURCE_TYPE_LABELS[t] || t}
             </option>
           ))}
         </select>
@@ -117,7 +129,7 @@ export default function ResourceTable({ resources, onInspect }) {
                     {resource.name}
                   </td>
                   <td className="px-4 py-3 text-slate-400">
-                    {TYPE_LABELS[resource.type] || resource.type}
+                    {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
                   </td>
                   <td className="px-4 py-3">
                     <span

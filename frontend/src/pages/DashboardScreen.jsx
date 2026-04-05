@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import TopBar from "../components/TopBar";
 import SummaryCards from "../components/SummaryCards";
 import ResourceTable from "../components/ResourceTable";
@@ -6,6 +6,40 @@ import DetailDrawer from "../components/DetailDrawer";
 
 export default function DashboardScreen({ scanResults, onRescan }) {
   const [selectedResource, setSelectedResource] = useState(null);
+
+  const allResources = useMemo(() => {
+    const results = scanResults;
+    return [
+      ...(results.resources.ec2_instances || []),
+      ...(results.resources.s3_buckets || []),
+      ...(results.resources.rds_instances || []),
+      ...(results.resources.ebs_volumes || []),
+      ...(results.resources.elastic_ips || []),
+      ...(results.resources.security_groups || []),
+      ...(results.resources.snapshots || []),
+      ...(results.resources.iam_roles || []),
+      ...(results.resources.lambda_functions || []),
+      ...(results.resources.nat_gateways || []),
+      ...(results.resources.load_balancers || []),
+      ...(results.resources.dynamodb_tables || []),
+      ...(results.resources.vpcs || []),
+      ...(results.resources.auto_scaling_groups || []),
+      ...(results.resources.ecs_clusters || []),
+      ...(results.resources.eks_clusters || []),
+      ...(results.resources.elasticache_clusters || []),
+      ...(results.resources.sqs_queues || []),
+      ...(results.resources.sns_topics || []),
+      ...(results.resources.secrets || []),
+      ...(results.resources.api_gateways || []),
+      ...(results.resources.aurora_clusters || []),
+      ...(results.resources.cloudformation_stacks || []),
+      ...(results.resources.eventbridge_rules || []),
+      ...(results.resources.ecr_repositories || []),
+      ...(results.resources.internet_gateways || []),
+      ...(results.resources.cloudwatch_alarms || []),
+      ...(results.resources.redshift_clusters || []),
+    ];
+  }, [scanResults]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
@@ -31,7 +65,7 @@ export default function DashboardScreen({ scanResults, onRescan }) {
         <SummaryCards summary={scanResults.summary} />
 
         <ResourceTable
-          resources={scanResults.resources}
+          resources={allResources}
           onInspect={(resource) => setSelectedResource(resource)}
         />
       </div>
