@@ -1,42 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
-
-const STATUS_BADGE = {
-  CRITICAL: "bg-red-500/20 text-red-400 border-red-500/30",
-  WARNING: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  HEALTHY: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  ORPHANED: "bg-slate-500/20 text-slate-400 border-slate-500/30",
-};
-
-const RESOURCE_TYPE_LABELS = {
-  ec2_instance: "EC2 Instance",
-  s3_bucket: "S3 Bucket",
-  rds_instance: "RDS Instance",
-  ebs_volume: "EBS Volume",
-  elastic_ip: "Elastic IP",
-  security_group: "Security Group",
-  snapshot: "EBS Snapshot",
-  iam_role: "IAM Role",
-  lambda_function: "Lambda Function",
-  nat_gateway: "NAT Gateway",
-  load_balancer: "Load Balancer",
-  dynamodb_table: "DynamoDB Table",
-  vpc: "VPC",
-  auto_scaling_group: "Auto Scaling Group",
-  ecs_cluster: "ECS Cluster",
-  eks_cluster: "EKS Cluster",
-  elasticache_cluster: "ElastiCache Cluster",
-  sqs_queue: "SQS Queue",
-  sns_topic: "SNS Topic",
-  secret: "Secrets Manager",
-  api_gateway: "API Gateway",
-  aurora_cluster: "Aurora Cluster",
-  cloudformation_stack: "CloudFormation Stack",
-  eventbridge_rule: "EventBridge Rule",
-  ecr_repository: "ECR Repository",
-  internet_gateway: "Internet Gateway",
-  cloudwatch_alarm: "CloudWatch Alarm",
-  redshift_cluster: "Redshift Cluster",
-};
+import { RESOURCE_TYPE_LABELS, STATUS_BADGE } from "../utils/constants";
 
 const getPageNumbers = (current, total) => {
   if (total <= 5) return Array.from({ length: total }, (_, i) => i + 1);
@@ -45,8 +8,7 @@ const getPageNumbers = (current, total) => {
   return [1, "...", current-1, current, current+1, "...", total];
 };
 
-export default function ResourceTable({ resources, onInspect, accountId = "" }) {
-  const [typeFilter, setTypeFilter] = useState("ALL");
+export default function ResourceTable({ resources, onInspect, accountId = "", typeFilter, onTypeFilterChange }) {
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
@@ -135,7 +97,7 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
         <select
           id="type-filter"
           value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
+          onChange={(e) => onTypeFilterChange(e.target.value)}
           className="bg-slate-900 border border-slate-600/50 rounded-lg px-3 py-1.5 text-sm text-slate-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
         >
           <option value="ALL">All Types</option>
