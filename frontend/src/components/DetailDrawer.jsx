@@ -1,8 +1,8 @@
 import { useEffect, useRef } from "react";
 
 const SEVERITY_STYLE = {
-  CRITICAL: { color: "text-red-400", bg: "bg-red-500/10", border: "border-red-500/30" },
-  WARNING: { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/30" },
+  CRITICAL: { color: "text-red-400", bg: "", border: "border-slate-700/50" },
+  WARNING: { color: "text-amber-400", bg: "", border: "border-slate-700/50" },
 };
 
 const STATUS_COLOR = {

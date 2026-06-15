@@ -74,7 +74,7 @@ export default function SetupScreen({ onScanComplete }) {
       {/* Header */}
       <div className="text-center mb-10">
         <div className="inline-flex items-center gap-2 mb-4">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+          <div className="w-10 h-10 rounded-xl flex items-center justify-center">
             <svg
               className="w-6 h-6 text-white"
               fill="none"
@@ -104,7 +104,7 @@ export default function SetupScreen({ onScanComplete }) {
           Setup Guide
         </h2>
         {/* Trust Banner */}
-        <div className="flex items-start gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-8">
+        <div className="flex items-start gap-3 border border-slate-700/50 rounded-xl p-4 mb-8">
           <svg className="w-5 h-5 text-blue-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -116,7 +116,7 @@ export default function SetupScreen({ onScanComplete }) {
         <div className="space-y-6 mb-8">
           {/* Step 1 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold border border-cyan-500/30">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               1
             </div>
             <div>
@@ -139,7 +139,7 @@ export default function SetupScreen({ onScanComplete }) {
 
           {/* Step 2 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold border border-cyan-500/30">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               2
             </div>
             <div>
@@ -165,7 +165,7 @@ export default function SetupScreen({ onScanComplete }) {
 
           {/* Step 3 */}
           <div className="flex gap-4">
-            <div className="flex-shrink-0 w-8 h-8 rounded-full bg-cyan-500/20 text-cyan-400 flex items-center justify-center text-sm font-bold border border-cyan-500/30">
+            <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               3
             </div>
             <div>
@@ -209,9 +209,9 @@ export default function SetupScreen({ onScanComplete }) {
 
           {/* Error Banner */}
           {error && (
-            <div className="flex items-start gap-2 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-sm text-red-300">
+            <div className="flex items-start gap-2 border border-slate-700/50 rounded-lg px-4 py-3 text-sm text-slate-400">
               <svg
-                className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5"
+                className="w-5 h-5 text-slate-500 flex-shrink-0 mt-0.5"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -232,10 +232,7 @@ export default function SetupScreen({ onScanComplete }) {
             id="scan-button"
             onClick={handleSubmit}
             disabled={loading}
-            className="w-full py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer
-              bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500
-              disabled:opacity-50 disabled:cursor-not-allowed
-              shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/40"
+            className="w-full py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
