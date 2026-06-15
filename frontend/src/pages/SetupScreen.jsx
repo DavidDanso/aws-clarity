@@ -1,6 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { validateRoleArn } from "../utils/formatters";
-import { scanAccount, ERROR_MESSAGES } from "../services/api";
 
 const IAM_POLICY_JSON = `{
   "Version": "2012-10-17",
@@ -28,12 +27,11 @@ const IAM_POLICY_JSON = `{
       "Resource": "*"
     }
   ]
-}`;
+ }`;
 
-export default function SetupScreen({ onScanComplete }) {
+export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const [roleArn, setRoleArn] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [localError, setLocalError] = useState("");
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
@@ -43,31 +41,25 @@ export default function SetupScreen({ onScanComplete }) {
   };
 
   const handleSubmit = async () => {
-    setError("");
+    setLocalError("");
+    setScanError("");
 
     if (!roleArn.trim()) {
-      setError("Role ARN is required.");
+      setLocalError("Role ARN is required.");
       return;
     }
 
     if (!validateRoleArn(roleArn.trim())) {
-      setError(
+      setLocalError(
         "Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/RoleName"
       );
       return;
     }
 
-    setLoading(true);
-    try {
-      const results = await scanAccount(roleArn.trim());
-      console.log("Scan results:", results);
-      onScanComplete(results);
-    } catch (err) {
-      setError(ERROR_MESSAGES[err.code] || err.message || "An unexpected error occurred.");
-    } finally {
-      setLoading(false);
-    }
+    onScanStart(roleArn.trim());
   };
+
+  const activeError = localError || scanError;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col items-center justify-center px-4 py-12">
@@ -200,15 +192,15 @@ export default function SetupScreen({ onScanComplete }) {
             value={roleArn}
             onChange={(e) => {
               setRoleArn(e.target.value);
-              if (error) setError("");
+              if (localError) setLocalError("");
+              if (scanError) setScanError("");
             }}
             placeholder="arn:aws:iam::123456789012:role/AwsClarityReadOnly"
             className="w-full px-4 py-3 bg-slate-900/80 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all text-sm"
-            disabled={loading}
           />
 
           {/* Error Banner */}
-          {error && (
+          {activeError && (
             <div className="flex items-start gap-2 border border-slate-700/50 rounded-lg px-4 py-3 text-sm text-slate-400">
               <svg
                 className="w-5 h-5 text-slate-500 flex-shrink-0 mt-0.5"
@@ -223,7 +215,7 @@ export default function SetupScreen({ onScanComplete }) {
                   d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
                 />
               </svg>
-              <span>{error}</span>
+              <span>{activeError}</span>
             </div>
           )}
 
@@ -231,35 +223,9 @@ export default function SetupScreen({ onScanComplete }) {
           <button
             id="scan-button"
             onClick={handleSubmit}
-            disabled={loading}
             className="w-full py-3 rounded-xl font-semibold text-sm transition-all cursor-pointer bg-slate-700 hover:bg-slate-600 text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg
-                  className="animate-spin h-5 w-5 text-white"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                  />
-                </svg>
-                Scanning...
-              </span>
-            ) : (
-              "Scan My Account"
-            )}
+            Scan My Account
           </button>
         </div>
       </div>

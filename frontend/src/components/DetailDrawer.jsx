@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 
 const SEVERITY_STYLE = {
-  CRITICAL: { color: "text-red-400", bg: "", border: "border-slate-700/50" },
-  WARNING: { color: "text-amber-400", bg: "", border: "border-slate-700/50" },
+  CRITICAL: { color: "text-slate-200", bg: "", border: "border-slate-700/50" },
+  WARNING: { color: "text-slate-400", bg: "", border: "border-slate-700/50" },
 };
 
 const STATUS_COLOR = {
-  CRITICAL: "text-red-400",
-  WARNING: "text-amber-400",
-  HEALTHY: "text-emerald-400",
+  CRITICAL: "text-slate-200",
+  WARNING: "text-slate-400",
+  HEALTHY: "text-slate-200",
   ORPHANED: "text-slate-400",
 };
 
