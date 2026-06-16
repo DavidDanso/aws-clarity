@@ -1,0 +1,81 @@
+name: aws-clarity-pipeline
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "infra/*.tf"
+      - "frontend/**"
+      - "backend/**"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy or destroy"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - destroy
+        default: deploy
+
+# ---------------------------------------------------------------------------
+# Least-privilege token permissions
+# ---------------------------------------------------------------------------
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.12"
+  TF_VERSION: "1.15.6"
+  NODE_VERSION: "24"
+
+jobs:
+  # -------------------------------------------------------------------------
+  # 1. BUILD — build frontend, pack lambda
+  # -------------------------------------------------------------------------
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 #v6.2.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+        with:
+          name: frontend_dist
+          path: frontend/dist/
+          retention-days: 1
+          if-no-files-found: error          
+
+      - name: Rebuilding Lambda Package
+        run: |
+          echo "🔨 Rebuilding Lambda package..."
+          rm -rf backend/lambda_package
+          mkdir backend/lambda_package
+          pip install -r backend/requirements.txt -t backend/lambda_package/
+          cp backend/lambda_handler.py backend/lambda_package/
+          cp backend/utils.py backend/lambda_package/
+          cp backend/exceptions.py backend/lambda_package/
+          cp -r backend/scanner/ backend/lambda_package/scanner/
+          cd backend/lambda_package && zip -r ../../infra/lambda.zip . -x "*.pyc" -x "*/__pycache__/*" && cd ../..
+          echo "✅ Lambda package built"
+
+      - name: Upload Lambda package artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
+        with:
+          name: lambda_package
+          path: infra/lambda.zip
+          retention-days: 1 
+          if-no-files-found: error
+      
+
