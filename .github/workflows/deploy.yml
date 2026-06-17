@@ -40,15 +40,18 @@ jobs:
     permissions:
       contents: read      
     steps:
+      # Checkout code from the repository
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
 
+      # Set up Python for the build job
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 #v6.2.0
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip       
 
+      # Rebuild the Lambda package from the backend source code
       - name: Rebuilding Lambda Package
         run: |
           echo "🔨 Rebuilding Lambda package..."
@@ -62,6 +65,7 @@ jobs:
           cd backend/lambda_package && zip -r ../../infra/lambda.zip . -x "*.pyc" -x "*/__pycache__/*" && cd ../..
           echo "✅ Lambda package built"
 
+      # Upload the Lambda package as a build artifact
       - name: Upload Lambda package artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a #v7.0.1
         with:
@@ -69,5 +73,52 @@ jobs:
           path: infra/lambda.zip
           retention-days: 1 
           if-no-files-found: error
+
+  deploy:
+    needs: build 
+    name: Deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read      
+    steps:
+      # Check out code from the repository
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+
+      # Authenticate GitHub Actions with AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }} 
+
+      # Download the Lambda package from the build job
+      - name: Download Lambda package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c #v8.0.1
+        with:
+          name: lambda_package
+          path: infra/lambda.zip
+
+      # Set up Terraform for the deploy job
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Cache Terraform providers
+      - name: Cache Terraform providers
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .terraform
+          key: terraform-${{ hashFiles('.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-
+
+      # Initialize Terraform
+      - name: Terraform Init
+        run: terraform -chdir=infra init
+      
       
 
