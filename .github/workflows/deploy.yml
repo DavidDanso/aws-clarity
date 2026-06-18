@@ -36,9 +36,11 @@ jobs:
   # -------------------------------------------------------------------------
   build:
     name: Build
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'deploy' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read      
+      contents: read  
+
     steps:
       # Checkout code from the repository
       - name: Checkout code
@@ -77,9 +79,16 @@ jobs:
   deploy:
     needs: build 
     name: Deploy
+    environment: production
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.action == 'deploy' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read      
+      contents: read  
+    outputs:
+      api_gateway_url: ${{ steps.tf_outputs.outputs.api_gateway_url }}
+      s3_bucket_name: ${{ steps.tf_outputs.outputs.s3_bucket_name }}
+      app_account_id: ${{ steps.tf_outputs.outputs.app_account_id }}
+      
     steps:
       # Check out code from the repository
       - name: Checkout code
@@ -112,13 +121,128 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: infra/.terraform
-          key: terraform-${{ hashFiles('.terraform.lock.hcl') }}
+          key: terraform-${{ hashFiles('infra/.terraform.lock.hcl') }}
           restore-keys: |
             terraform-
 
       # Initialize Terraform
       - name: Terraform Init
         run: terraform -chdir=infra init
-      
-      
 
+      # Terraform Validate
+      - name: Terraform Validate
+        run: terraform -chdir=infra validate
+
+      # Terraform Plan
+      - name: Terraform Plan
+        run: terraform -chdir=infra plan -out=tfplan
+
+      # Terraform Apply
+      - name: Terraform Apply
+        run: terraform -chdir=infra apply tfplan    
+
+      # Terraform Outputs
+      - name: Terraform Outputs
+        id: tf_outputs
+        run: |
+          echo "api_gateway_url=$(terraform -chdir=infra output -raw api_gateway_url)" >> $GITHUB_OUTPUT
+          echo "s3_bucket_name=$(terraform -chdir=infra output -raw s3_bucket_name)" >> $GITHUB_OUTPUT
+          echo "app_account_id=$(terraform -chdir=infra output -raw app_account_id)" >> $GITHUB_OUTPUT
+
+      # Capture CloudFront distribution ID from Terraform state
+      - name: Capture CloudFront distribution ID
+        id: cf_id
+        run: |
+          echo "distribution_id=$(terraform -chdir=infra show -json | python3 -c "
+          import json, sys
+          state = json.load(sys.stdin)
+          resources = state.get('values', {}).get('root_module', {}).get('resources', [])
+          for r in resources:
+            if r['type'] == 'aws_cloudfront_distribution':
+              print(r['values']['id'])
+              break
+          ")" >> $GITHUB_OUTPUT
+
+      # -------------------------------------------------------------------------
+      # FRONTEND BUILD
+      # -------------------------------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: 'frontend/package-lock.json'
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        run: |
+          echo "VITE_API_URL=${{ steps.tf_outputs.outputs.api_gateway_url }}" > frontend/.env
+          echo "VITE_APP_ACCOUNT_ID=${{ steps.tf_outputs.outputs.app_account_id }}" >> frontend/.env
+
+          cd frontend
+          npm run build
+
+      # Sync frontend to S3
+      - name: Sync frontend to S3
+        run: |
+          aws s3 sync frontend/dist/ s3://${{ steps.tf_outputs.outputs.s3_bucket_name }} --delete
+          echo "✅ Frontend deployed to S3"
+
+      # Invalidate CloudFront cache
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation --distribution-id ${{ steps.cf_id.outputs.distribution_id }} \
+          --paths "/*"
+          echo "✅ CloudFront cache invalidated"
+
+  destroy:
+    name: Terraform Destroy
+    environment: production-destroy
+    if: ${{ github.event.inputs.action == 'destroy' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 #v6.0.3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@e7f100cf4c008499ea8adda475de1042d6975c7b # v6.2.0
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Cache Terraform providers
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: infra/.terraform
+          key: terraform-${{ hashFiles('infra/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-
+
+      - name: Terraform Init
+        run: terraform -chdir=infra init
+
+      - name: Confirm destroy target
+        run: |
+          echo "=========================================="
+          echo "  DESTROY requested by: ${{ github.actor }}"
+          echo "  Run ID: ${{ github.run_id }}"
+          echo "  Timestamp: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          echo "=========================================="
+
+      - name: Terraform Destroy
+        run: terraform -chdir=infra destroy -auto-approve -input=false
+      
+      
