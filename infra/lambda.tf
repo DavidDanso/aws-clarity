@@ -11,7 +11,8 @@ resource "aws_lambda_function" "scanner" {
 
   environment {
     variables = {
-      ENVIRONMENT = "prod"
+      ENVIRONMENT     = "prod"
+      SCAN_TABLE_NAME = aws_dynamodb_table.scans.name
     }
   }
 }

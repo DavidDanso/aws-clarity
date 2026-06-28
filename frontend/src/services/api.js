@@ -8,27 +8,57 @@ export const ERROR_MESSAGES = {
   NETWORK_ERROR: "Unable to reach the server. Check your internet connection and try again.",
 };
 
-export async function scanAccount(roleArn) {
-  try {
-    const response = await fetch(`${API_URL}/scan`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role_arn: roleArn }),
-    });
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLL_ATTEMPTS = 45; // 45 * 2s = 90s ceiling, well past typical scan time
 
+export async function startScan(roleArn) {
+  const response = await fetch(`${API_URL}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role_arn: roleArn }),
+  });
+
+  const data = await response.json();
+  if (!response.ok) {
+    const error = new Error(data.message || ERROR_MESSAGES.UNKNOWN || "Unknown error");
+    error.code = data.error_code || "UNKNOWN_ERROR";
+    throw error;
+  }
+
+  return data.scan_id;
+}
+
+export async function pollScanStatus(scanId, onProgress) {
+  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
+    const response = await fetch(`${API_URL}/scan/${scanId}/status`);
     const data = await response.json();
 
-    if (!response.ok || data.status === "error") {
-      const error = new Error(data.message || "Scan failed");
+    if (!response.ok) {
+      throw new Error("Failed to fetch scan status");
+    }
+
+    onProgress(data.status); // Inform the UI
+
+    if (data.status === "COMPLETE") {
+      return data; // The full payload is already flat — no nested "result" key
+    }
+
+    if (data.status === "FAILED") {
+      const error = new Error(data.message || "Unknown error");
       error.code = data.error_code || "UNKNOWN_ERROR";
       throw error;
     }
 
-    return data;
-  } catch (error) {
-    if (error instanceof TypeError) {
-      throw new Error(ERROR_MESSAGES.NETWORK_ERROR);
-    }
-    throw error;
+    // If PENDING or RUNNING, wait and try again
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
   }
+
+  throw new Error(ERROR_MESSAGES.TIMEOUT || "The scan timed out");
+}
+
+// Keep this wrapper signature the same so the UI doesn't break,
+// but add the new onProgress callback
+export async function scanAccount(roleArn, onProgress) {
+  const scanId = await startScan(roleArn);
+  return await pollScanStatus(scanId, onProgress);
 }

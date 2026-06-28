@@ -19,3 +19,7 @@ infra/lambda_package.zip
 
 # OS
 .DS_Store
+
+# Responses
+response_*.json
+response.json

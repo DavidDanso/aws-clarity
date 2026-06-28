@@ -43,7 +43,7 @@ function renderCost(cost, type) {
   return `$${cost.toFixed(2)} / mo`;
 }
 
-export default function DashboardScreen({ scanResults, onRescan, isLoading }) {
+export default function DashboardScreen({ scanResults, onRescan, isLoading, scanStatus }) {
   const [selectedResource, setSelectedResource] = useState(null);
   const [healthyExpanded, setHealthyExpanded] = useState(false);
 
@@ -217,20 +217,8 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading }) {
             Security posture {isLoading ? "" : `· ${hasIssues ? "Needs attention" : "All clear"}`}
           </h2>
           {isLoading ? (
-            <div className="flex flex-col w-full">
-              {[1, 2, 3].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center w-full h-[44px] border-b-[0.5px] border-slate-800/80 bg-transparent px-3 border-l-4 border-l-slate-800"
-                >
-                  <div className="flex items-baseline gap-2 shrink-0">
-                    <div className="animate-pulse bg-slate-800 h-3.5 w-24 rounded" />
-                    <div className="animate-pulse bg-slate-900 h-3 w-16 rounded" />
-                  </div>
-                  <div className="animate-pulse bg-slate-800 h-3 ml-4 flex-1 max-w-md rounded" />
-                  <div className="animate-pulse bg-slate-900 h-3 w-12 ml-auto rounded" />
-                </div>
-              ))}
+            <div className="flex flex-col w-full text-slate-400 py-2">
+              Scanning... Status: {scanStatus}
             </div>
           ) : hasIssues ? (
             <div className="flex flex-col w-full">

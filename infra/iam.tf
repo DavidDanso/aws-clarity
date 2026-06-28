@@ -119,3 +119,28 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
     ]
   })
 }
+
+resource "aws_iam_role_policy" "lambda_scan_state" {
+  name = "scan-state-access"
+  role = aws_iam_role.lambda_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:PutItem",
+          "dynamodb:GetItem",
+          "dynamodb:UpdateItem"
+        ]
+        Resource = aws_dynamodb_table.scans.arn
+      },
+      {
+        Effect   = "Allow"
+        Action   = "lambda:InvokeFunction"
+        Resource = aws_lambda_function.scanner.arn
+      }
+    ]
+  })
+}
