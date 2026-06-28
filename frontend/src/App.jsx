@@ -21,7 +21,7 @@ function App() {
       setScanResults(results);
     } catch (err) {
       setScanError(err.message || "An unexpected error occurred.");
-      setView("setup");
+      // Stay on dashboard — error rendered inline
     } finally {
       setIsLoading(false);
     }
@@ -49,6 +49,7 @@ function App() {
       onRescan={handleRescan}
       isLoading={isLoading}
       scanStatus={scanStatus}
+      scanError={scanError}
     />
   );
 }

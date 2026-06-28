@@ -43,7 +43,7 @@ function renderCost(cost, type) {
   return `$${cost.toFixed(2)} / mo`;
 }
 
-export default function DashboardScreen({ scanResults, onRescan, isLoading, scanStatus }) {
+export default function DashboardScreen({ scanResults, onRescan, isLoading, scanStatus, scanError }) {
   const [selectedResource, setSelectedResource] = useState(null);
   const [healthyExpanded, setHealthyExpanded] = useState(false);
 
@@ -82,9 +82,12 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
     ];
   }, [scanResults]);
 
+  // Step 1: Section 1 — resources with at least one issue
   const securityResources = useMemo(() => {
     return allResources.filter((r) => r.status && r.status !== "HEALTHY");
   }, [allResources]);
+
+  const s1Ids = useMemo(() => new Set(securityResources.map((r) => r.id)), [securityResources]);
 
   const sortedSecurityResources = useMemo(() => {
     const severityPriority = {
@@ -99,26 +102,31 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
 
   const hasIssues = sortedSecurityResources.length > 0;
 
+  // Step 2: Section 2 — billable resources not already in S1
+  const BILLABLE_TYPES = [
+    "ec2_instance",
+    "s3_bucket",
+    "lambda_function",
+    "dynamodb_table",
+    "api_gateway",
+    "rds_instance",
+    "elasticache_cluster",
+    "cloudfront_distribution",
+    "ebs_volume",
+    "nat_gateway",
+    "elastic_ip",
+  ];
+
   const costResources = useMemo(() => {
-    const allowedTypes = [
-      "ec2_instance",
-      "s3_bucket",
-      "lambda_function",
-      "dynamodb_table",
-      "api_gateway",
-      "rds_instance",
-      "elasticache_cluster",
-      "cloudfront_distribution",
-      "ebs_volume",
-      "nat_gateway",
-      "elastic_ip",
-    ];
     return allResources.filter((r) => {
-      if (!allowedTypes.includes(r.type)) return false;
+      if (s1Ids.has(r.id)) return false;
+      if (!BILLABLE_TYPES.includes(r.type)) return false;
       const cost = getResourceCost(r);
-      return cost !== 0;
+      return cost !== null && cost > 0;
     });
-  }, [allResources]);
+  }, [allResources, s1Ids]);
+
+  const s2Ids = useMemo(() => new Set(costResources.map((r) => r.id)), [costResources]);
 
   const sortedCostResources = useMemo(() => {
     return [...costResources].sort((a, b) => {
@@ -135,34 +143,16 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
   const totalCost = useMemo(() => {
     return costResources.reduce((sum, r) => {
       const cost = getResourceCost(r);
-      // Lambda has tiny dummy cost internally, treat as 0 or 0.01 for display sum
+      // Lambda has tiny dummy cost internally, treat as 0 for display sum
       if (r.type === "lambda_function") return sum + 0;
       return sum + (cost || 0);
     }, 0);
   }, [costResources]);
 
+  // Step 3: Section 3 — everything not in S1 or S2
   const healthyFreeResources = useMemo(() => {
-    const allowedCostTypes = [
-      "ec2_instance",
-      "s3_bucket",
-      "lambda_function",
-      "dynamodb_table",
-      "api_gateway",
-      "rds_instance",
-      "elasticache_cluster",
-      "cloudfront_distribution",
-      "ebs_volume",
-      "nat_gateway",
-      "elastic_ip",
-    ];
-    return allResources.filter((r) => {
-      const isHealthy = !r.status || r.status === "HEALTHY" || !r.issues || r.issues.length === 0;
-      const cost = getResourceCost(r);
-      const isCostType = allowedCostTypes.includes(r.type);
-      const isPaid = isCostType && cost !== 0;
-      return isHealthy && !isPaid;
-    });
-  }, [allResources]);
+    return allResources.filter((r) => !s1Ids.has(r.id) && !s2Ids.has(r.id));
+  }, [allResources, s1Ids, s2Ids]);
 
   const handleExportCSV = () => {
     const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -190,7 +180,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="min-h-screen bg-slate-950 text-white">
       <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-[40px]">
         <TopBar
           accountId={scanResults?.account_id || ""}
@@ -213,10 +203,25 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
 
         {/* Security posture section */}
         <section className="flex flex-col gap-4">
-          <h2 className="text-[15px] font-medium text-slate-200">
-            Security posture {isLoading ? "" : `· ${hasIssues ? "Needs attention" : "All clear"}`}
-          </h2>
           {isLoading ? (
+            <div className="animate-pulse bg-slate-800 h-[22px] w-36 rounded" />
+          ) : scanError ? null : (
+            <h2 className="text-[15px] font-medium text-slate-200">
+              {hasIssues ? "Needs attention" : "All clear"}
+            </h2>
+          )}
+          {scanError ? (
+            <p className="text-[13px] text-slate-400 py-1">
+              Scan failed —{" "}
+              <a
+                href="javascript:void(0)"
+                onClick={() => onRescan()}
+                className="text-blue-400 hover:text-blue-300"
+              >
+                retry
+              </a>
+            </p>
+          ) : isLoading ? (
             <div className="flex flex-col w-full text-slate-400 py-2">
               Scanning... Status: {scanStatus}
             </div>
@@ -269,7 +274,18 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
             <h2 className="text-[15px] font-medium text-slate-200">Active spend</h2>
             <p className="text-[13px] text-slate-400 mt-1">Resources incurring real AWS charges</p>
           </div>
-          {isLoading ? (
+          {scanError ? (
+            <p className="text-[13px] text-slate-400 py-1">
+              Scan failed —{" "}
+              <a
+                href="javascript:void(0)"
+                onClick={() => onRescan()}
+                className="text-blue-400 hover:text-blue-300"
+              >
+                retry
+              </a>
+            </p>
+          ) : isLoading ? (
             <div className="flex flex-col w-full">
               {[1, 2, 3, 4].map((i) => (
                 <div
@@ -305,8 +321,8 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
                     {/* Proportional visual ranking signal bar */}
                     <div className="flex-1 mx-4 max-w-[120px] h-[2px] bg-slate-900 rounded-full overflow-hidden shrink-0">
                       <div
-                        className="h-full bg-slate-700 rounded-full"
-                        style={{ width: `${widthPercent}%` }}
+                        className="h-full rounded-full"
+                        style={{ width: `${widthPercent}%`, backgroundColor: 'var(--color-border-primary, rgb(51 65 85))' }}
                       />
                     </div>
 
@@ -331,7 +347,18 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
 
         {/* Healthy & free resources section */}
         <section className="flex flex-col gap-2">
-          {isLoading ? (
+          {scanError ? (
+            <p className="text-[13px] text-slate-400 py-1">
+              Scan failed —{" "}
+              <a
+                href="javascript:void(0)"
+                onClick={() => onRescan()}
+                className="text-blue-400 hover:text-blue-300"
+              >
+                retry
+              </a>
+            </p>
+          ) : isLoading ? (
             <div className="animate-pulse bg-slate-800 h-5 w-72 rounded mt-2" />
           ) : (
             <>
@@ -359,6 +386,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
         </section>
 
         {/* Footer */}
+        {!scanError && scanResults && (
         <footer className="flex justify-center pt-4 border-t border-slate-900/60 mt-4">
           <a
             href="#"
@@ -371,6 +399,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
             Export CSV
           </a>
         </footer>
+        )}
       </div>
 
       {selectedResource && (
