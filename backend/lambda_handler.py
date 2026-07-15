@@ -15,12 +15,19 @@ from scanner.misconfig import evaluate
 
 import time
 
+VALID_REGIONS = [
+    "us-east-1", "us-east-2", "us-west-1", "us-west-2",
+    "eu-west-1", "eu-west-2", "eu-central-1",
+    "ap-southeast-1", "ap-southeast-2", "ap-northeast-1",
+    "ca-central-1", "sa-east-1"
+]
+
 dynamodb = boto3.resource("dynamodb")
 lambda_client = boto3.client("lambda")
 TABLE_NAME = os.environ.get("SCAN_TABLE_NAME", "aws-clarity-scans")
 
 
-def run_scan(role_arn):
+def run_scan(role_arn, regions):
     start_time = time.time()
     validate_role_arn(role_arn)          # raises InvalidRoleARNError if bad
     session = assume_role(role_arn)      # raises AssumeRoleError if fails
@@ -30,81 +37,83 @@ def run_scan(role_arn):
 
     import concurrent.futures
 
-    # Run scanners with timeout protection
-    resources = {}
-    partial_scan = False
-    
-    scanner_map = {
+    REGIONAL_SCANNERS = {
         "ec2_instances": ec2.scan,
-        "s3_buckets": s3.scan,
-        "rds_instances": rds.scan,
         "ebs_volumes": ebs.scan,
         "elastic_ips": elastic_ip.scan,
         "security_groups": security_group.scan,
         "snapshots": snapshots.scan,
-        "iam_roles": iam.scan,
+        "rds_instances": rds.scan,
         "lambda_functions": lambda_functions.scan,
         "nat_gateways": nat_gateways.scan,
-        "vpcs": vpcs.scan,
-        "internet_gateways": internet_gateways.scan,
         "load_balancers": load_balancers.scan,
         "dynamodb_tables": dynamodb_tables.scan,
-        "aurora_clusters": aurora_clusters.scan,
-        "elasticache_clusters": elasticache_clusters.scan,
-        "redshift_clusters": redshift_clusters.scan,
-        "sqs_queues": sqs_queues.scan,
-        "sns_topics": sns_topics.scan,
-        "secrets": secrets_manager.scan,
+        "vpcs": vpcs.scan,
         "auto_scaling_groups": auto_scaling_groups.scan,
         "ecs_clusters": ecs_clusters.scan,
         "eks_clusters": eks_clusters.scan,
-        "ecr_repositories": ecr_repositories.scan,
-        "cloudformation_stacks": cloudformation_stacks.scan,
-        "cloudwatch_alarms": cloudwatch_alarms.scan,
-        "eventbridge_rules": eventbridge_rules.scan,
+        "elasticache_clusters": elasticache_clusters.scan,
+        "sqs_queues": sqs_queues.scan,
+        "sns_topics": sns_topics.scan,
+        "secrets": secrets_manager.scan,
         "api_gateways": api_gateways.scan,
+        "aurora_clusters": aurora_clusters.scan,
+        "cloudformation_stacks": cloudformation_stacks.scan,
+        "eventbridge_rules": eventbridge_rules.scan,
+        "ecr_repositories": ecr_repositories.scan,
+        "internet_gateways": internet_gateways.scan,
+        "cloudwatch_alarms": cloudwatch_alarms.scan,
+        "redshift_clusters": redshift_clusters.scan,
     }
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
-        future_to_key = {executor.submit(fn, session): key for key, fn in scanner_map.items()}
-        for future in concurrent.futures.as_completed(future_to_key):
-            key = future_to_key[future]
-            if time.time() - start_time > 115:
-                partial_scan = True
-                break
+    resources = {key: [] for key in REGIONAL_SCANNERS}
+    resources["iam_roles"] = []
+    resources["s3_buckets"] = []
+
+    tasks = [
+        (key, fn, region)
+        for key, fn in REGIONAL_SCANNERS.items()
+        for region in regions
+    ]
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_task = {
+            executor.submit(fn, session, region): (key, region)
+            for key, fn, region in tasks
+        }
+        for future in concurrent.futures.as_completed(future_to_task):
+            key, region = future_to_task[future]
             try:
-                resources[key] = future.result()
+                resources[key].extend(future.result())
             except Exception as e:
-                print(f"Scanner {key} failed: {e}")
-                resources[key] = []
-                
-        # Fill skipped scanners with empty lists to maintain schema
-        for key in scanner_map.keys():
-            if key not in resources:
-                resources[key] = []
+                print(f"Scanner {key} in {region} failed: {e}")
 
-        # Run misconfig and orphan evaluation 
-        resources = evaluate(session, resources)
+    resources["iam_roles"] = iam.scan(session)
+    resources["s3_buckets"] = s3.scan(session, selected_regions=regions)
 
-        # Build summary
-        all_resources = [r for group in resources.values() for r in group]
-        summary = {
-            "total_resources": len(all_resources),
-            "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),
-            "warnings": sum(1 for r in all_resources if r.get("status") == "WARNING"),
-            "orphaned": sum(1 for r in all_resources if r.get("status") == "ORPHANED"),
-        }
+    # Run misconfig and orphan evaluation
+    resources = evaluate(session, resources)
 
-        payload = {
-            "status": "success",
-            "account_id": account_id,
-            "region": "us-east-1",
-            "scanned_at": datetime.datetime.utcnow().isoformat() + "Z",
-            "partial": partial_scan,
-            "summary": summary,
-            "resources": resources,
-        }
-        return payload
+    # Build summary
+    all_resources = [r for group in resources.values() for r in group]
+    summary = {
+        "total_resources": len(all_resources),
+        "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),
+        "warnings": sum(1 for r in all_resources if r.get("status") == "WARNING"),
+        "orphaned": sum(1 for r in all_resources if r.get("status") == "ORPHANED"),
+    }
+
+    payload = {
+        "status": "success",
+        "account_id": account_id,
+        "region": regions[0] if len(regions) == 1 else "multi-region",
+        "regions": regions,
+        "scanned_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "partial": False,
+        "summary": summary,
+        "resources": resources,
+    }
+    return payload
 
 
 def _mark_failed(table, scan_id, error_code, message):
@@ -127,6 +136,22 @@ def handle_trigger(event, context):
     except InvalidRoleARNError:
         return _response(400, {"status": "error", "error_code": "INVALID_ROLE_ARN", "message": "The Role ARN format is invalid. Expected: arn:aws:iam::123456789012:role/RoleName"})
 
+    regions = body.get("regions", ["us-east-1"])
+
+    if not regions:
+        return _response(400, {
+            "status": "error",
+            "error_code": "NO_REGIONS_SELECTED",
+            "message": "Select at least one region to scan"
+        })
+
+    if not all(r in VALID_REGIONS for r in regions):
+        return _response(400, {
+            "status": "error",
+            "error_code": "INVALID_REGION",
+            "message": "One or more selected regions are not supported"
+        })
+
     scan_id = str(uuid.uuid4())
     table.put_item(Item={
         "scan_id": scan_id,
@@ -143,6 +168,7 @@ def handle_trigger(event, context):
                 "_invocation_type": "worker",
                 "scan_id": scan_id,
                 "role_arn": role_arn,
+                "regions": regions,
             }),
         )
     except Exception as e:
@@ -159,6 +185,7 @@ def handle_trigger(event, context):
 def handle_worker(event):
     scan_id = event["scan_id"]
     role_arn = event["role_arn"]
+    regions = event.get("regions", ["us-east-1"])
     table = dynamodb.Table(TABLE_NAME)
     table.update_item(
         Key={"scan_id": scan_id},
@@ -168,7 +195,7 @@ def handle_worker(event):
     )
 
     try:
-        result = run_scan(role_arn)
+        result = run_scan(role_arn, regions)
         table.update_item(
             Key={"scan_id": scan_id},
             UpdateExpression="SET #s = :s, #r = :r",

@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("ecs", region_name="us-east-1")
+        client = session.client("ecs", region_name=region)
         arns = []
         kwargs = {}
         while True:
@@ -40,6 +40,7 @@ def scan(session):
                         "type": "ecs_cluster",
                         "status": status,
                         "issues": issues,
+                        "region": region,
                         "raw": {
                             "status": cluster.get("status"),
                             "registered_container_instances_count": registered,

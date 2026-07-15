@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        ec2 = session.client("ec2", region_name="us-east-1")
+        ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_instances")
         pages = paginator.paginate()
         for page in pages:
@@ -19,6 +19,7 @@ def scan(session):
                         "type": "ec2_instance",
                         "status": "HEALTHY",
                         "issues": [],
+                        "region": region,
                         "raw": {
                             "instance_type": instance.get("InstanceType"),
                             "state": instance.get("State", {}).get("Name"),

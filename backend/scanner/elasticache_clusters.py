@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        elasticache = session.client("elasticache", region_name="us-east-1")
+        elasticache = session.client("elasticache", region_name=region)
         paginator = elasticache.get_paginator("describe_cache_clusters")
         pages = paginator.paginate(ShowCacheNodeInfo=True)
         for page in pages:
@@ -30,6 +30,7 @@ def scan(session):
                     "type": "elasticache_cluster",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "engine": cluster.get("Engine"),
                         "cache_node_type": cluster.get("CacheNodeType"),

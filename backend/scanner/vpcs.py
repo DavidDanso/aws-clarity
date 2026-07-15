@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        ec2 = session.client("ec2", region_name="us-east-1")
+        ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_vpcs")
         pages = paginator.paginate()
         for page in pages:
@@ -27,6 +27,7 @@ def scan(session):
                     "type": "vpc",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "cidr_block": vpc.get("CidrBlock"),
                         "is_default": is_default,

@@ -6,20 +6,22 @@ export const ERROR_MESSAGES = {
   PERMISSION_DENIED: "The role was assumed but lacks required read permissions.",
   INTERNAL_ERROR: "An unexpected error occurred on the server. Please try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your internet connection and try again.",
+  NO_REGIONS_SELECTED: "Please select at least one region to scan.",
+  INVALID_REGION: "One or more selected regions are not supported.",
 };
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 45; // 45 * 2s = 90s ceiling, well past typical scan time
 
-export async function startScan(roleArn) {
+export async function startScan(roleArn, regions = ["us-east-1"]) {
   const response = await fetch(`${API_URL}/scan`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role_arn: roleArn }),
+    body: JSON.stringify({ role_arn: roleArn, regions }),
   });
 
   const data = await response.json();
-  if (!response.ok) {
+  if (!response.ok || data.status === "error") {
     const error = new Error(data.message || ERROR_MESSAGES.UNKNOWN || "Unknown error");
     error.code = data.error_code || "UNKNOWN_ERROR";
     throw error;
@@ -58,7 +60,7 @@ export async function pollScanStatus(scanId, onProgress) {
 
 // Keep this wrapper signature the same so the UI doesn't break,
 // but add the new onProgress callback
-export async function scanAccount(roleArn, onProgress) {
-  const scanId = await startScan(roleArn);
+export async function scanAccount(roleArn, regions = ["us-east-1"], onProgress) {
+  const scanId = await startScan(roleArn, regions);
   return await pollScanStatus(scanId, onProgress);
 }

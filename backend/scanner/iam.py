@@ -35,6 +35,7 @@ def scan(session):
                     "type": "iam_role",
                     "status": "HEALTHY",
                     "issues": [],
+                    "region": "global",
                     "raw": {
                         "role_name": role_name,
                         "arn": role.get("Arn"),

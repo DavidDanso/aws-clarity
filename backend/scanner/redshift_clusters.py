@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        redshift = session.client("redshift", region_name="us-east-1")
+        redshift = session.client("redshift", region_name=region)
         paginator = redshift.get_paginator("describe_clusters")
         pages = paginator.paginate()
         for page in pages:
@@ -30,6 +30,7 @@ def scan(session):
                     "type": "redshift_cluster",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "node_type": cluster.get("NodeType"),
                         "cluster_status": cluster.get("ClusterStatus"),

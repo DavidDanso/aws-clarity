@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("secretsmanager", region_name="us-east-1")
+        client = session.client("secretsmanager", region_name=region)
         paginator = client.get_paginator("list_secrets")
         pages = paginator.paginate()
         for page in pages:
@@ -31,6 +31,7 @@ def scan(session):
                     "type": "secret",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "arn": arn,
                         "last_changed_date": secret.get("LastChangedDate"),

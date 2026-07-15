@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("dynamodb", region_name="us-east-1")
+        client = session.client("dynamodb", region_name=region)
         tables = []
         kwargs = {}
         while True:
@@ -32,6 +32,7 @@ def scan(session):
                     "type": "dynamodb_table",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "table_status": table_info.get("TableStatus"),
                         "item_count": table_info.get("ItemCount"),

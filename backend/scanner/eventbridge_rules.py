@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("events", region_name="us-east-1")
+        client = session.client("events", region_name=region)
         rules = []
         kwargs = {}
         while True:
@@ -31,6 +31,7 @@ def scan(session):
                 "type": "eventbridge_rule",
                 "status": status,
                 "issues": issues,
+                "region": region,
                 "raw": {
                     "arn": rule.get("Arn"),
                     "state": state,

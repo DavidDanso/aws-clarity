@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        rds = session.client("rds", region_name="us-east-1")
+        rds = session.client("rds", region_name=region)
         paginator = rds.get_paginator("describe_db_instances")
         pages = paginator.paginate()
         for page in pages:
@@ -17,6 +17,7 @@ def scan(session):
                     "type": "rds_instance",
                     "status": "HEALTHY",
                     "issues": [],
+                    "region": region,
                     "raw": {
                         "db_instance_class": db.get("DBInstanceClass"),
                         "engine": db.get("Engine"),

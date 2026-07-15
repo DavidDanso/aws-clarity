@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("sqs", region_name="us-east-1")
+        client = session.client("sqs", region_name=region)
         queue_urls = []
         kwargs = {"MaxResults": 1000}
         while True:
@@ -33,6 +33,7 @@ def scan(session):
                     "type": "sqs_queue",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "approximate_number_of_messages": attributes.get("ApproximateNumberOfMessages"),
                         "created_timestamp": attributes.get("CreatedTimestamp"),

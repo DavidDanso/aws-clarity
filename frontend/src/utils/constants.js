@@ -35,3 +35,18 @@ export const STATUS_BADGE = {
   HEALTHY: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
   ORPHANED: "bg-slate-500/20 text-slate-400 border-slate-500/30",
 };
+
+export const SUPPORTED_REGIONS = [
+  { id: "us-east-1",      label: "US East (N. Virginia)" },
+  { id: "us-east-2",      label: "US East (Ohio)" },
+  { id: "us-west-1",      label: "US West (N. California)" },
+  { id: "us-west-2",      label: "US West (Oregon)" },
+  { id: "eu-west-1",      label: "Europe (Ireland)" },
+  { id: "eu-west-2",      label: "Europe (London)" },
+  { id: "eu-central-1",   label: "Europe (Frankfurt)" },
+  { id: "ap-southeast-1", label: "Asia Pacific (Singapore)" },
+  { id: "ap-southeast-2", label: "Asia Pacific (Sydney)" },
+  { id: "ap-northeast-1", label: "Asia Pacific (Tokyo)" },
+  { id: "ca-central-1",   label: "Canada (Central)" },
+  { id: "sa-east-1",      label: "South America (São Paulo)" },
+];

@@ -2,10 +2,10 @@ from botocore.exceptions import ClientError
 import logging
 from datetime import datetime, timezone
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        lambda_client = session.client("lambda", region_name="us-east-1")
+        lambda_client = session.client("lambda", region_name=region)
         paginator = lambda_client.get_paginator("list_functions")
         pages = paginator.paginate()
         for page in pages:
@@ -38,6 +38,7 @@ def scan(session):
                     "type": "lambda_function",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "function_arn": fn.get("FunctionArn"),
                         "runtime": fn.get("Runtime"),

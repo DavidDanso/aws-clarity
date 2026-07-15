@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("sns", region_name="us-east-1")
+        client = session.client("sns", region_name=region)
         paginator = client.get_paginator("list_topics")
         pages = paginator.paginate()
         for page in pages:
@@ -30,6 +30,7 @@ def scan(session):
                         "type": "sns_topic",
                         "status": status,
                         "issues": issues,
+                        "region": region,
                         "raw": {
                             "subscriptions_confirmed": attributes.get("SubscriptionsConfirmed"),
                             "kms_master_key_id": kms_master_key_id

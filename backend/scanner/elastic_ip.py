@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        ec2 = session.client("ec2", region_name="us-east-1")
+        ec2 = session.client("ec2", region_name=region)
         response = ec2.describe_addresses()
         for address in response.get("Addresses", []):
             alloc_id = address.get("AllocationId", address.get("PublicIp"))
@@ -16,6 +16,7 @@ def scan(session):
                 "type": "elastic_ip",
                 "status": "HEALTHY",
                 "issues": [],
+                "region": region,
                 "raw": {
                     "public_ip": address.get("PublicIp"),
                     "association_id": address.get("AssociationId"),

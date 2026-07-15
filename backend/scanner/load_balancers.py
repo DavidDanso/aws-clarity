@@ -1,12 +1,12 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     
     # elbv2 (ALB/NLB)
     try:
-        elbv2_client = session.client("elbv2", region_name="us-east-1")
+        elbv2_client = session.client("elbv2", region_name=region)
         paginator = elbv2_client.get_paginator("describe_load_balancers")
         pages = paginator.paginate()
         for page in pages:
@@ -26,6 +26,7 @@ def scan(session):
                     "type": "load_balancer",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "dns_name": lb.get("DNSName"),
                         "type": lb.get("Type"),
@@ -39,7 +40,7 @@ def scan(session):
 
     # elb (Classic ELB)
     try:
-        elb_client = session.client("elb", region_name="us-east-1")
+        elb_client = session.client("elb", region_name=region)
         paginator = elb_client.get_paginator("describe_load_balancers")
         pages = paginator.paginate()
         for page in pages:
@@ -59,6 +60,7 @@ def scan(session):
                     "type": "load_balancer",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "dns_name": lb.get("DNSName"),
                         "type": "classic",

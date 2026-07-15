@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("autoscaling", region_name="us-east-1")
+        client = session.client("autoscaling", region_name=region)
         paginator = client.get_paginator("describe_auto_scaling_groups")
         pages = paginator.paginate()
         for page in pages:
@@ -27,6 +27,7 @@ def scan(session):
                     "type": "auto_scaling_group",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "min_size": min_size,
                         "max_size": max_size,

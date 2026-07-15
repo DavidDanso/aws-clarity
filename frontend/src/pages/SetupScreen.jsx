@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { validateRoleArn } from "../utils/formatters";
+import { SUPPORTED_REGIONS } from "../utils/constants";
 
 const IAM_POLICY_JSON = `{
   "Version": "2012-10-17",
@@ -33,6 +34,15 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const [roleArn, setRoleArn] = useState("");
   const [localError, setLocalError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [selectedRegions, setSelectedRegions] = useState(["us-east-1"]);
+
+  const toggleRegion = (regionId) => {
+    setSelectedRegions(prev =>
+      prev.includes(regionId)
+        ? prev.filter(r => r !== regionId)
+        : [...prev, regionId]
+    );
+  };
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(IAM_POLICY_JSON);
@@ -56,7 +66,12 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
       return;
     }
 
-    onScanStart(roleArn.trim());
+    if (selectedRegions.length === 0) {
+      setLocalError("Please select at least one region to scan.");
+      return;
+    }
+
+    onScanStart(roleArn.trim(), selectedRegions);
   };
 
   const activeError = localError || scanError;
@@ -198,6 +213,32 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
             placeholder="arn:aws:iam::123456789012:role/AwsClarityReadOnly"
             className="w-full px-4 py-3 bg-slate-900/80 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all text-sm"
           />
+
+          {/* Region Selector */}
+          <div className="mt-4">
+            <p className="text-sm font-semibold text-gray-200 mb-1">
+              Select Regions to Scan
+            </p>
+            <p className="text-xs text-gray-400 mb-3">
+              Choose one or more AWS regions. Scanning more regions takes longer.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {SUPPORTED_REGIONS.map(region => (
+                <label
+                  key={region.id}
+                  className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedRegions.includes(region.id)}
+                    onChange={() => toggleRegion(region.id)}
+                    className="rounded"
+                  />
+                  {region.label}
+                </label>
+              ))}
+            </div>
+          </div>
 
           {/* Error Banner */}
           {activeError && (

@@ -10,14 +10,14 @@ function App() {
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
 
-  const handleScanStart = async (roleArn) => {
+  const handleScanStart = async (roleArn, regions) => {
     setIsLoading(true);
     setScanStatus("STARTING");
     setScanError("");
     setScanResults(null);
     setView("dashboard");
     try {
-      const results = await scanAccount(roleArn, (status) => setScanStatus(status));
+      const results = await scanAccount(roleArn, regions, (status) => setScanStatus(status));
       setScanResults(results);
     } catch (err) {
       setScanError(err.message || "An unexpected error occurred.");

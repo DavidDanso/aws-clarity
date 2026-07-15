@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("cloudwatch", region_name="us-east-1")
+        client = session.client("cloudwatch", region_name=region)
         paginator = client.get_paginator("describe_alarms")
         pages = paginator.paginate()
         for page in pages:
@@ -30,6 +30,7 @@ def scan(session):
                     "type": "cloudwatch_alarm",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "alarm_arn": alarm.get("AlarmArn"),
                         "state_value": state_value,

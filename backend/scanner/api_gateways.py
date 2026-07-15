@@ -1,12 +1,12 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
 
     # REST APIs (apigateway v1)
     try:
-        apigateway_client = session.client("apigateway", region_name="us-east-1")
+        apigateway_client = session.client("apigateway", region_name=region)
         apis = []
         kwargs = {"limit": 500}
         while True:
@@ -23,6 +23,7 @@ def scan(session):
                 "type": "api_gateway",
                 "status": "HEALTHY",
                 "issues": [],
+                "region": region,
                 "raw": {
                     "created_date": api.get("createdDate"),
                     "endpoint_configuration": api.get("endpointConfiguration")
@@ -33,7 +34,7 @@ def scan(session):
 
     # HTTP APIs (apigatewayv2)
     try:
-        apigwv2_client = session.client("apigatewayv2", region_name="us-east-1")
+        apigwv2_client = session.client("apigatewayv2", region_name=region)
         apis = []
         kwargs = {}
         while True:
@@ -50,6 +51,7 @@ def scan(session):
                 "type": "api_gateway",
                 "status": "HEALTHY",
                 "issues": [],
+                "region": region,
                 "raw": {
                     "created_date": api.get("CreatedDate"),
                     "protocol_type": api.get("ProtocolType")

@@ -1,10 +1,10 @@
 from botocore.exceptions import ClientError
 import logging
 
-def scan(session):
+def scan(session, region="us-east-1"):
     resources = []
     try:
-        client = session.client("ecr", region_name="us-east-1")
+        client = session.client("ecr", region_name=region)
         paginator = client.get_paginator("describe_repositories")
         pages = paginator.paginate()
         for page in pages:
@@ -33,6 +33,7 @@ def scan(session):
                     "type": "ecr_repository",
                     "status": status,
                     "issues": issues,
+                    "region": region,
                     "raw": {
                         "repository_arn": arn,
                         "created_at": repo.get("createdAt"),
