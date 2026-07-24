@@ -2,6 +2,11 @@ from botocore.exceptions import ClientError
 import logging
 
 def evaluate(session, resources: dict) -> dict:
+    # Short-circuit: nothing to evaluate if all resource lists are empty
+    total = sum(len(v) for v in resources.values() if isinstance(v, list))
+    if total == 0:
+        return resources
+
     s3_client = session.client("s3")
     
     # Precompute active volumes

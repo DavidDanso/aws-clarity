@@ -39,7 +39,9 @@ export async function pollScanStatus(scanId, onProgress) {
       throw new Error("Failed to fetch scan status");
     }
 
-    onProgress(data.status); // Inform the UI
+    if (typeof onProgress === "function") {
+      onProgress(data.status); // Inform the UI
+    }
 
     if (data.status === "COMPLETE") {
       return data; // The full payload is already flat — no nested "result" key

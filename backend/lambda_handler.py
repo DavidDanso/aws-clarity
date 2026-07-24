@@ -76,7 +76,7 @@ def run_scan(role_arn, regions):
         for region in regions
     ]
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         future_to_task = {
             executor.submit(fn, session, region): (key, region)
             for key, fn, region in tasks
@@ -84,7 +84,10 @@ def run_scan(role_arn, regions):
         for future in concurrent.futures.as_completed(future_to_task):
             key, region = future_to_task[future]
             try:
-                resources[key].extend(future.result())
+                result = future.result(timeout=25)
+                resources[key].extend(result)
+            except concurrent.futures.TimeoutError:
+                print(f"Scanner {key} in {region} timed out after 25s — returning empty")
             except Exception as e:
                 print(f"Scanner {key} in {region} failed: {e}")
 
@@ -95,7 +98,12 @@ def run_scan(role_arn, regions):
     resources = evaluate(session, resources)
 
     # Build summary
-    all_resources = [r for group in resources.values() for r in group]
+    all_resources = [
+        r
+        for group in resources.values()
+        if isinstance(group, list)
+        for r in group
+    ]
     summary = {
         "total_resources": len(all_resources),
         "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),

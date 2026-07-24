@@ -15,5 +15,5 @@ variable "lambda_timeout" {
 
 variable "lambda_memory" {
   type    = number
-  default = 256
+  default = 1024
 }

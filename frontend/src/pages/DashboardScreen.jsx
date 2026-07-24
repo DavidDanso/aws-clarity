@@ -223,9 +223,9 @@ export default function DashboardScreen({
 
         {/* Scanning overlay */}
         {isRescanning && (
-          <div className="flex items-center justify-center gap-3 py-6 text-sm text-gray-400">
+          <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
             <svg
-              className="animate-spin w-4 h-4 text-teal-400 shrink-0"
+              className="animate-spin w-6 h-6 text-teal-400"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
               viewBox="0 0 24 24"
@@ -233,7 +233,10 @@ export default function DashboardScreen({
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
             </svg>
-            Scanning selected regions...
+            <div>
+              <p className="text-sm font-medium text-gray-200">Switching regions...</p>
+              <p className="text-xs text-gray-400 mt-1">This usually takes 10–20 seconds.</p>
+            </div>
           </div>
         )}
 
@@ -251,6 +254,43 @@ export default function DashboardScreen({
         )}
 
         <div className={isRescanning ? "pointer-events-none opacity-50 select-none" : ""}>
+
+        {/* Empty state — shown when scan succeeded but region has zero resources */}
+        {!isLoading && !scanError && scanResults && (scanResults.summary?.total_resources ?? 0) === 0 && (
+          <div className="flex flex-col items-center justify-center gap-4 py-24 text-center px-4">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="48"
+              height="48"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              className="text-gray-600"
+            >
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <div>
+              <p className="text-base font-medium text-gray-300">No resources found</p>
+              <p className="text-sm text-gray-500 mt-1">
+                No active AWS resources were detected in{" "}
+                {scanResults.regions?.length === 1
+                  ? scanResults.regions[0]
+                  : scanResults.regions?.length > 1
+                  ? `${scanResults.regions.length} selected regions`
+                  : "the selected region"}.
+              </p>
+              <p className="text-xs text-gray-600 mt-2">
+                Try selecting a different region using the region selector above.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Main dashboard — only renders when there are resources */}
+        {(scanResults?.summary?.total_resources ?? 0) > 0 && (
+        <>
 
         {scanResults?.partial === true && (
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-700/50">
@@ -284,8 +324,27 @@ export default function DashboardScreen({
               </a>
             </p>
           ) : isLoading ? (
-            <div className="flex flex-col w-full text-slate-400 py-2">
-              Scanning... Status: {scanStatus}
+            <div className="flex flex-col items-center justify-center gap-4 py-8 text-center">
+              <svg
+                className="animate-spin w-8 h-8 text-teal-400"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+              </svg>
+              <div>
+                <p className="text-sm font-medium text-gray-200">Scanning your AWS account...</p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {storedRegions && storedRegions.length > 1
+                    ? `Scanning ${storedRegions.length} regions simultaneously. This takes 15–30 seconds.`
+                    : "This usually takes 10–20 seconds."}
+                </p>
+                <p className="text-xs text-gray-500 mt-1">
+                  First scan may take a few extra seconds while the system warms up.
+                </p>
+              </div>
             </div>
           ) : hasIssues ? (
             <div className="flex flex-col w-full">
@@ -462,6 +521,10 @@ export default function DashboardScreen({
           </a>
         </footer>
         )}
+
+        </>
+        )}
+
         </div>
       </div>
 
