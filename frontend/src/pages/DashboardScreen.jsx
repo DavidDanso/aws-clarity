@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import { RESOURCE_TYPE_LABELS } from "../utils/constants";
+import { scanAccount } from "../services/api";
 
 function getResourceCost(r) {
   switch (r.type) {
@@ -43,9 +44,36 @@ function renderCost(cost, type) {
   return `$${cost.toFixed(2)} / mo`;
 }
 
-export default function DashboardScreen({ scanResults, onRescan, isLoading, scanStatus, scanError }) {
+export default function DashboardScreen({
+  scanResults,
+  onRescan,
+  isLoading,
+  scanStatus,
+  scanError,
+  storedRoleArn,
+  storedRegions,
+  onStoredRegionsChange,
+  onResultsChange,
+}) {
   const [selectedResource, setSelectedResource] = useState(null);
   const [healthyExpanded, setHealthyExpanded] = useState(false);
+  const [isRescanning, setIsRescanning] = useState(false);
+  const [rescanError, setRescanError] = useState(null);
+
+  const handleRegionChange = async (newRegions) => {
+    if (!storedRoleArn || newRegions.length === 0) return;
+    setIsRescanning(true);
+    setRescanError(null);
+    try {
+      const newResults = await scanAccount(storedRoleArn, newRegions);
+      onResultsChange(newResults);
+      onStoredRegionsChange(newRegions);
+    } catch (err) {
+      setRescanError(err.message || "Failed to switch regions. Please try again.");
+    } finally {
+      setIsRescanning(false);
+    }
+  };
 
   const allResources = useMemo(() => {
     const results = scanResults;
@@ -188,7 +216,41 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
           scannedAt={scanResults?.scanned_at || ""}
           onRescan={onRescan}
           isLoading={isLoading}
+          selectedRegions={storedRegions}
+          onRegionChange={handleRegionChange}
+          isRescanning={isRescanning}
         />
+
+        {/* Scanning overlay */}
+        {isRescanning && (
+          <div className="flex items-center justify-center gap-3 py-6 text-sm text-gray-400">
+            <svg
+              className="animate-spin w-4 h-4 text-teal-400 shrink-0"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            Scanning selected regions...
+          </div>
+        )}
+
+        {/* Error banner */}
+        {rescanError && (
+          <div className="mx-4 sm:mx-6 lg:mx-8 mt-2 px-4 py-3 rounded-lg bg-red-900/40 border border-red-700 text-sm text-red-300 flex items-center justify-between gap-3">
+            <span>{rescanError}</span>
+            <button
+              onClick={() => setRescanError(null)}
+              className="shrink-0 text-red-400 hover:text-red-200 text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
+        <div className={isRescanning ? "pointer-events-none opacity-50 select-none" : ""}>
 
         {scanResults?.partial === true && (
           <div className="flex items-center gap-3 px-4 py-3 rounded-lg border border-slate-700/50">
@@ -400,6 +462,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
           </a>
         </footer>
         )}
+        </div>
       </div>
 
       {selectedResource && (

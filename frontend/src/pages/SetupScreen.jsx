@@ -71,7 +71,8 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
       return;
     }
 
-    onScanStart(roleArn.trim(), selectedRegions);
+    const trimmedArn = roleArn.trim();
+    onScanStart(trimmedArn, selectedRegions);
   };
 
   const activeError = localError || scanError;

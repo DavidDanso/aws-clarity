@@ -9,12 +9,16 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
+  const [storedRoleArn, setStoredRoleArn] = useState("");
+  const [storedRegions, setStoredRegions] = useState(["us-east-1"]);
 
   const handleScanStart = async (roleArn, regions) => {
     setIsLoading(true);
     setScanStatus("STARTING");
     setScanError("");
     setScanResults(null);
+    setStoredRoleArn(roleArn);
+    setStoredRegions(regions);
     setView("dashboard");
     try {
       const results = await scanAccount(roleArn, regions, (status) => setScanStatus(status));
@@ -50,6 +54,10 @@ function App() {
       isLoading={isLoading}
       scanStatus={scanStatus}
       scanError={scanError}
+      storedRoleArn={storedRoleArn}
+      storedRegions={storedRegions}
+      onStoredRegionsChange={setStoredRegions}
+      onResultsChange={setScanResults}
     />
   );
 }

@@ -1,4 +1,6 @@
+import { useState, useEffect, useRef } from "react";
 import { maskAccountId } from "../utils/formatters";
+import { SUPPORTED_REGIONS } from "../utils/constants";
 
 function getRelativeTime(isoString) {
   if (!isoString) return "unknown";
@@ -29,7 +31,46 @@ function getRelativeTime(isoString) {
   }
 }
 
-export default function TopBar({ accountId, region, scannedAt, onRescan, isLoading }) {
+export default function TopBar({
+  accountId,
+  region,
+  scannedAt,
+  onRescan,
+  isLoading,
+  selectedRegions = ["us-east-1"],
+  onRegionChange,
+  isRescanning = false,
+}) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [draftRegions, setDraftRegions] = useState(selectedRegions);
+  const popoverRef = useRef(null);
+
+  useEffect(() => {
+    if (!popoverOpen) {
+      setDraftRegions(selectedRegions);
+    }
+  }, [selectedRegions, popoverOpen]);
+
+  const toggleDraftRegion = (regionId) => {
+    setDraftRegions(prev =>
+      prev.includes(regionId)
+        ? prev.filter(r => r !== regionId)
+        : [...prev, regionId]
+    );
+  };
+
+  useEffect(() => {
+    if (!popoverOpen) return;
+    const handleClickOutside = (e) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
+        setPopoverOpen(false);
+        // draftRegions will sync via the other useEffect above
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [popoverOpen]);
+
   return (
     <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 sm:px-6 py-3 w-full bg-transparent">
       {/* Left Slot: Shield icon (14px) + AWS Clarity wordmark (14px) */}
@@ -48,7 +89,81 @@ export default function TopBar({ accountId, region, scannedAt, onRescan, isLoadi
           <>
             <span>Account {maskAccountId(accountId)}</span>
             <span className="hidden sm:inline">·</span>
-            <span>{region}</span>
+            <div className="relative inline-block" ref={popoverRef}>
+              {/* Trigger button */}
+              <button
+                onClick={() => !isRescanning && setPopoverOpen(prev => !prev)}
+                disabled={isRescanning}
+                className={`flex items-center gap-1 text-sm transition-opacity ${
+                  isRescanning ? "opacity-40 cursor-not-allowed" : "hover:opacity-80"
+                }`}
+              >
+                <span>
+                  {selectedRegions.length === 1
+                    ? selectedRegions[0]
+                    : `${selectedRegions.length} regions`}
+                </span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  className={`transition-transform duration-200 ${popoverOpen ? "rotate-180" : ""}`}
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+
+              {/* Popover — right-0 keeps it inside viewport on mobile */}
+              {popoverOpen && (
+                <div className="absolute top-full mt-2 right-0 z-50 w-64 rounded-lg border border-gray-700 bg-gray-900 shadow-xl p-3">
+                  <p className="text-xs text-gray-400 mb-2 font-medium uppercase tracking-wide">
+                    Switch Regions
+                  </p>
+                  <div className="grid grid-cols-1 gap-0.5 max-h-56 overflow-y-auto mb-3 pr-1">
+                    {SUPPORTED_REGIONS.map(region => (
+                      <label
+                        key={region.id}
+                        className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white py-1.5 select-none"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={draftRegions.includes(region.id)}
+                          onChange={() => toggleDraftRegion(region.id)}
+                          className="rounded shrink-0"
+                        />
+                        {region.label}
+                      </label>
+                    ))}
+                  </div>
+                  {draftRegions.length === 0 && (
+                    <p className="text-xs text-red-400 mb-2">Select at least one region</p>
+                  )}
+                  <div className="flex gap-2 border-t border-gray-700 pt-2">
+                    <button
+                      onClick={() => setPopoverOpen(false)}
+                      className="flex-1 text-sm py-1.5 rounded text-gray-400 hover:text-white transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (draftRegions.length === 0) return;
+                        setPopoverOpen(false);
+                        onRegionChange(draftRegions);
+                      }}
+                      disabled={draftRegions.length === 0}
+                      className="flex-1 text-sm py-1.5 rounded bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium transition-colors"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <span className="hidden sm:inline">·</span>
             <span>Scanned {getRelativeTime(scannedAt)}</span>
           </>
