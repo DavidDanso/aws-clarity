@@ -48,17 +48,17 @@ export default function DetailDrawer({ resource, onClose }) {
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
       <div
         ref={drawerRef}
-        className="absolute right-0 top-0 h-full w-full max-w-lg bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in"
+        className="absolute right-0 top-0 h-full w-full sm:w-[420px] md:w-[480px] bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in"
       >
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-slate-700/50">
+        <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-700/50">
           <div className="min-w-0 flex-1">
             <h2 className="text-lg font-bold text-white truncate">{resource.name}</h2>
             <p className="text-xs text-slate-500 mt-1 font-mono truncate">{resource.id}</p>
           </div>
           <button
             onClick={onClose}
-            className="ml-4 p-2 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            className="ml-4 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -66,7 +66,7 @@ export default function DetailDrawer({ resource, onClose }) {
           </button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {/* Type & Status */}
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -95,20 +95,22 @@ export default function DetailDrawer({ resource, onClose }) {
                   return (
                     <div
                       key={idx}
-                      className={`rounded-lg border p-4 ${style.bg} ${style.border}`}
+                      className={`rounded-lg border p-4 flex items-start gap-2 text-sm leading-relaxed ${style.bg} ${style.border}`}
                     >
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-xs font-bold uppercase ${style.color}`}>
-                          {issue.severity}
-                        </span>
+                      <div>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className={`text-xs font-bold uppercase ${style.color}`}>
+                            {issue.severity}
+                          </span>
+                        </div>
+                        <p className="text-sm text-slate-200">{issue.message}</p>
+                        {issue.fix && (
+                          <p className="text-xs text-slate-400 mt-2">
+                            <span className="font-semibold text-slate-300">Fix: </span>
+                            {issue.fix}
+                          </p>
+                        )}
                       </div>
-                      <p className="text-sm text-slate-200">{issue.message}</p>
-                      {issue.fix && (
-                        <p className="text-xs text-slate-400 mt-2">
-                          <span className="font-semibold text-slate-300">Fix: </span>
-                          {issue.fix}
-                        </p>
-                      )}
                     </div>
                   );
                 })}
@@ -122,9 +124,9 @@ export default function DetailDrawer({ resource, onClose }) {
               <h3 className="text-sm font-semibold text-slate-300 mb-3">Metadata</h3>
               <div className="bg-slate-800/80 rounded-lg border border-slate-700/50 divide-y divide-slate-700/30">
                 {rawEntries.map(([key, value]) => (
-                  <div key={key} className="flex justify-between px-4 py-2.5 text-sm">
-                    <span className="text-slate-400">{key}</span>
-                    <span className="text-slate-200 text-right max-w-[200px] truncate font-mono text-xs">
+                  <div key={key} className="flex flex-col sm:flex-row sm:justify-between sm:gap-2 px-4 py-2.5 text-sm">
+                    <span className="text-slate-400 shrink-0">{key}</span>
+                    <span className="text-slate-200 sm:text-right font-mono text-sm break-all">
                       {String(value ?? "—")}
                     </span>
                   </div>

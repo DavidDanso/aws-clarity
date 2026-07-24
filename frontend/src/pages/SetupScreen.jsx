@@ -105,7 +105,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
       </div>
 
       {/* Main Card */}
-      <div className="w-full max-w-2xl bg-slate-800/60 border border-slate-700/50 rounded-2xl shadow-2xl backdrop-blur-sm p-8">
+      <div className="w-full max-w-2xl bg-slate-800/60 border border-slate-700/50 rounded-2xl shadow-2xl backdrop-blur-sm p-4 sm:p-6 md:p-8 px-4 sm:px-6 md:px-8 mx-auto">
         {/* 3-Step IAM Guide */}
         <h2 className="text-xl font-semibold mb-6 text-slate-100">
           Setup Guide
@@ -122,7 +122,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
 
         <div className="space-y-6 mb-8">
           {/* Step 1 */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row sm:gap-4 gap-2">
             <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               1
             </div>
@@ -132,11 +132,11 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
               </p>
               <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
                 In your AWS Console, go to IAM → Roles → Create Role. When asked for the trust type, select 'Another AWS Account'. This tells AWS that AWS Clarity (which lives in a separate AWS account) is allowed to request temporary read access to your account. Enter this App Account ID:{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium break-all">
                   {import.meta.env.VITE_APP_ACCOUNT_ID}
                 </code>
                 . Then set the External ID to{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium break-all">
                   aws-clarity-scan
                 </code>{" "}
                 — this is a secret handshake that ensures only AWS Clarity can use this role, not anyone else who might know the account ID.
@@ -145,7 +145,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
           </div>
 
           {/* Step 2 */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row sm:gap-4 gap-2">
             <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               2
             </div>
@@ -157,7 +157,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
                 Attach the policy below to your new role. Every permission in this list starts with Describe, List, or Get — none of them can create, change, or delete anything in your account. This is the minimum access needed to build your resource inventory.
               </p>
               <div className="mt-3 relative">
-                <pre className="bg-slate-950/80 border border-slate-700/60 rounded-lg p-4 text-xs text-slate-300 overflow-x-auto leading-relaxed">
+                <pre className="bg-slate-950/80 border border-slate-700/60 rounded-lg p-4 text-xs sm:text-sm text-slate-300 overflow-x-auto whitespace-pre leading-relaxed">
                   {IAM_POLICY_JSON}
                 </pre>
                 <button
@@ -171,7 +171,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
           </div>
 
           {/* Step 3 */}
-          <div className="flex gap-4">
+          <div className="flex flex-col sm:flex-row sm:gap-4 gap-2">
             <div className="flex-shrink-0 w-8 h-8 rounded-full text-slate-400 flex items-center justify-center text-sm font-bold border border-slate-700/50">
               3
             </div>
@@ -181,7 +181,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
               </p>
               <p className="text-sm text-slate-400 mt-1.5 leading-relaxed">
                 After creating the role, AWS gives it a unique address called a Role ARN — it looks like{" "}
-                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium">
+                <code className="bg-slate-700/80 px-1.5 py-0.5 rounded text-cyan-300 text-xs font-medium break-all">
                   arn:aws:iam::123456789012:role/AWSClarityReadOnly
                 </code>
                 . This is not a password or credential. It is simply the address that tells AWS Clarity where your read-only door is. Paste it in the field below and click Scan.
@@ -226,7 +226,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
               {SUPPORTED_REGIONS.map(region => (
                 <label
                   key={region.id}
-                  className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer select-none"
+                  className="flex items-center gap-2 text-sm leading-snug text-gray-300 cursor-pointer select-none"
                 >
                   <input
                     type="checkbox"

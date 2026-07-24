@@ -31,7 +31,7 @@ function getRelativeTime(isoString) {
 
 export default function TopBar({ accountId, region, scannedAt, onRescan, isLoading }) {
   return (
-    <div className="flex items-center justify-between w-full h-[40px] bg-transparent">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-4 sm:px-6 py-3 w-full bg-transparent">
       {/* Left Slot: Shield icon (14px) + AWS Clarity wordmark (14px) */}
       <div className="flex items-center gap-2">
         <svg className="w-[14px] h-[14px] text-slate-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -41,11 +41,17 @@ export default function TopBar({ accountId, region, scannedAt, onRescan, isLoadi
       </div>
 
       {/* Center Slot: metadata text (13px, muted color) */}
-      <div className="text-[13px] text-slate-400 font-normal">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:gap-3 gap-1 text-sm text-slate-400 font-normal">
         {isLoading ? (
           <div className="animate-pulse bg-slate-800 h-3 w-56 rounded" />
         ) : (
-          `Account ${maskAccountId(accountId)} · ${region} · Scanned ${getRelativeTime(scannedAt)}`
+          <>
+            <span>Account {maskAccountId(accountId)}</span>
+            <span className="hidden sm:inline">·</span>
+            <span>{region}</span>
+            <span className="hidden sm:inline">·</span>
+            <span>Scanned {getRelativeTime(scannedAt)}</span>
+          </>
         )}
       </div>
 
@@ -54,7 +60,7 @@ export default function TopBar({ accountId, region, scannedAt, onRescan, isLoadi
         id="rescan-button"
         onClick={onRescan}
         disabled={isLoading}
-        className="px-2.5 py-1 text-[13px] border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white rounded bg-transparent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        className="w-full sm:w-auto px-2.5 py-1 text-[13px] border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white rounded bg-transparent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         Re-scan
       </button>

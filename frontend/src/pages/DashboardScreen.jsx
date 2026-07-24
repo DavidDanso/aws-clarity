@@ -181,7 +181,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      <div className="max-w-7xl mx-auto px-4 py-6 flex flex-col gap-[40px]">
+      <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 max-w-7xl mx-auto w-full flex flex-col gap-[40px]">
         <TopBar
           accountId={scanResults?.account_id || ""}
           region={scanResults?.region || ""}
@@ -230,7 +230,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
               {sortedSecurityResources.map((resource) => (
                 <div
                   key={resource.id}
-                  className={`flex items-center w-full h-[44px] border-b-[0.5px] border-slate-800/80 bg-transparent px-3 border-l-4 ${
+                  className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 py-3 w-full border-b-[0.5px] border-slate-800/80 bg-transparent px-3 border-l-4 ${
                     resource.status === "CRITICAL"
                       ? "border-l-red-500"
                       : resource.status === "WARNING"
@@ -238,20 +238,20 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
                       : "border-l-slate-500"
                   }`}
                 >
-                  <div className="flex items-baseline gap-2 shrink-0">
-                    <span className="text-[14px] font-medium text-slate-200">{resource.name}</span>
-                    <span className="text-[12px] text-slate-500 font-normal">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0">
+                    <span className="text-[14px] font-medium text-slate-200 truncate max-w-[200px] sm:max-w-none">{resource.name}</span>
+                    <span className="text-[12px] text-slate-500 font-normal shrink-0">
                       {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
                     </span>
-                  </div>
-                  <div className="text-[13px] text-slate-400 ml-4 truncate flex-1 min-w-0">
-                    {resource.issues && resource.issues.length > 0
-                      ? resource.issues.map((i) => i.message).join(", ")
-                      : "No issues"}
+                    <div className="text-[13px] text-slate-400 truncate min-w-0 sm:ml-2">
+                      {resource.issues && resource.issues.length > 0
+                        ? resource.issues.map((i) => i.message).join(", ")
+                        : "No issues"}
+                    </div>
                   </div>
                   <button
                     onClick={() => setSelectedResource(resource)}
-                    className="text-[13px] text-blue-400 hover:text-blue-300 font-normal bg-transparent border-none p-0 cursor-pointer ml-4 shrink-0"
+                    className="text-[13px] text-blue-400 hover:text-blue-300 font-normal bg-transparent border-none p-0 cursor-pointer self-start sm:self-auto shrink-0"
                   >
                     Inspect →
                   </button>
@@ -309,7 +309,7 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
                 return (
                   <div
                     key={resource.id}
-                    className="flex items-center justify-between w-full h-[40px] border-b-[0.5px] border-slate-800/80 bg-transparent px-3"
+                    className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-3 w-full border-b-[0.5px] border-slate-800/80 bg-transparent px-3"
                   >
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-[14px] font-medium text-slate-200 truncate">{resource.name}</span>
@@ -319,21 +319,21 @@ export default function DashboardScreen({ scanResults, onRescan, isLoading, scan
                     </div>
 
                     {/* Proportional visual ranking signal bar */}
-                    <div className="flex-1 mx-4 max-w-[120px] h-[2px] bg-slate-900 rounded-full overflow-hidden shrink-0">
+                    <div className="w-full sm:w-48 h-[2px] bg-slate-900 rounded-full overflow-hidden shrink-0">
                       <div
                         className="h-full rounded-full"
                         style={{ width: `${widthPercent}%`, backgroundColor: 'var(--color-border-primary, rgb(51 65 85))' }}
                       />
                     </div>
 
-                    <div className="text-[14px] text-slate-300 font-medium font-mono shrink-0 text-right">
+                    <div className="text-[14px] text-slate-300 font-medium sm:ml-auto font-mono text-sm shrink-0 text-left sm:text-right">
                       {renderCost(cost, resource.type)}
                     </div>
                   </div>
                 );
               })}
 
-              <div className="flex justify-end items-center gap-1.5 mt-4 text-[14px]">
+              <div className="flex justify-end text-sm sm:text-base pt-2 items-center gap-1.5 mt-4">
                 <span className="text-slate-500">Estimated monthly total</span>
                 <span className="text-slate-200 font-medium font-mono">${totalCost.toFixed(2)}</span>
               </div>

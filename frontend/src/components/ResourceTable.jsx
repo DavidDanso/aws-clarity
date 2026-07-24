@@ -48,38 +48,40 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
     <div className="space-y-4">
       <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl backdrop-blur-sm overflow-hidden">
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-3 p-4 border-b border-slate-700/50">
-          <span className="text-sm text-slate-400 font-medium">Search:</span>
-          <div className="relative">
-            <input
-              id="search-input"
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by name or ID..."
-              className="bg-slate-900 border border-slate-600/50 rounded-lg pl-3 pr-8 py-1.5 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 w-52"
-            />
-            {searchQuery.length > 0 && (
-              <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer text-sm leading-none"
-                aria-label="Clear search"
-              >
-                ×
-              </button>
-            )}
+        <div className="flex flex-col gap-2 p-4 border-b border-slate-700/50">
+          <div className="flex items-center gap-3 w-full">
+            <span className="text-sm text-slate-400 font-medium shrink-0">Search:</span>
+            <div className="relative w-full">
+              <input
+                id="search-input"
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name or ID..."
+                className="bg-slate-900 border border-slate-600/50 rounded-lg pl-3 pr-8 py-1.5 text-sm text-slate-300 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 w-full"
+              />
+              {searchQuery.length > 0 && (
+                <button
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer text-sm leading-none"
+                  aria-label="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
+        <div className="overflow-x-auto w-full">
+          <table className="min-w-[640px] w-full text-sm text-left">
             <thead className="text-xs uppercase text-slate-400 border-b border-slate-700/50">
               <tr>
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Issues</th>
+                <th className="px-4 py-3 hidden sm:table-cell">Issues</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
             </thead>
@@ -117,7 +119,7 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
                         {resource.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">
+                    <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">
                       {resource.issues.length}
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -137,11 +139,11 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
       </div>
 
       {/* Footer */}
-      <footer className="flex justify-between items-center text-xs text-slate-500 px-4">
+      <footer className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-sm text-slate-500 px-4">
         <span>Read-only access only. No resources are modified.</span>
         <button
           onClick={handleExportCSV}
-          className="hover:text-slate-300 transition-colors cursor-pointer underline bg-transparent border-none p-0"
+          className="hover:text-slate-300 transition-colors cursor-pointer underline bg-transparent border-none p-0 w-full sm:w-auto text-left sm:text-right"
         >
           Export CSV
         </button>
