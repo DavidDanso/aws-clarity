@@ -42,22 +42,14 @@ export default function TopBar({
   isRescanning = false,
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
-  const [draftRegions, setDraftRegions] = useState(selectedRegions);
+  const [draftRegion, setDraftRegion] = useState(selectedRegions?.[0] ?? "us-east-1");
   const popoverRef = useRef(null);
 
   useEffect(() => {
     if (!popoverOpen) {
-      setDraftRegions(selectedRegions);
+      setDraftRegion(selectedRegions?.[0] ?? "us-east-1");
     }
   }, [selectedRegions, popoverOpen]);
-
-  const toggleDraftRegion = (regionId) => {
-    setDraftRegions(prev =>
-      prev.includes(regionId)
-        ? prev.filter(r => r !== regionId)
-        : [...prev, regionId]
-    );
-  };
 
   useEffect(() => {
     if (!popoverOpen) return;
@@ -98,11 +90,7 @@ export default function TopBar({
                   isRescanning ? "opacity-40 cursor-not-allowed" : "hover:opacity-80"
                 }`}
               >
-                <span>
-                  {selectedRegions.length === 1
-                    ? selectedRegions[0]
-                    : `${selectedRegions.length} regions`}
-                </span>
+                <span>{selectedRegions?.[0] ?? "us-east-1"}</span>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="12"
@@ -130,18 +118,17 @@ export default function TopBar({
                         className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer hover:text-white py-1.5 select-none"
                       >
                         <input
-                          type="checkbox"
-                          checked={draftRegions.includes(region.id)}
-                          onChange={() => toggleDraftRegion(region.id)}
-                          className="rounded shrink-0"
+                          type="radio"
+                          name="dashboard-region"
+                          value={region.id}
+                          checked={draftRegion === region.id}
+                          onChange={() => setDraftRegion(region.id)}
+                          className="shrink-0"
                         />
                         {region.label}
                       </label>
                     ))}
                   </div>
-                  {draftRegions.length === 0 && (
-                    <p className="text-xs text-red-400 mb-2">Select at least one region</p>
-                  )}
                   <div className="flex gap-2 border-t border-gray-700 pt-2">
                     <button
                       onClick={() => setPopoverOpen(false)}
@@ -151,12 +138,10 @@ export default function TopBar({
                     </button>
                     <button
                       onClick={() => {
-                        if (draftRegions.length === 0) return;
                         setPopoverOpen(false);
-                        onRegionChange(draftRegions);
+                        onRegionChange([draftRegion]);
                       }}
-                      disabled={draftRegions.length === 0}
-                      className="flex-1 text-sm py-1.5 rounded bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium transition-colors"
+                      className="flex-1 text-sm py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white font-medium transition-colors"
                     >
                       Apply
                     </button>
