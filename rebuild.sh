@@ -3,7 +3,7 @@ set -e
 echo "🔨 Rebuilding Lambda package..."
 rm -rf backend/lambda_package
 mkdir backend/lambda_package
-pip install -r backend/requirements.txt -t backend/lambda_package/ --quiet
+python3 -m pip install -r backend/requirements.txt -t backend/lambda_package/ --quiet
 cp backend/lambda_handler.py backend/lambda_package/
 cp backend/utils.py backend/lambda_package/
 cp backend/exceptions.py backend/lambda_package/

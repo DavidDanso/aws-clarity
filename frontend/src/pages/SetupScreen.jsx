@@ -23,7 +23,8 @@ const IAM_POLICY_JSON = `{
         "rds:DescribeDBInstances",
         "iam:ListRoles",
         "iam:ListRolePolicies",
-        "iam:GetRolePolicy"
+        "iam:GetRolePolicy",
+        "ce:GetCostAndUsage"
       ],
       "Resource": "*"
     }

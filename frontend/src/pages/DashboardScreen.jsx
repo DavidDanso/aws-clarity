@@ -4,45 +4,39 @@ import DetailDrawer from "../components/DetailDrawer";
 import { RESOURCE_TYPE_LABELS } from "../utils/constants";
 import { scanAccount } from "../services/api";
 
-function getResourceCost(r) {
-  switch (r.type) {
-    case "ec2_instance":
-      if (r.raw?.state === "stopped") return 0;
-      return 8.47;
-    case "s3_bucket":
-      if (r.raw?.is_empty) return 0;
-      return 1.15;
-    case "lambda_function":
-      if (r.raw?.invocations === 0 || r.raw?.invoked === false) return 0;
-      return 0.005; // tiny value for sorting/math, display as "< $0.01"
-    case "dynamodb_table":
-      return 1.25;
-    case "api_gateway":
-      return 3.50;
-    case "rds_instance":
-    case "elasticache_cluster":
-    case "cloudfront_distribution":
-    case "ebs_volume":
-    case "nat_gateway":
-      return null;
-    case "elastic_ip":
-      // Only show if unattached
-      if (r.raw?.association_id) return 0;
-      return null;
-    default:
-      return 0;
-  }
-}
+const AWS_SERVICE_LABELS = {
+  "Amazon Elastic Compute Cloud - Compute": "EC2 Instances",
+  "Amazon EC2 - Other": "EBS / Network",
+  "Amazon Simple Storage Service": "S3 Storage",
+  "Amazon Relational Database Service": "RDS Databases",
+  "Amazon Aurora MySQL": "Aurora MySQL",
+  "Amazon Aurora PostgreSQL": "Aurora PostgreSQL",
+  "AWS Lambda": "Lambda Functions",
+  "Amazon DynamoDB": "DynamoDB",
+  "Amazon Virtual Private Cloud": "VPC / Networking",
+  "Amazon API Gateway": "API Gateway",
+  "AWS Secrets Manager": "Secrets Manager",
+  "Amazon ElastiCache": "ElastiCache",
+  "Amazon Elastic Container Service": "ECS",
+  "Amazon Elastic Kubernetes Service": "EKS",
+  "Amazon Redshift": "Redshift",
+  "Amazon Simple Queue Service": "SQS",
+  "Amazon Simple Notification Service": "SNS",
+  "Amazon CloudWatch": "CloudWatch",
+  "AWS CloudFormation": "CloudFormation",
+  "Amazon Elastic Container Registry": "ECR",
+  "Amazon EventBridge": "EventBridge",
+  "AWS Key Management Service": "KMS",
+  "Amazon Route 53": "Route 53",
+  "Amazon CloudFront": "CloudFront",
+};
 
-function renderCost(cost, type) {
-  if (type === "lambda_function") {
-    return "< $0.01";
-  }
-  if (cost === null || cost === undefined) {
-    return "—";
-  }
-  return `$${cost.toFixed(2)} / mo`;
-}
+const formatCost = (amount) => {
+  if (amount === null || amount === undefined) return "—";
+  if (amount < 0.01) return "< $0.01";
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(2)}k`;
+  return `$${amount.toFixed(2)}`;
+};
 
 export default function DashboardScreen({
   scanResults,
@@ -130,57 +124,25 @@ export default function DashboardScreen({
 
   const hasIssues = sortedSecurityResources.length > 0;
 
-  // Step 2: Section 2 — billable resources not already in S1
-  const BILLABLE_TYPES = [
-    "ec2_instance",
-    "s3_bucket",
-    "lambda_function",
-    "dynamodb_table",
-    "api_gateway",
-    "rds_instance",
-    "elasticache_cluster",
-    "cloudfront_distribution",
-    "ebs_volume",
-    "nat_gateway",
-    "elastic_ip",
-  ];
+  const costData = scanResults?.costs ?? {};
+  const costError = costData.error ?? null;
+  const byService = costData.by_service ?? {};
+  const totalCurrentMonth = costData.total_current_month ?? 0;
+  const costPeriod = costData.period ?? {};
+  const resourceLevelEnabled = costData.resource_level_enabled ?? false;
 
-  const costResources = useMemo(() => {
-    return allResources.filter((r) => {
-      if (s1Ids.has(r.id)) return false;
-      if (!BILLABLE_TYPES.includes(r.type)) return false;
-      const cost = getResourceCost(r);
-      return cost !== null && cost > 0;
-    });
-  }, [allResources, s1Ids]);
+  const sortedServiceCosts = Object.entries(byService)
+    .filter(([, amount]) => amount > 0)
+    .sort(([, a], [, b]) => b - a);
 
-  const s2Ids = useMemo(() => new Set(costResources.map((r) => r.id)), [costResources]);
+  const maxServiceCost = sortedServiceCosts.length > 0
+    ? sortedServiceCosts[0][1]
+    : 1;
 
-  const sortedCostResources = useMemo(() => {
-    return [...costResources].sort((a, b) => {
-      const costA = getResourceCost(a) ?? -1;
-      const costB = getResourceCost(b) ?? -1;
-      return costB - costA;
-    });
-  }, [costResources]);
-
-  const maxCost = useMemo(() => {
-    return Math.max(...costResources.map((r) => getResourceCost(r) || 0), 0);
-  }, [costResources]);
-
-  const totalCost = useMemo(() => {
-    return costResources.reduce((sum, r) => {
-      const cost = getResourceCost(r);
-      // Lambda has tiny dummy cost internally, treat as 0 for display sum
-      if (r.type === "lambda_function") return sum + 0;
-      return sum + (cost || 0);
-    }, 0);
-  }, [costResources]);
-
-  // Step 3: Section 3 — everything not in S1 or S2
+  // Step 3: Section 3 — healthy resources without security issues
   const healthyFreeResources = useMemo(() => {
-    return allResources.filter((r) => !s1Ids.has(r.id) && !s2Ids.has(r.id));
-  }, [allResources, s1Ids, s2Ids]);
+    return allResources.filter((r) => !s1Ids.has(r.id));
+  }, [allResources, s1Ids]);
 
   const handleExportCSV = () => {
     const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -389,82 +351,127 @@ export default function DashboardScreen({
           )}
         </section>
 
-        {/* Cost intelligence / Active spend section */}
-        <section className="flex flex-col gap-4">
-          <div>
-            <h2 className="text-[15px] font-medium text-slate-200">Active spend</h2>
-            <p className="text-[13px] text-slate-400 mt-1">Resources incurring real AWS charges</p>
+        {/* Active spend section */}
+        <div className="mt-6">
+
+          {/* Section header */}
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-200">Active spend</h2>
+              <p className="text-xs text-gray-500">
+                {costError
+                  ? "Cost data unavailable"
+                  : costPeriod.start
+                    ? `${costPeriod.start} to ${costPeriod.end} · real data · up to 24h delay`
+                    : ""}
+              </p>
+            </div>
+            {/* Resource-level badge */}
+            {resourceLevelEnabled && (
+              <span className="text-xs bg-teal-500/10 text-teal-400 border border-teal-500/20 rounded-full px-2.5 py-1">
+                Per-resource costs available
+              </span>
+            )}
           </div>
-          {scanError ? (
-            <p className="text-[13px] text-slate-400 py-1">
-              Scan failed —{" "}
+
+          {/* PERMISSION DENIED — user needs to add ce:GetCostAndUsage */}
+          {costError === "PERMISSION_DENIED" && (
+            <div className="rounded-xl border border-amber-700/40 bg-amber-900/10 px-4 py-4">
+              <p className="text-xs font-semibold text-amber-400 mb-1">Cost data requires one more permission</p>
+              <p className="text-xs text-gray-400 mb-3">
+                Add{" "}
+                <code className="bg-gray-800 text-amber-400 px-1.5 py-0.5 rounded font-mono">
+                  ce:GetCostAndUsage
+                </code>{" "}
+                to your <code className="bg-gray-800 text-teal-400 px-1.5 py-0.5 rounded font-mono">AWSClarityReadOnly</code> IAM role to enable real cost tracking.
+              </p>
               <a
-                href="javascript:void(0)"
-                onClick={() => onRescan()}
-                className="text-blue-400 hover:text-blue-300"
+                href="https://console.aws.amazon.com/iam/home#/roles/AWSClarityReadOnly"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-400 hover:text-teal-300 transition-colors"
               >
-                retry
+                Update IAM role in AWS Console →
               </a>
-            </p>
-          ) : isLoading ? (
-            <div className="flex flex-col w-full">
-              {[1, 2, 3, 4].map((i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between w-full h-[40px] border-b-[0.5px] border-slate-800/80 bg-transparent px-3"
-                >
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="animate-pulse bg-slate-800 h-3.5 w-20 rounded" />
-                    <div className="animate-pulse bg-slate-900 h-4 w-12 rounded-full" />
-                  </div>
-                  <div className="flex-1 mx-4 max-w-[120px] h-[2px] bg-slate-900 rounded-full overflow-hidden shrink-0" />
-                  <div className="animate-pulse bg-slate-800 h-3.5 w-16 rounded" />
-                </div>
-              ))}
-            </div>
-          ) : sortedCostResources.length > 0 ? (
-            <div className="flex flex-col w-full">
-              {sortedCostResources.map((resource) => {
-                const cost = getResourceCost(resource);
-                const widthPercent = cost && maxCost > 0 ? (cost / maxCost) * 100 : 0;
-                return (
-                  <div
-                    key={resource.id}
-                    className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-3 w-full border-b-[0.5px] border-slate-800/80 bg-transparent px-3"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-[14px] font-medium text-slate-200 truncate">{resource.name}</span>
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-normal bg-slate-800/80 border border-slate-700/50 text-slate-400 shrink-0">
-                        {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
-                      </span>
-                    </div>
-
-                    {/* Proportional visual ranking signal bar */}
-                    <div className="w-full sm:w-48 h-[2px] bg-slate-900 rounded-full overflow-hidden shrink-0">
-                      <div
-                        className="h-full rounded-full"
-                        style={{ width: `${widthPercent}%`, backgroundColor: 'var(--color-border-primary, rgb(51 65 85))' }}
-                      />
-                    </div>
-
-                    <div className="text-[14px] text-slate-300 font-medium sm:ml-auto font-mono text-sm shrink-0 text-left sm:text-right">
-                      {renderCost(cost, resource.type)}
-                    </div>
-                  </div>
-                );
-              })}
-
-              <div className="flex justify-end text-sm sm:text-base pt-2 items-center gap-1.5 mt-4">
-                <span className="text-slate-500">Estimated monthly total</span>
-                <span className="text-slate-200 font-medium font-mono">${totalCost.toFixed(2)}</span>
-              </div>
-            </div>
-          ) : (
-            <div className="text-[14px] text-slate-500 py-1">
-              No active spend detected.
             </div>
           )}
-        </section>
+
+          {/* OTHER ERROR */}
+          {costError && costError !== "PERMISSION_DENIED" && (
+            <div className="rounded-xl border border-gray-700 bg-gray-800/40 px-4 py-3">
+              <p className="text-xs text-gray-400">Cost data could not be retrieved for this scan.</p>
+            </div>
+          )}
+
+          {/* FREE TIER / ZERO SPEND — real $0, not missing data */}
+          {!costError && sortedServiceCosts.length === 0 && (
+            <div className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-4 text-center">
+              <p className="text-sm text-gray-300 font-medium">$0.00 this month</p>
+              <p className="text-xs text-gray-500 mt-1">
+                No billable spend detected. Your account may be within AWS Free Tier.
+              </p>
+            </div>
+          )}
+
+          {/* REAL COST DATA */}
+          {!costError && sortedServiceCosts.length > 0 && (
+            <div>
+              {/* Per-resource availability notice */}
+              {!resourceLevelEnabled && (
+                <div className="mb-3 flex items-start gap-2 px-3 py-2.5 rounded-lg bg-gray-800/40 border border-gray-700/60">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500 shrink-0 mt-0.5">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  <p className="text-xs text-gray-400 leading-relaxed">
+                    Showing costs by AWS service. For cost per individual resource, enable{" "}
+                    <a
+                      href="https://console.aws.amazon.com/cost-management/home#/settings"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
+                    >
+                      Resource-level data
+                    </a>{" "}
+                    in Cost Explorer settings (costs $0.01/resource/day).
+                  </p>
+                </div>
+              )}
+
+              {/* Cost rows */}
+              <div className="space-y-0">
+                {sortedServiceCosts.map(([serviceName, amount]) => {
+                  const label = AWS_SERVICE_LABELS[serviceName] || serviceName;
+                  const barPct = Math.max(4, Math.round((amount / maxServiceCost) * 100));
+                  return (
+                    <div
+                      key={serviceName}
+                      className="flex items-center gap-3 py-2.5 border-b border-gray-800/60 last:border-b-0"
+                    >
+                      <span className="text-sm text-gray-200 min-w-0 flex-1 truncate">{label}</span>
+                      <div className="w-28 h-1 bg-gray-800 rounded-full shrink-0 hidden sm:block">
+                        <div
+                          className="h-1 bg-teal-500/50 rounded-full transition-all"
+                          style={{ width: `${barPct}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-mono text-gray-100 shrink-0 w-24 text-right">
+                        {formatCost(amount)}
+                        <span className="text-xs text-gray-500 font-sans"> / mo</span>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Monthly total */}
+              <div className="flex justify-end items-baseline gap-2 pt-3 border-t border-gray-800 mt-1">
+                <span className="text-xs text-gray-500">Estimated monthly total</span>
+                <span className="text-lg font-semibold text-white">{formatCost(totalCurrentMonth)}</span>
+              </div>
+            </div>
+          )}
+
+        </div>
 
         {/* Healthy & free resources section */}
         <section className="flex flex-col gap-2">
