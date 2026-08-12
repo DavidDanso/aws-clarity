@@ -22,3 +22,10 @@ export function formatTimestamp(isoString) {
     hour12: true,
   });
 }
+
+export function formatCost(amount) {
+  if (amount === null || amount === undefined) return "—";
+  if (amount < 0.01) return "< $0.01";
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(2)}k`;
+  return `$${amount.toFixed(2)}`;
+}

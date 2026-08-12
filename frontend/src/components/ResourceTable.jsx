@@ -1,7 +1,14 @@
 import { useState, useMemo } from "react";
 import { RESOURCE_TYPE_LABELS, STATUS_BADGE } from "../utils/constants";
+import { formatCost } from "../utils/formatters";
 
-export default function ResourceTable({ resources, onInspect, accountId = "" }) {
+export default function ResourceTable({
+  resources,
+  onInspect,
+  accountId = "",
+  costByResource = {},
+  resourceLevelEnabled = false,
+}) {
   const [searchQuery, setSearchQuery] = useState("");
 
   // resources is now a pre-flattened array from DashboardScreen
@@ -21,12 +28,23 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
   // Export CSV
   const handleExportCSV = () => {
     const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const headers = ["Name", "ID", "Type", "Status", "Issues Count", "Issues Detail"];
+    const headers = [
+      "Name",
+      "ID",
+      "Type",
+      "Status",
+      ...(resourceLevelEnabled ? ["Cost / mo"] : []),
+      "Issues Count",
+      "Issues Detail",
+    ];
     const rows = filtered.map(r => [
       escape(r.name),
       escape(r.id),
       escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
       escape(r.status),
+      ...(resourceLevelEnabled
+        ? [escape(costByResource[r.id] ? `$${costByResource[r.id]}` : "—")]
+        : []),
       escape(r.issues.length),
       escape(r.issues.length > 0 ? r.issues.map(i => i.message).join("; ") : "None"),
     ].join(","));
@@ -81,6 +99,7 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
+                {resourceLevelEnabled && <th className="px-4 py-3 text-right">COST / MO</th>}
                 <th className="px-4 py-3 hidden sm:table-cell">Issues</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
@@ -88,13 +107,13 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
             <tbody>
               {flatList.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={resourceLevelEnabled ? 6 : 5} className="px-4 py-12 text-center text-slate-500">
                     No resources discovered in this scan.
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={resourceLevelEnabled ? 6 : 5} className="px-4 py-12 text-center text-slate-500">
                     No resources match the search query.
                   </td>
                 </tr>
@@ -119,6 +138,13 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
                         {resource.status}
                       </span>
                     </td>
+                    {resourceLevelEnabled && (
+                      <td className="text-right pr-4 font-mono text-sm text-gray-300">
+                        {costByResource[resource.id]
+                          ? formatCost(costByResource[resource.id])
+                          : <span className="text-gray-600 text-xs">—</span>}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">
                       {resource.issues.length}
                     </td>
@@ -151,3 +177,4 @@ export default function ResourceTable({ resources, onInspect, accountId = "" }) 
     </div>
   );
 }
+

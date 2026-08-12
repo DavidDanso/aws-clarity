@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import { RESOURCE_TYPE_LABELS } from "../utils/constants";
+import { formatCost } from "../utils/formatters";
 import { scanAccount } from "../services/api";
 
 const AWS_SERVICE_LABELS = {
@@ -31,12 +32,7 @@ const AWS_SERVICE_LABELS = {
   "Amazon CloudFront": "CloudFront",
 };
 
-const formatCost = (amount) => {
-  if (amount === null || amount === undefined) return "—";
-  if (amount < 0.01) return "< $0.01";
-  if (amount >= 1000) return `$${(amount / 1000).toFixed(2)}k`;
-  return `$${amount.toFixed(2)}`;
-};
+
 
 export default function DashboardScreen({
   scanResults,
@@ -146,12 +142,23 @@ export default function DashboardScreen({
 
   const handleExportCSV = () => {
     const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const headers = ["Name", "ID", "Type", "Status", "Issues Count", "Issues Detail"];
+    const headers = [
+      "Name",
+      "ID",
+      "Type",
+      "Status",
+      ...(resourceLevelEnabled ? ["Cost / mo"] : []),
+      "Issues Count",
+      "Issues Detail",
+    ];
     const rows = allResources.map(r => [
       escape(r.name),
       escape(r.id),
       escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
       escape(r.status),
+      ...(resourceLevelEnabled
+        ? [escape(costData.by_resource?.[r.id] ? `$${costData.by_resource[r.id]}` : "—")]
+        : []),
       escape(r.issues?.length || 0),
       escape(r.issues && r.issues.length > 0 ? r.issues.map(i => i.message).join("; ") : "None"),
     ].join(","));
