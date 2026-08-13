@@ -3,15 +3,26 @@ import { RESOURCE_TYPE_LABELS, STATUS_BADGE } from "../utils/constants";
 import { formatCost } from "../utils/formatters";
 
 export default function ResourceTable({
-  resources,
+  resources = [],
   onInspect,
   accountId = "",
-  costByResource = {},
   resourceLevelEnabled = false,
+  hasAnyCost = false,
 }) {
   const [searchQuery, setSearchQuery] = useState("");
+  const [sortKey, setSortKey] = useState(null);
+  const [sortDir, setSortDir] = useState("desc");
 
-  // resources is now a pre-flattened array from DashboardScreen
+  const handleSort = (key) => {
+    if (sortKey === key) {
+      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  // resources is pre-flattened array with costInfo attached
   const flatList = resources;
 
   // Apply filters: search query only
@@ -25,6 +36,17 @@ export default function ResourceTable({
     );
   }, [flatList, searchQuery]);
 
+  const sortedResources = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (sortKey === "cost") {
+        const aAmt = a.costInfo?.amount ?? -1;
+        const bAmt = b.costInfo?.amount ?? -1;
+        return sortDir === "desc" ? bAmt - aAmt : aAmt - bAmt;
+      }
+      return 0; // keep existing order for other sort keys
+    });
+  }, [filtered, sortKey, sortDir]);
+
   // Export CSV
   const handleExportCSV = () => {
     const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
@@ -33,21 +55,33 @@ export default function ResourceTable({
       "ID",
       "Type",
       "Status",
-      ...(resourceLevelEnabled ? ["Cost / mo"] : []),
+      "Cost / mo",
+      "Cost note",
       "Issues Count",
       "Issues Detail",
     ];
-    const rows = filtered.map(r => [
-      escape(r.name),
-      escape(r.id),
-      escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
-      escape(r.status),
-      ...(resourceLevelEnabled
-        ? [escape(costByResource[r.id] ? `$${costByResource[r.id]}` : "—")]
-        : []),
-      escape(r.issues.length),
-      escape(r.issues.length > 0 ? r.issues.map(i => i.message).join("; ") : "None"),
-    ].join(","));
+    const rows = sortedResources.map((r) =>
+      [
+        escape(r.name),
+        escape(r.id),
+        escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
+        escape(r.status),
+        escape(
+          r.costInfo?.amount !== null && r.costInfo?.amount !== undefined
+            ? formatCost(r.costInfo.amount)
+            : "—"
+        ),
+        escape(
+          r.costInfo?.isExact
+            ? "Exact"
+            : r.costInfo?.sharedCount > 1
+            ? `Estimated (÷${r.costInfo.sharedCount})`
+            : "—"
+        ),
+        escape(r.issues?.length || 0),
+        escape(r.issues && r.issues.length > 0 ? r.issues.map((i) => i.message).join("; ") : "None"),
+      ].join(",")
+    );
     const csvString = [headers.map(escape).join(","), ...rows].join("\n");
     const date = new Date().toISOString().slice(0, 10);
     const filename = `aws-clarity-scan-${accountId || "account"}-${date}.csv`;
@@ -64,6 +98,28 @@ export default function ResourceTable({
 
   return (
     <div className="space-y-4">
+      {/* Notice above filter row when service-level attribution */}
+      {!resourceLevelEnabled && hasAnyCost && (
+        <div className="flex items-center gap-2 mb-3 px-1">
+          <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-600 shrink-0">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <p className="text-xs text-gray-500">
+            Costs are estimated by splitting each AWS service total across resources of that type.
+            Hover any amount for details. Enable{" "}
+            <a
+              href="https://console.aws.amazon.com/cost-management/home#/settings"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-teal-500 hover:text-teal-400 underline underline-offset-2 transition-colors"
+            >
+              Resource-level data
+            </a>{" "}
+            in Cost Explorer for exact per-resource costs.
+          </p>
+        </div>
+      )}
+
       <div className="bg-slate-800/60 border border-slate-700/50 rounded-2xl backdrop-blur-sm overflow-hidden">
         {/* Filters */}
         <div className="flex flex-col gap-2 p-4 border-b border-slate-700/50">
@@ -99,7 +155,15 @@ export default function ResourceTable({
                 <th className="px-4 py-3">Name</th>
                 <th className="px-4 py-3">Type</th>
                 <th className="px-4 py-3">Status</th>
-                {resourceLevelEnabled && <th className="px-4 py-3 text-right">COST / MO</th>}
+                <th
+                  onClick={() => handleSort("cost")}
+                  className="text-right pr-3 cursor-pointer select-none hover:text-gray-200 transition-colors whitespace-nowrap hidden sm:table-cell"
+                >
+                  COST / MO
+                  {sortKey === "cost" && (
+                    <span className="ml-1 text-teal-400 text-xs">{sortDir === "desc" ? "↓" : "↑"}</span>
+                  )}
+                </th>
                 <th className="px-4 py-3 hidden sm:table-cell">Issues</th>
                 <th className="px-4 py-3 text-right">Action</th>
               </tr>
@@ -107,18 +171,18 @@ export default function ResourceTable({
             <tbody>
               {flatList.length === 0 ? (
                 <tr>
-                  <td colSpan={resourceLevelEnabled ? 6 : 5} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                     No resources discovered in this scan.
                   </td>
                 </tr>
-              ) : filtered.length === 0 ? (
+              ) : sortedResources.length === 0 ? (
                 <tr>
-                  <td colSpan={resourceLevelEnabled ? 6 : 5} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={6} className="px-4 py-12 text-center text-slate-500">
                     No resources match the search query.
                   </td>
                 </tr>
               ) : (
-                filtered.map((resource) => (
+                sortedResources.map((resource) => (
                   <tr
                     key={resource.id}
                     className="border-b border-slate-700/30 hover:bg-slate-700/20 transition-colors"
@@ -138,15 +202,37 @@ export default function ResourceTable({
                         {resource.status}
                       </span>
                     </td>
-                    {resourceLevelEnabled && (
-                      <td className="text-right pr-4 font-mono text-sm text-gray-300">
-                        {costByResource[resource.id]
-                          ? formatCost(costByResource[resource.id])
-                          : <span className="text-gray-600 text-xs">—</span>}
-                      </td>
-                    )}
+                    <td className="text-right pr-3 hidden sm:table-cell">
+                      {(() => {
+                        const info = resource.costInfo;
+                        if (!info || info.amount === null) {
+                          return <span className="text-gray-700 text-xs font-mono">—</span>;
+                        }
+                        return (
+                          <div className="flex flex-col items-end">
+                            <span
+                              className={`text-sm font-mono ${info.amount > 0 ? "text-gray-100" : "text-gray-500"}`}
+                              title={
+                                info.isExact
+                                  ? "Exact cost from AWS Cost Explorer resource-level data"
+                                  : info.sharedCount > 1
+                                    ? `Estimated: ${info.serviceName} service cost split across ${info.sharedCount} ${RESOURCE_TYPE_LABELS[resource.type] || resource.type} resources`
+                                    : `Exact: sole resource using ${info.serviceName}`
+                              }
+                            >
+                              {formatCost(info.amount)}
+                            </span>
+                            {!info.isExact && info.sharedCount > 1 && (
+                              <span className="text-gray-600 text-xs leading-none mt-0.5">
+                                ÷{info.sharedCount}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3 text-slate-400 hidden sm:table-cell">
-                      {resource.issues.length}
+                      {resource.issues?.length || 0}
                     </td>
                     <td className="px-4 py-3 text-right">
                       <button
@@ -177,4 +263,3 @@ export default function ResourceTable({
     </div>
   );
 }
-

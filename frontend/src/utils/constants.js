@@ -50,3 +50,32 @@ export const SUPPORTED_REGIONS = [
   { id: "ca-central-1",   label: "Canada (Central)" },
   { id: "sa-east-1",      label: "South America (São Paulo)" },
 ];
+
+// Maps AWS Cost Explorer service names to the resource `type` values our scanners use
+// Used to attribute service-level CE costs to individual resources
+export const CE_SERVICE_TO_RESOURCE_TYPES = {
+  "Amazon Elastic Compute Cloud - Compute": ["ec2_instance"],
+  "Amazon EC2 - Other": ["ebs_volume", "elastic_ip", "snapshot"],
+  "Amazon Simple Storage Service": ["s3_bucket"],
+  "Amazon Relational Database Service": ["rds_instance"],
+  "Amazon Aurora MySQL": ["aurora_cluster"],
+  "Amazon Aurora PostgreSQL": ["aurora_cluster"],
+  "AWS Lambda": ["lambda_function"],
+  "Amazon DynamoDB": ["dynamodb_table"],
+  "Amazon Virtual Private Cloud": ["vpc", "nat_gateway", "internet_gateway"],
+  "Amazon API Gateway": ["api_gateway"],
+  "AWS Secrets Manager": ["secret"],
+  "Amazon ElastiCache": ["elasticache_cluster"],
+  "Amazon Elastic Container Service": ["ecs_cluster"],
+  "Amazon Elastic Kubernetes Service": ["eks_cluster"],
+  "Amazon Redshift": ["redshift_cluster"],
+  "Amazon Simple Queue Service": ["sqs_queue"],
+  "Amazon Simple Notification Service": ["sns_topic"],
+  "Amazon CloudWatch": ["cloudwatch_alarm"],
+  "AWS CloudFormation": ["cloudformation_stack"],
+  "Amazon Elastic Container Registry": ["ecr_repository"],
+  "Amazon EventBridge": ["eventbridge_rule"],
+  "Elastic Load Balancing": ["load_balancer"],
+  "Amazon EC2 Auto Scaling": ["auto_scaling_group"],
+};
+
