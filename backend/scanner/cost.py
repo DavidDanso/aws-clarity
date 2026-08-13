@@ -15,13 +15,31 @@ def _get_date_range():
     return start, end
 
 
-def _query_ce(ce_client, start, end, group_by):
-    """Run a Cost Explorer query. Returns ResultsByTime or raises."""
+def _query_service_costs(ce_client, start, end):
+    """Query service-level costs via GetCostAndUsage (always free)."""
     response = ce_client.get_cost_and_usage(
         TimePeriod={"Start": start, "End": end},
         Granularity="MONTHLY",
         Metrics=["UnblendedCost"],
-        GroupBy=[group_by],
+        GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
+    )
+    return response.get("ResultsByTime", [])
+
+
+def _query_resource_costs(ce_client, start, end):
+    """
+    Query resource-level costs via GetCostAndUsageWithResources.
+    This API requires 'Resource-level data' to be enabled in AWS CE settings.
+    Returns empty list (not an error) if the feature is not enabled.
+    """
+    # Filter is required for GetCostAndUsageWithResources (unlike GetCostAndUsage).
+    # Restricting to Usage records excludes Credits/Refunds and keeps the response focused.
+    response = ce_client.get_cost_and_usage_with_resources(
+        TimePeriod={"Start": start, "End": end},
+        Granularity="MONTHLY",
+        Metrics=["UnblendedCost"],
+        Filter={"Dimensions": {"Key": "RECORD_TYPE", "Values": ["Usage"]}},
+        GroupBy=[{"Type": "DIMENSION", "Key": "RESOURCE_ID"}],
     )
     return response.get("ResultsByTime", [])
 
@@ -31,7 +49,7 @@ def scan(session):
     Fetch real AWS billing data from Cost Explorer.
     Returns:
         by_service: dict of {service_name: amount} — always populated if permission exists
-        by_resource: dict of {resource_id: {amount, service}} — only if resource-level CE is enabled
+        by_resource: dict of {resource_id: amount} — only if resource-level CE is enabled
         total_current_month: float
         period: {start, end}
         currency: "USD"
@@ -45,11 +63,12 @@ def scan(session):
         # --- Service-level costs (always available, free) ---
         by_service = {}
         total = 0.0
-        for result in _query_ce(ce, start, end, {"Type": "DIMENSION", "Key": "SERVICE"}):
+        for result in _query_service_costs(ce, start, end):
             for group in result.get("Groups", []):
                 service = group["Keys"][0]
                 amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                if amount > 0.00009:
+                # Lower threshold so sub-cent charges from small accounts appear
+                if amount > 0.000001:
                     by_service[service] = round(amount, 4)
                     total += amount
 
@@ -57,18 +76,25 @@ def scan(session):
         by_resource = {}
         resource_level_enabled = False
         try:
-            for result in _query_ce(ce, start, end, {"Type": "DIMENSION", "Key": "RESOURCE_ID"}):
+            for result in _query_resource_costs(ce, start, end):
                 for group in result.get("Groups", []):
                     resource_id = group["Keys"][0]
                     amount = float(group["Metrics"]["UnblendedCost"]["Amount"])
-                    if amount > 0.00009 and resource_id and resource_id != "NoResourceId":
+                    if amount > 0.000001 and resource_id and resource_id != "NoResourceId":
                         by_resource[resource_id] = round(amount, 4)
             if by_resource:
                 resource_level_enabled = True
         except ClientError as e:
-            # DataUnavailableException means resource-level CE is not enabled — silently skip
-            if e.response["Error"]["Code"] not in ["DataUnavailableException"]:
-                print(f"Resource-level cost query failed: {e}")
+            code = e.response["Error"]["Code"]
+            # DataUnavailableException or BillingViewAccessForbidden means
+            # resource-level CE is not enabled in this account — silently skip.
+            if code not in ("DataUnavailableException", "BillingViewAccessForbidden",
+                            "AccessDeniedException", "OptInRequired"):
+                print(f"Resource-level cost query failed ({code}): {e}")
+        except Exception as e:
+            # Catch ParamValidationError and any other non-ClientError exceptions
+            # so they never escape and crash the service-level cost data.
+            print(f"Resource-level cost query failed (non-ClientError): {e}")
 
         return {
             "by_service": by_service,

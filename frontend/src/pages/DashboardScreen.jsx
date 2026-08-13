@@ -410,12 +410,14 @@ export default function DashboardScreen({
             </div>
           )}
 
-          {/* FREE TIER / ZERO SPEND — real $0, not missing data */}
+          {/* FREE TIER / ZERO SPEND — real $0, or CE 24h delay */}
           {!costError && sortedServiceCosts.length === 0 && (
             <div className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-4 text-center">
               <p className="text-sm text-gray-300 font-medium">$0.00 this month</p>
               <p className="text-xs text-gray-500 mt-1">
-                No billable spend detected. Your account may be within AWS Free Tier.
+                No billable spend detected. Your account may be within the AWS Free Tier, or
+                today&apos;s charges may not have appeared yet — Cost Explorer data has up to a
+                24-hour delay.
               </p>
             </div>
           )}
