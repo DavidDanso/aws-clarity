@@ -94,7 +94,7 @@ def run_scan(role_arn, regions):
 
     resources["iam_roles"] = iam.scan(session)
     resources["s3_buckets"] = s3.scan(session, selected_regions=regions)
-    cost_data = cost.scan(session)
+    cost_data = cost.scan(session, regions=regions)
 
     # Run misconfig and orphan evaluation
     resources = evaluate(session, resources)
