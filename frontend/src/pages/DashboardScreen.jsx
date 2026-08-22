@@ -2,8 +2,9 @@ import { useState, useMemo } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import ResourceTable from "../components/ResourceTable";
-import { RESOURCE_TYPE_LABELS, CE_SERVICE_TO_RESOURCE_TYPES, SUPPORTED_REGIONS } from "../utils/constants";
-import { formatCost, attributeCosts } from "../utils/formatters";
+import { RESOURCE_TYPE_LABELS, SUPPORTED_REGIONS } from "../utils/constants";
+import { formatCost } from "../utils/formatters";
+import { attributeCosts, CE_SERVICE_WEIGHTS } from "../utils/costAttribution";
 import { scanAccount } from "../services/api";
 
 const AWS_SERVICE_LABELS = {
@@ -14,8 +15,8 @@ const AWS_SERVICE_LABELS = {
   "Amazon Aurora MySQL": "Aurora MySQL",
   "Amazon Aurora PostgreSQL": "Aurora PostgreSQL",
   "AWS Lambda": "Lambda Functions",
-  "Amazon DynamoDB": "DynamoDB",
-  "Amazon Virtual Private Cloud": "VPC / Networking",
+  "Amazon DynamoDB": "DynamoDB Tables",
+  "Amazon Virtual Private Cloud": "VPC / NAT Gateway",
   "Amazon API Gateway": "API Gateway",
   "AWS Secrets Manager": "Secrets Manager",
   "Amazon ElastiCache": "ElastiCache",
@@ -120,41 +121,42 @@ export default function DashboardScreen({
 
   const hasIssues = sortedSecurityResources.length > 0;
 
+  // ── Real cost data from CE ──────────────────────────────────
   const costData = scanResults?.costs ?? {};
+  const costError = costData.error ?? null;
+  const byService = { ...(costData.by_service ?? {}), ...(costData.by_service_global ?? {}) };
+  const totalCurrentMonth = costData.total_current_month ?? 0;
+  const costPeriod = costData.period ?? {};
+  const costCached = costData.cached ?? false;
+  const costRegion = costData.region ?? null;
+  const hasAnyCost = totalCurrentMonth > 0.0000001;
+  // RESOURCE_ID queries removed — resource-level CE not used
+  const resourceLevelEnabled = false;
 
-  // Attribute real CE costs to individual resources
-  const resourceCostMap = useMemo(
-    () => attributeCosts(allResources, costData, CE_SERVICE_TO_RESOURCE_TYPES),
-    [allResources, costData]
-  );
-
-  // Attach cost data to every resource for the table
-  const allResourcesWithCost = useMemo(
-    () =>
-      allResources.map((resource) => ({
-        ...resource,
-        costInfo: resourceCostMap.get(resource.id) ?? {
-          amount: null,
-          isExact: false,
-          sharedCount: 0,
-          serviceName: null,
-        },
-      })),
-    [allResources, resourceCostMap]
-  );
-
-  const resourceLevelEnabled = costData?.resource_level_enabled ?? false;
-  const costError = costData?.error ?? null;
-  const byService = costData?.by_service ?? {};
-  const totalCurrentMonth = costData?.total_current_month ?? 0;
-  const costPeriod = costData?.period ?? {};
-
+  // Sort services by cost descending
   const sortedServiceCosts = Object.entries(byService)
     .filter(([, amount]) => amount > 0)
     .sort(([, a], [, b]) => b - a);
 
   const maxServiceCost = sortedServiceCosts.length > 0 ? sortedServiceCosts[0][1] : 1;
-  const hasAnyCost = totalCurrentMonth > 0;
+
+  // Attribute costs to individual resources using weighted algorithm
+  const resourceCostMap = useMemo(
+    () => attributeCosts(allResources, costData),
+    [allResources, costData]
+  );
+
+  // Attach costInfo to every resource for the table
+  const allResourcesWithCost = useMemo(
+    () =>
+      allResources.map((resource) => ({
+        ...resource,
+        costInfo: resourceCostMap.get(resource.id) ?? {
+          amount: null, isShared: false, sharedCount: 0, serviceName: null,
+        },
+      })),
+    [allResources, resourceCostMap]
+  );
 
   // Step 3: Section 3 — healthy resources without security issues
   const healthyFreeResources = useMemo(() => {
@@ -479,7 +481,7 @@ export default function DashboardScreen({
                 const barPct = Math.max(4, Math.round((amount / maxServiceCost) * 100));
 
                 // Count resources attributed to this service for context
-                const matchingTypes = CE_SERVICE_TO_RESOURCE_TYPES[serviceName] ?? [];
+                const matchingTypes = Object.keys(CE_SERVICE_WEIGHTS[serviceName] ?? {});
                 const matchingCount = allResourcesWithCost.filter(r =>
                   matchingTypes.includes(r.type)
                 ).length;
