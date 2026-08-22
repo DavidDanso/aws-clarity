@@ -108,10 +108,7 @@ export const CE_SERVICE_WEIGHTS = {
  */
 export const attributeCosts = (allResources, costData) => {
   const result = new Map();
-  const byService = {
-    ...(costData?.by_service ?? {}),
-    ...(costData?.by_service_global ?? {}),
-  };
+  const byService = costData?.by_service ?? {};
 
   if (!allResources?.length || !Object.keys(byService).length) {
     // No resources or no cost data — all resources get null

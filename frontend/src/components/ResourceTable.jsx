@@ -202,32 +202,28 @@ export default function ResourceTable({
                         {resource.status}
                       </span>
                     </td>
-                    <td className="text-right pr-3 hidden sm:table-cell">
+                    <td className="text-right pr-3 hidden sm:table-cell whitespace-nowrap">
                       {(() => {
                         const info = resource.costInfo;
                         if (!info || info.amount === null) {
                           return <span className="text-gray-700 text-xs font-mono">—</span>;
                         }
                         return (
-                          <div className="flex flex-col items-end">
-                            <span
-                              className={`text-sm font-mono ${info.amount > 0 ? "text-gray-100" : "text-gray-500"}`}
-                              title={
-                                info.isExact
-                                  ? "Exact cost from AWS Cost Explorer resource-level data"
-                                  : info.sharedCount > 1
-                                    ? `Estimated: ${info.serviceName} service cost split across ${info.sharedCount} ${RESOURCE_TYPE_LABELS[resource.type] || resource.type} resources`
-                                    : `Exact: sole resource using ${info.serviceName}`
-                              }
-                            >
+                          <span
+                            title={
+                              info.serviceName
+                                ? `From: ${info.serviceName}${info.isShared ? ` (split across ${info.sharedCount} resources)` : ''}`
+                                : undefined
+                            }
+                            className="cursor-default"
+                          >
+                            <span className={`text-sm font-mono ${info.amount > 0 ? "text-gray-100" : "text-gray-500"}`}>
                               {formatCost(info.amount)}
                             </span>
-                            {!info.isExact && info.sharedCount > 1 && (
-                              <span className="text-gray-600 text-xs leading-none mt-0.5">
-                                ÷{info.sharedCount}
-                              </span>
+                            {info.isShared && (
+                              <span className="text-gray-600 text-xs ml-1">÷{info.sharedCount}</span>
                             )}
-                          </div>
+                          </span>
                         );
                       })()}
                     </td>

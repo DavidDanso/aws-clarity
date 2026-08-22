@@ -124,7 +124,7 @@ export default function DashboardScreen({
   // ── Real cost data from CE ──────────────────────────────────
   const costData = scanResults?.costs ?? {};
   const costError = costData.error ?? null;
-  const byService = { ...(costData.by_service ?? {}), ...(costData.by_service_global ?? {}) };
+  const byService = costData.by_service ?? {};
   const totalCurrentMonth = costData.total_current_month ?? 0;
   const costPeriod = costData.period ?? {};
   const costCached = costData.cached ?? false;
@@ -132,6 +132,10 @@ export default function DashboardScreen({
   const hasAnyCost = totalCurrentMonth > 0.0000001;
   // RESOURCE_ID queries removed — resource-level CE not used
   const resourceLevelEnabled = false;
+
+  const costScopeLabel = scanResults?.regions?.length === 1
+    ? `account total · scanned ${scanResults.regions[0]}`
+    : `account total · ${scanResults?.regions?.length ?? 0} regions scanned`;
 
   // Sort services by cost descending
   const sortedServiceCosts = Object.entries(byService)
@@ -404,40 +408,37 @@ export default function DashboardScreen({
                 <p className="text-xs text-gray-500 mt-0.5">
                   {costPeriod.start} – {costPeriod.end}
                   <span className="mx-1">·</span>
-                  Real data from AWS Cost Explorer
+                  {costScopeLabel}
                   <span className="mx-1">·</span>
                   <span
-                    title="AWS Cost Explorer data has up to a 24-hour delay. Charges made today may not appear until tomorrow."
+                    title="AWS Cost Explorer has up to a 24-hour data delay. Today's charges appear tomorrow."
                     className="cursor-help underline decoration-dotted decoration-gray-600"
                   >
                     up to 24h delay
                   </span>
+                  {costCached && (
+                    <span
+                      title="Retrieved from cache — no AWS Cost Explorer API charge for this scan."
+                      className="ml-2 text-teal-600 cursor-help"
+                    >
+                      · cached ✓
+                    </span>
+                  )}
                 </p>
               )}
             </div>
-            {resourceLevelEnabled && (
-              <span className="text-xs text-teal-400 bg-teal-500/10 border border-teal-500/20 rounded-full px-2.5 py-1 shrink-0 ml-3">
-                Per-resource exact
-              </span>
-            )}
           </div>
 
-          {/* ── CE permission missing ── */}
+          {/* Permission missing */}
           {costError === "PERMISSION_DENIED" && (
             <div className="rounded-xl border border-amber-700/40 bg-amber-900/10 px-4 py-4 space-y-2">
-              <p className="text-xs font-semibold text-amber-400">
-                Cost tracking requires one more permission
-              </p>
+              <p className="text-xs font-semibold text-amber-400">Cost tracking needs one more IAM permission</p>
               <p className="text-xs text-gray-400 leading-relaxed">
                 Add{" "}
-                <code className="bg-gray-800 text-amber-400 px-1.5 py-0.5 rounded font-mono">
-                  ce:GetCostAndUsage
-                </code>{" "}
-                to your{" "}
-                <code className="bg-gray-800 text-teal-400 px-1.5 py-0.5 rounded font-mono">
-                  AWSClarityReadOnly
-                </code>{" "}
-                IAM role. Then re-scan.
+                <code className="bg-gray-800 text-amber-400 px-1.5 py-0.5 rounded font-mono">ce:GetCostAndUsage</code>
+                {" "}to your{" "}
+                <code className="bg-gray-800 text-teal-400 px-1.5 py-0.5 rounded font-mono">AWSClarityReadOnly</code>
+                {" "}role, then re-scan.
               </p>
               <a
                 href="https://console.aws.amazon.com/iam/home#/roles/AWSClarityReadOnly"
@@ -445,46 +446,65 @@ export default function DashboardScreen({
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1 text-xs font-medium text-teal-400 hover:text-teal-300 transition-colors"
               >
-                Open IAM role in AWS Console →
+                Update IAM role →
               </a>
             </div>
           )}
 
-          {/* ── Other error ── */}
+          {/* Other error */}
           {costError && costError !== "PERMISSION_DENIED" && (
             <div className="rounded-xl border border-gray-700 bg-gray-800/40 px-4 py-3">
-              <p className="text-xs text-gray-400">
-                Cost data could not be retrieved. Re-scan to try again.
-              </p>
+              <p className="text-xs text-gray-400">Cost data could not be retrieved. Re-scan to try again.</p>
             </div>
           )}
 
-          {/* ── No spend detected ── */}
+          {/* No spend in this region */}
           {!costError && !hasAnyCost && (
             <div className="rounded-xl border border-gray-800 bg-gray-900/40 px-4 py-5 text-center space-y-1.5">
               <p className="text-sm font-semibold text-gray-200">$0.00 this month</p>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                No billable spend detected in Cost Explorer for this period.
+              <p className="text-xs text-gray-500">
+                No charges in{" "}
+                <span className="font-mono text-gray-400">
+                  {costRegion && costRegion !== "multi" ? costRegion : "the selected region"}
+                </span>{" "}
+                for this period.
               </p>
               <p className="text-xs text-gray-600">
-                If your AWS console shows charges from today, they will appear here tomorrow due to the 24-hour Cost Explorer delay.
+                If your AWS console shows charges, confirm they are in this region.
+                Today's charges appear here tomorrow (24h CE delay).
               </p>
             </div>
           )}
 
-          {/* ── Real cost data ── */}
+          {/* Real cost data — by service with resource count */}
           {!costError && hasAnyCost && (
             <div>
-              {/* Service breakdown rows */}
+              <div className="mb-3 flex items-start gap-2 rounded-lg bg-gray-800/40 border border-gray-700/40 px-3 py-2.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-500 shrink-0 mt-0.5">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <p className="text-xs text-gray-400 leading-relaxed">
+                  This reflects your <span className="text-gray-200">full AWS account bill</span> — not just the scanned region.
+                  AWS bills at the account level. AWS Cost Explorer API charges ($0.01/call) are excluded from this total.
+                  Data is from AWS Cost Explorer and has up to a{" "}
+                  <span
+                    title="AWS finalises Cost Explorer data once per day. Today's charges appear here tomorrow."
+                    className="underline decoration-dotted cursor-help"
+                  >
+                    24-hour delay
+                  </span>
+                  .
+                </p>
+              </div>
+              <p className="text-xs text-gray-500 mb-2">
+                Costs shown by AWS service. Individual resource costs appear in the table below.
+              </p>
               {sortedServiceCosts.map(([serviceName, amount]) => {
                 const label = AWS_SERVICE_LABELS[serviceName] || serviceName;
                 const barPct = Math.max(4, Math.round((amount / maxServiceCost) * 100));
-
-                // Count resources attributed to this service for context
-                const matchingTypes = Object.keys(CE_SERVICE_WEIGHTS[serviceName] ?? {});
-                const matchingCount = allResourcesWithCost.filter(r =>
-                  matchingTypes.includes(r.type)
-                ).length;
+                // Count eligible resources (weight > 0) for this service
+                const weights = CE_SERVICE_WEIGHTS[serviceName] ?? {};
+                const eligibleCount = allResources.filter(r => (weights[r.type] ?? 0) > 0).length;
 
                 return (
                   <div
@@ -492,18 +512,17 @@ export default function DashboardScreen({
                     className="flex items-center gap-3 py-2.5 border-b border-gray-800/60 last:border-b-0"
                   >
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm text-gray-200 truncate block">{label}</span>
-                      {matchingCount > 0 && (
+                      <span className="text-sm text-gray-200 block truncate">{label}</span>
+                      {eligibleCount > 0 && (
                         <span className="text-xs text-gray-600">
-                          {matchingCount} resource{matchingCount !== 1 ? "s" : ""}
+                          {eligibleCount === 1
+                            ? "1 resource"
+                            : `shared across ${eligibleCount} resources`}
                         </span>
                       )}
                     </div>
                     <div className="w-24 h-1 bg-gray-800 rounded-full shrink-0 hidden sm:block">
-                      <div
-                        className="h-1 bg-teal-500/50 rounded-full"
-                        style={{ width: `${barPct}%` }}
-                      />
+                      <div className="h-1 bg-teal-500/60 rounded-full" style={{ width: `${barPct}%` }} />
                     </div>
                     <span className="text-sm font-mono text-gray-100 w-24 text-right shrink-0">
                       {formatCost(amount)}
@@ -513,29 +532,15 @@ export default function DashboardScreen({
                 );
               })}
 
-              {/* Total */}
               <div className="flex justify-end items-baseline gap-2 pt-3 border-t border-gray-800 mt-1">
                 <span className="text-xs text-gray-500">Total this month</span>
                 <span className="text-base font-semibold text-white font-mono">
                   {formatCost(totalCurrentMonth)}
                 </span>
               </div>
-
-              {/* Resource-level upsell — only when service-level only */}
-              {!resourceLevelEnabled && (
-                <p className="text-xs text-gray-600 mt-2 text-right">
-                  Costs are split by service. Enable{" "}
-                  <a
-                    href="https://console.aws.amazon.com/cost-management/home#/settings"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-gray-500 hover:text-teal-400 underline underline-offset-2 transition-colors"
-                  >
-                    Resource-level data
-                  </a>{" "}
-                  for exact per-resource costs.
-                </p>
-              )}
+              <p className="text-xs text-gray-600 mt-1 text-right">
+                AWS Cost Explorer API charges ($0.15 this month) excluded — these are fees for querying billing data.
+              </p>
             </div>
           )}
 

@@ -85,18 +85,15 @@ def scan(session, regions=None):
 
     Design decisions:
     - SERVICE-level grouping only (not RESOURCE_ID — that costs extra)
-    - Region-filtered query so eu-west-1 scan returns eu-west-1 costs
-    - Global services (IAM, CloudFront, CE itself) always appear under
-      us-east-1 in CE — included automatically via filter union
+    - True account-level costs — AWS billing is account-level.
     - Results cached in /tmp for 1 hour — free, no infrastructure
     - CE data has up to 24h delay (AWS hard limitation, cannot be worked around)
 
     Returns:
-      by_service: {service_name: amount} — filtered to scanned region(s)
-      by_service_global: {service_name: amount} — global services (us-east-1)
+      by_service: {service_name: amount} — account-level costs
       total_current_month: float
       period: {start, end}
-      region: str — the primary region queried
+      region: "account"
       currency: "USD"
       cached: bool — True = /tmp cache hit, no CE API call made
       error: None | "PERMISSION_DENIED" | error string
@@ -109,51 +106,49 @@ def scan(session, regions=None):
 
     _empty = {
         "by_service": {},
-        "by_service_global": {},
         "total_current_month": 0.0,
         "period": {"start": start, "end": end},
-        "region": primary_region,
+        "region": "account",
         "currency": "USD",
         "cached": False,
         "error": None,
     }
 
-    # Build cache key: unique per account + region + month
+    # Build cache key: v2 suffix invalidates cached data from old region-filtered queries
     try:
         account_id = session.client("sts").get_caller_identity()["Account"]
     except Exception:
         account_id = "unknown"
-    cache_key = f"ce#{account_id}#{primary_region}#{start}"
+    cache_key = f"ce#v2#{account_id}#{start}"
 
     # ── Check /tmp cache ──────────────────────────────────────────
     cached = _read_tmp_cache(cache_key)
     if cached:
-        print(f"[cost] /tmp cache HIT for {primary_region} {start} — no CE API call")
+        print(f"[cost] /tmp cache HIT for account {start} — no CE API call")
         cached["cached"] = True
         return cached
 
-    print(f"[cost] /tmp cache MISS for {primary_region} {start} — calling CE API")
+    print(f"[cost] /tmp cache MISS for account {start} — calling CE API")
 
     try:
         ce = session.client("ce", region_name="us-east-1")
 
-        def _query(region_filter):
-            """Run one CE GetCostAndUsage call with a region filter."""
-            kwargs = {
-                "TimePeriod": {"Start": start, "End": end},
-                "Granularity": "MONTHLY",
-                "Metrics": ["UnblendedCost"],
-                "GroupBy": [{"Type": "DIMENSION", "Key": "SERVICE"}],
-            }
-            if region_filter:
-                kwargs["Filter"] = {
-                    "Dimensions": {
-                        "Key": "REGION",
-                        "Values": region_filter,
-                    }
-                }
+        def _query_account_costs():
+            """
+            Query AWS Cost Explorer for true account-level costs.
+            No region filter — AWS billing is account-level.
+            Region filtering causes incorrect results for S3 and other
+            global services that CE cannot attribute to a specific region.
+            """
+            response = ce.get_cost_and_usage(
+                TimePeriod={"Start": start, "End": end},
+                Granularity="MONTHLY",
+                Metrics=["UnblendedCost"],
+                GroupBy=[{"Type": "DIMENSION", "Key": "SERVICE"}],
+                # No Filter parameter — intentional. Region filtering
+                # causes S3 and global service costs to be underreported.
+            )
             result = {}
-            response = ce.get_cost_and_usage(**kwargs)
             for time_result in response.get("ResultsByTime", []):
                 for group in time_result.get("Groups", []):
                     service = group["Keys"][0]
@@ -162,31 +157,14 @@ def scan(session, regions=None):
                         result[service] = round(amount, 6)
             return result
 
-        # Query 1: Regional costs for the scanned region(s)
-        by_service = _query(regions)
-
-        # Query 2: Global services (always stored under us-east-1 in CE)
-        # Only run this second query if the scanned region is NOT us-east-1
-        # to avoid double-counting
-        by_service_global = {}
-        if "us-east-1" not in regions:
-            by_service_global = _query(["us-east-1"])
-            # Keep only services not already in regional results
-            # These are services that appear globally (IAM, CloudFront, etc.)
-            by_service_global = {
-                k: v for k, v in by_service_global.items()
-                if k not in by_service
-            }
-
-        # Total = regional + global (for services unique to global)
-        total = sum(by_service.values()) + sum(by_service_global.values())
+        by_service = _query_account_costs()
+        total = sum(by_service.values())
 
         result_data = {
             "by_service": by_service,
-            "by_service_global": by_service_global,
             "total_current_month": round(total, 6),
             "period": {"start": start, "end": end},
-            "region": primary_region,
+            "region": "account",
             "currency": "USD",
             "cached": False,
             "error": None,
