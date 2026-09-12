@@ -112,8 +112,7 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "cloudformation:DescribeStacks",
           "cloudwatch:DescribeAlarms",
           "events:ListRules",
-          "apigateway:GET",
-          "ce:GetCostAndUsage"
+          "apigateway:GET"
         ]
         Resource = "*"
       }

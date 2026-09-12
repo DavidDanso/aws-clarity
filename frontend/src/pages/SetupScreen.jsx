@@ -23,8 +23,7 @@ const IAM_POLICY_JSON = `{
         "rds:DescribeDBInstances",
         "iam:ListRoles",
         "iam:ListRolePolicies",
-        "iam:GetRolePolicy",
-        "ce:GetCostAndUsage"
+        "iam:GetRolePolicy"
       ],
       "Resource": "*"
     }
@@ -108,7 +107,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
           Full visibility into your AWS account
         </h1>
         <p className="text-xs text-gray-400 mb-3">
-          Security misconfigs, orphaned resources, and active spend — in one scan.
+          Security misconfigs and orphaned resources — in one scan.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           {["🔒 Read-only", "⏱ Expires in 1hr", "🚫 No credentials stored"].map(label => (
