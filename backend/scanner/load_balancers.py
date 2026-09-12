@@ -20,8 +20,11 @@ def scan(session, region="us-east-1"):
                     status = "WARNING"
                     issues.append("Load balancer is publicly accessible. Confirm this is intentional.")
                 
+                subnets = [az.get("SubnetId") for az in lb.get("AvailabilityZones", []) if az.get("SubnetId")]
+                sec_groups = lb.get("SecurityGroups", [])
+                
                 resources.append({
-                    "id": lb_name,  # ARN is LoadBalancerArn, but requirement says id and name is LoadBalancerName
+                    "id": lb_name,
                     "name": lb_name,
                     "type": "load_balancer",
                     "status": status,
@@ -32,6 +35,9 @@ def scan(session, region="us-east-1"):
                         "type": lb.get("Type"),
                         "scheme": scheme,
                         "vpc_id": lb.get("VpcId"),
+                        "subnet_id": ", ".join(subnets) if subnets else None,
+                        "subnet_ids": subnets,
+                        "security_groups": sec_groups,
                         "created_time": lb.get("CreatedTime")
                     }
                 })
@@ -54,6 +60,9 @@ def scan(session, region="us-east-1"):
                     status = "WARNING"
                     issues.append("Load balancer is publicly accessible. Confirm this is intentional.")
                 
+                subnets = lb.get("Subnets", [])
+                sec_groups = lb.get("SecurityGroups", [])
+
                 resources.append({
                     "id": lb_name,
                     "name": lb_name,
@@ -66,6 +75,9 @@ def scan(session, region="us-east-1"):
                         "type": "classic",
                         "scheme": scheme,
                         "vpc_id": lb.get("VPCId"),
+                        "subnet_id": ", ".join(subnets) if subnets else None,
+                        "subnet_ids": subnets,
+                        "security_groups": sec_groups,
                         "created_time": lb.get("CreatedTime")
                     }
                 })

@@ -13,6 +13,18 @@ def scan(session, region="us-east-1"):
                     instance_id = instance.get("InstanceId")
                     tags = instance.get("Tags", [])
                     name = next((t["Value"] for t in tags if t["Key"] == "Name"), instance_id)
+                    
+                    # Extract attached EBS volume IDs
+                    ebs_volumes = [
+                        b["Ebs"]["VolumeId"]
+                        for b in instance.get("BlockDeviceMappings", [])
+                        if b.get("Ebs") and b["Ebs"].get("VolumeId")
+                    ]
+                    
+                    # Extract IAM instance profile
+                    iam_profile = instance.get("IamInstanceProfile", {})
+                    iam_role_arn = iam_profile.get("Arn") or iam_profile.get("Id")
+
                     resources.append({
                         "id": instance_id,
                         "name": name,
@@ -26,7 +38,11 @@ def scan(session, region="us-east-1"):
                             "launch_time": instance.get("LaunchTime"),
                             "vpc_id": instance.get("VpcId"),
                             "subnet_id": instance.get("SubnetId"),
-                            "security_groups": [sg.get("GroupId") for sg in instance.get("SecurityGroups", [])],
+                            "security_groups": [sg.get("GroupId") for sg in instance.get("SecurityGroups", []) if sg.get("GroupId")],
+                            "ebs_volumes": ebs_volumes,
+                            "iam_instance_profile": iam_role_arn,
+                            "public_ip": instance.get("PublicIpAddress"),
+                            "private_ip": instance.get("PrivateIpAddress"),
                             "tags": tags
                         }
                     })

@@ -24,6 +24,12 @@ def scan(session, region="us-east-1"):
                     status = "WARNING"
                     issues.append("NAT Gateway is in a failed state")
                 
+                eip_addrs = [
+                    addr.get("PublicIp") or addr.get("AllocationId")
+                    for addr in nat.get("NatGatewayAddresses", [])
+                    if addr.get("PublicIp") or addr.get("AllocationId")
+                ]
+
                 resources.append({
                     "id": nat_id,
                     "name": name,
@@ -35,6 +41,8 @@ def scan(session, region="us-east-1"):
                         "state": state,
                         "vpc_id": nat.get("VpcId"),
                         "subnet_id": nat.get("SubnetId"),
+                        "elastic_ip": ", ".join(eip_addrs) if eip_addrs else None,
+                        "elastic_ips": eip_addrs,
                         "create_time": nat.get("CreateTime"),
                         "tags": tags
                     }

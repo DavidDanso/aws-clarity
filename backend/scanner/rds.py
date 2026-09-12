@@ -11,6 +11,11 @@ def scan(session, region="us-east-1"):
             for db in page.get("DBInstances", []):
                 db_id = db.get("DBInstanceIdentifier")
                 name = db_id 
+                subnet_group = db.get("DBSubnetGroup") or {}
+                vpc_id = subnet_group.get("VpcId")
+                subnet_ids = [s.get("SubnetIdentifier") for s in subnet_group.get("Subnets", []) if s.get("SubnetIdentifier")]
+                sec_groups = [sg.get("VpcSecurityGroupId") for sg in db.get("VpcSecurityGroups", []) if sg.get("VpcSecurityGroupId")]
+
                 resources.append({
                     "id": db_id,
                     "name": name,
@@ -26,7 +31,12 @@ def scan(session, region="us-east-1"):
                         "storage_encrypted": db.get("StorageEncrypted"),
                         "deletion_protection": db.get("DeletionProtection"),
                         "multi_az": db.get("MultiAZ"),
-                        "storage_type": db.get("StorageType")
+                        "storage_type": db.get("StorageType"),
+                        "vpc_id": vpc_id,
+                        "subnet_id": ", ".join(subnet_ids) if subnet_ids else None,
+                        "subnet_ids": subnet_ids,
+                        "db_subnet_group_name": subnet_group.get("DBSubnetGroupName"),
+                        "security_groups": sec_groups,
                     }
                 })
     except ClientError as e:

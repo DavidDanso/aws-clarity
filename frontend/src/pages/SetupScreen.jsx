@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { validateRoleArn } from "../utils/formatters";
 import { SUPPORTED_REGIONS } from "../utils/constants";
+import { checkPermissions } from "../services/api";
 
 const IAM_POLICY_JSON = `{
   "Version": "2012-10-17",
@@ -13,6 +14,9 @@ const IAM_POLICY_JSON = `{
         "ec2:DescribeSnapshots",
         "ec2:DescribeAddresses",
         "ec2:DescribeSecurityGroups",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeNatGateways",
+        "ec2:DescribeInternetGateways",
         "s3:ListAllMyBuckets",
         "s3:GetBucketLocation",
         "s3:ListBucket",
@@ -21,26 +25,48 @@ const IAM_POLICY_JSON = `{
         "s3:GetBucketEncryption",
         "s3:GetPublicAccessBlock",
         "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
         "iam:ListRoles",
         "iam:ListRolePolicies",
-        "iam:GetRolePolicy"
+        "iam:GetRolePolicy",
+        "iam:ListAttachedRolePolicies",
+        "lambda:ListFunctions",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "dynamodb:ListTables",
+        "cloudwatch:DescribeAlarms",
+        "autoscaling:DescribeAutoScalingGroups",
+        "ecs:ListClusters",
+        "eks:ListClusters",
+        "elasticache:DescribeCacheClusters",
+        "sqs:ListQueues",
+        "sns:ListTopics",
+        "secretsmanager:ListSecrets",
+        "apigateway:GET",
+        "cloudformation:DescribeStacks",
+        "events:ListRules",
+        "ecr:DescribeRepositories",
+        "redshift:DescribeClusters"
       ],
       "Resource": "*"
     }
   ]
- }`;
+}`;
 
 const FAQ_ITEMS = [
   {
     question: "Is this safe?",
-    answer: "Yes. AWS Clarity uses a read-only IAM role with strict permissions. We cannot create, modify, or delete any resources in your account."
+    answer: "Yes. AWS Clarity uses a strictly read-only IAM role. It cannot create, modify, or delete any resources in your AWS account."
   },
   {
-    question: "What regions?",
-    answer: "We support 12 major AWS regions across North America, Europe, Asia Pacific, and South America."
+    question: "What permissions does AWS Clarity need?",
+    answer: "Only read-only (Describe/List) permissions for supported services. We never ask for admin rights or write permissions, and we make zero AWS billing or Cost Explorer API requests."
   },
   {
-    question: "Revoke access?",
+    question: "What happens if a permission is missing?",
+    answer: "AWS Clarity will perform a partial scan. It will inspect only the services you permitted, mark the scan as partial, and explain exactly which service was skipped."
+  },
+  {
+    question: "How do I revoke access?",
     answer: "You can delete or modify the IAM role in your AWS Console at any time to instantly revoke access."
   }
 ];
@@ -53,6 +79,11 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const [currentStep, setCurrentStep] = useState(1);
   const [openFaq, setOpenFaq] = useState(null);
 
+  // Permission pre-check states
+  const [isPrechecking, setIsPrechecking] = useState(false);
+  const [precheckResults, setPrecheckResults] = useState(null);
+  const [precheckError, setPrecheckError] = useState(null);
+
   useEffect(() => {
     setCurrentStep(1);
   }, []);
@@ -61,6 +92,32 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
     await navigator.clipboard.writeText(IAM_POLICY_JSON);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handlePrecheck = async () => {
+    setLocalError("");
+    setScanError("");
+    setPrecheckError(null);
+
+    if (!roleArn.trim()) {
+      setLocalError("Role ARN is required to test permissions.");
+      return;
+    }
+
+    if (!validateRoleArn(roleArn.trim())) {
+      setLocalError("Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/RoleName");
+      return;
+    }
+
+    setIsPrechecking(true);
+    try {
+      const resp = await checkPermissions(roleArn.trim());
+      setPrecheckResults(resp.permission_checks || {});
+    } catch (err) {
+      setPrecheckError(err.message || "Failed to test role permissions.");
+    } finally {
+      setIsPrechecking(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -258,6 +315,34 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
               </div>
 
               <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Role ARN</label>
+                  <button
+                    type="button"
+                    onClick={handlePrecheck}
+                    disabled={isPrechecking || !roleArn.trim()}
+                    className={`text-xs font-medium px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                      isPrechecking || !roleArn.trim()
+                        ? "text-gray-500 bg-gray-800/50 cursor-not-allowed"
+                        : "text-teal-400 hover:text-teal-300 bg-teal-500/10 border border-teal-500/20 cursor-pointer"
+                    }`}
+                  >
+                    {isPrechecking ? (
+                      <>
+                        <svg className="animate-spin w-3 h-3 text-teal-400" viewBox="0 0 24 24" fill="none">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                        </svg>
+                        Checking...
+                      </>
+                    ) : (
+                      <>
+                        <span>⚡</span> Test Permissions
+                      </>
+                    )}
+                  </button>
+                </div>
+
                 <input
                   type="text"
                   value={roleArn}
@@ -265,10 +350,60 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
                     setRoleArn(e.target.value);
                     if (localError) setLocalError("");
                     if (scanError) setScanError("");
+                    if (precheckResults) setPrecheckResults(null);
+                    if (precheckError) setPrecheckError(null);
                   }}
                   placeholder="arn:aws:iam::123456789012:role/AWSClarityReadOnly"
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 transition-colors font-mono"
                 />
+
+                {/* Precheck error */}
+                {precheckError && (
+                  <div className="flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-900/20">
+                    <svg className="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{precheckError}</span>
+                  </div>
+                )}
+
+                {/* Precheck results display */}
+                {precheckResults && (
+                  <div className="mt-2 rounded-lg bg-gray-950 border border-gray-800 p-3 space-y-2">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-800">
+                      <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Role Permissions Pre-Check</span>
+                      <span className="text-[10px] text-teal-400 font-mono">Read-Only</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      {Object.entries(precheckResults).map(([svc, info]) => {
+                        const isOk = info.status === "PASSED";
+                        return (
+                          <div key={svc} className="flex items-center gap-1.5 min-w-0">
+                            <span className={isOk ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                              {isOk ? "✓" : "⚠"}
+                            </span>
+                            <span className="text-gray-300 font-medium truncate">{svc}</span>
+                            <span className={`text-[10px] px-1 rounded truncate ${isOk ? "text-emerald-400/80 bg-emerald-500/10" : "text-amber-400/80 bg-amber-500/10"}`}>
+                              {isOk ? "Ready" : "Missing"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Missing permission explanation */}
+                    {Object.values(precheckResults).some(info => info.status !== "PASSED") && (
+                      <div className="mt-2 pt-2 border-t border-gray-800 text-[11px] space-y-1">
+                        {Object.values(precheckResults).filter(info => info.status !== "PASSED").map(info => (
+                          <div key={info.service} className="text-amber-300">
+                            <span className="font-semibold">⚠ {info.service}:</span> Requires <code className="text-[10px] text-amber-200 font-mono bg-amber-950/60 px-1 py-0.5 rounded">{info.required_permission}</code>
+                            <p className="text-gray-400 text-[10px] pl-3.5 mt-0.5">Affected capability: {info.capability}. Without this, the scan will be partial.</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {activeError && (
                   <div className="flex items-start gap-2 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-400 bg-red-900/20 border-red-800/40">

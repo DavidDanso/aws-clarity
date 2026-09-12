@@ -3,6 +3,8 @@ import datetime
 import os
 import boto3
 import uuid
+import time
+from botocore.exceptions import ClientError
 from utils import assume_role, validate_role_arn
 from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
@@ -12,8 +14,6 @@ from scanner import sqs_queues, sns_topics, secrets_manager
 from scanner import auto_scaling_groups, ecs_clusters, eks_clusters, ecr_repositories, cloudformation_stacks
 from scanner import cloudwatch_alarms, eventbridge_rules, api_gateways
 from scanner.misconfig import evaluate
-
-import time
 
 VALID_REGIONS = [
     "us-east-1", "us-east-2", "us-west-1", "us-west-2",
@@ -26,6 +26,102 @@ dynamodb = boto3.resource("dynamodb")
 lambda_client = boto3.client("lambda")
 TABLE_NAME = os.environ.get("SCAN_TABLE_NAME", "aws-clarity-scans")
 
+CORE_PERMISSIONS = {
+    "EC2": {
+        "service": "EC2",
+        "action": "ec2:DescribeInstances",
+        "capability": "Compute instances, attached EBS volumes, and security groups",
+        "test": lambda session: session.client("ec2", region_name="us-east-1").describe_instances(MaxResults=5),
+    },
+    "S3": {
+        "service": "S3",
+        "action": "s3:ListAllMyBuckets",
+        "capability": "Object storage bucket discovery and access policy analysis",
+        "test": lambda session: session.client("s3").list_buckets(),
+    },
+    "RDS": {
+        "service": "RDS",
+        "action": "rds:DescribeDBInstances",
+        "capability": "Relational databases, clusters, and encryption checks",
+        "test": lambda session: session.client("rds", region_name="us-east-1").describe_db_instances(MaxRecords=20),
+    },
+    "IAM": {
+        "service": "IAM",
+        "action": "iam:ListRoles",
+        "capability": "Identity & access management roles, policies, and trust relationships",
+        "test": lambda session: session.client("iam").list_roles(MaxItems=1),
+    },
+    "Lambda": {
+        "service": "Lambda",
+        "action": "lambda:ListFunctions",
+        "capability": "Serverless function discovery and configuration analysis",
+        "test": lambda session: session.client("lambda", region_name="us-east-1").list_functions(MaxItems=1),
+    },
+}
+
+SCANNER_METADATA = {
+    "ec2_instances": {"service": "EC2", "label": "EC2 Instances", "permission": "ec2:DescribeInstances", "capability": "Virtual machines"},
+    "ebs_volumes": {"service": "EBS", "label": "EBS Volumes", "permission": "ec2:DescribeVolumes", "capability": "Block storage disks"},
+    "elastic_ips": {"service": "EC2", "label": "Elastic IPs", "permission": "ec2:DescribeAddresses", "capability": "Static IP addresses"},
+    "security_groups": {"service": "EC2", "label": "Security Groups", "permission": "ec2:DescribeSecurityGroups", "capability": "Firewall rules"},
+    "snapshots": {"service": "EBS", "label": "EBS Snapshots", "permission": "ec2:DescribeSnapshots", "capability": "Volume backups"},
+    "rds_instances": {"service": "RDS", "label": "RDS Databases", "permission": "rds:DescribeDBInstances", "capability": "Relational databases"},
+    "lambda_functions": {"service": "Lambda", "label": "Lambda Functions", "permission": "lambda:ListFunctions", "capability": "Serverless functions"},
+    "nat_gateways": {"service": "VPC", "label": "NAT Gateways", "permission": "ec2:DescribeNatGateways", "capability": "Outbound subnet routing"},
+    "load_balancers": {"service": "ELB", "label": "Load Balancers", "permission": "elasticloadbalancing:DescribeLoadBalancers", "capability": "Traffic distribution"},
+    "dynamodb_tables": {"service": "DynamoDB", "label": "DynamoDB Tables", "permission": "dynamodb:ListTables", "capability": "NoSQL data tables"},
+    "vpcs": {"service": "VPC", "label": "VPCs", "permission": "ec2:DescribeVpcs", "capability": "Virtual private clouds"},
+    "auto_scaling_groups": {"service": "AutoScaling", "label": "Auto Scaling Groups", "permission": "autoscaling:DescribeAutoScalingGroups", "capability": "Compute scaling pools"},
+    "ecs_clusters": {"service": "ECS", "label": "ECS Clusters", "permission": "ecs:ListClusters", "capability": "Container clusters"},
+    "eks_clusters": {"service": "EKS", "label": "EKS Clusters", "permission": "eks:ListClusters", "capability": "Kubernetes clusters"},
+    "elasticache_clusters": {"service": "ElastiCache", "label": "ElastiCache Clusters", "permission": "elasticache:DescribeCacheClusters", "capability": "In-memory caching"},
+    "sqs_queues": {"service": "SQS", "label": "SQS Queues", "permission": "sqs:ListQueues", "capability": "Message queues"},
+    "sns_topics": {"service": "SNS", "label": "SNS Topics", "permission": "sns:ListTopics", "capability": "Pub/sub topics"},
+    "secrets": {"service": "SecretsManager", "label": "Secrets Manager", "permission": "secretsmanager:ListSecrets", "capability": "Encrypted credentials"},
+    "api_gateways": {"service": "APIGateway", "label": "API Gateways", "permission": "apigateway:GET", "capability": "HTTP APIs"},
+    "aurora_clusters": {"service": "RDS", "label": "Aurora Clusters", "permission": "rds:DescribeDBClusters", "capability": "Aurora DB clusters"},
+    "cloudformation_stacks": {"service": "CloudFormation", "label": "CloudFormation Stacks", "permission": "cloudformation:DescribeStacks", "capability": "Infrastructure templates"},
+    "eventbridge_rules": {"service": "EventBridge", "label": "EventBridge Rules", "permission": "events:ListRules", "capability": "Event bus routing"},
+    "ecr_repositories": {"service": "ECR", "label": "ECR Repositories", "permission": "ecr:DescribeRepositories", "capability": "Container registries"},
+    "internet_gateways": {"service": "VPC", "label": "Internet Gateways", "permission": "ec2:DescribeInternetGateways", "capability": "VPC internet ingress/egress"},
+    "cloudwatch_alarms": {"service": "CloudWatch", "label": "CloudWatch Alarms", "permission": "cloudwatch:DescribeAlarms", "capability": "Metric alerts"},
+    "redshift_clusters": {"service": "Redshift", "label": "Redshift Clusters", "permission": "redshift:DescribeClusters", "capability": "Data warehouses"},
+    "iam_roles": {"service": "IAM", "label": "IAM Roles", "permission": "iam:ListRoles, iam:GetRolePolicy", "capability": "IAM roles & trust policies"},
+    "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation", "capability": "S3 storage buckets"},
+}
+
+
+def validate_permissions(session):
+    """Validate core read-only permissions required by scanners."""
+    results = {}
+    for name, spec in CORE_PERMISSIONS.items():
+        try:
+            spec["test"](session)
+            results[name] = {
+                "service": name,
+                "status": "PASSED",
+                "required_permission": spec["action"],
+                "capability": spec["capability"],
+            }
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "AccessDenied")
+            results[name] = {
+                "service": name,
+                "status": "MISSING",
+                "required_permission": spec["action"],
+                "capability": spec["capability"],
+                "error_code": code,
+                "message": str(e),
+            }
+        except Exception:
+            results[name] = {
+                "service": name,
+                "status": "PASSED",
+                "required_permission": spec["action"],
+                "capability": spec["capability"],
+            }
+    return results
+
 
 def run_scan(role_arn, regions):
     start_time = time.time()
@@ -34,6 +130,9 @@ def run_scan(role_arn, regions):
 
     # Get account ID from the assumed session
     account_id = session.client("sts").get_caller_identity()["Account"]
+
+    # Pre-check core permissions
+    permission_checks = validate_permissions(session)
 
     import concurrent.futures
 
@@ -70,6 +169,9 @@ def run_scan(role_arn, regions):
     resources["iam_roles"] = []
     resources["s3_buckets"] = []
 
+    scanner_statuses = []
+    is_partial = False
+
     tasks = [
         (key, fn, region)
         for key, fn in REGIONAL_SCANNERS.items()
@@ -79,20 +181,105 @@ def run_scan(role_arn, regions):
     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         future_to_task = {
             executor.submit(fn, session, region): (key, region)
-            for key, fn, region in tasks
+            for key, fn in tasks
         }
         for future in concurrent.futures.as_completed(future_to_task):
             key, region = future_to_task[future]
+            meta = SCANNER_METADATA.get(key, {"service": key, "label": key, "permission": "ReadOnlyAccess", "capability": key})
             try:
                 result = future.result(timeout=25)
                 resources[key].extend(result)
+                scanner_statuses.append({
+                    "service": meta["service"],
+                    "label": meta["label"],
+                    "key": key,
+                    "region": region,
+                    "status": "COMPLETED",
+                    "count": len(result),
+                    "required_permission": meta["permission"],
+                    "affected_capability": meta["capability"],
+                })
             except concurrent.futures.TimeoutError:
+                is_partial = True
                 print(f"Scanner {key} in {region} timed out after 25s — returning empty")
+                scanner_statuses.append({
+                    "service": meta["service"],
+                    "label": meta["label"],
+                    "key": key,
+                    "region": region,
+                    "status": "TIMED_OUT",
+                    "count": 0,
+                    "reason": "Scanner timed out after 25s",
+                    "required_permission": meta["permission"],
+                    "affected_capability": meta["capability"],
+                })
             except Exception as e:
+                is_partial = True
                 print(f"Scanner {key} in {region} failed: {e}")
+                scanner_statuses.append({
+                    "service": meta["service"],
+                    "label": meta["label"],
+                    "key": key,
+                    "region": region,
+                    "status": "FAILED",
+                    "count": 0,
+                    "reason": str(e),
+                    "required_permission": meta["permission"],
+                    "affected_capability": meta["capability"],
+                })
 
-    resources["iam_roles"] = iam.scan(session)
-    resources["s3_buckets"] = s3.scan(session, selected_regions=regions)
+    # Global scanners
+    try:
+        resources["iam_roles"] = iam.scan(session)
+        scanner_statuses.append({
+            "service": "IAM",
+            "label": "IAM Roles",
+            "key": "iam_roles",
+            "region": "global",
+            "status": "COMPLETED",
+            "count": len(resources["iam_roles"]),
+            "required_permission": "iam:ListRoles, iam:GetRolePolicy, iam:ListRolePolicies",
+            "affected_capability": "IAM role policies, admin access, and trust relationships",
+        })
+    except Exception as e:
+        is_partial = True
+        scanner_statuses.append({
+            "service": "IAM",
+            "label": "IAM Roles",
+            "key": "iam_roles",
+            "region": "global",
+            "status": "FAILED",
+            "count": 0,
+            "reason": str(e),
+            "required_permission": "iam:ListRoles, iam:GetRolePolicy, iam:ListRolePolicies",
+            "affected_capability": "IAM role policies, admin access, and trust relationships",
+        })
+
+    try:
+        resources["s3_buckets"] = s3.scan(session, selected_regions=regions)
+        scanner_statuses.append({
+            "service": "S3",
+            "label": "S3 Buckets",
+            "key": "s3_buckets",
+            "region": "global",
+            "status": "COMPLETED",
+            "count": len(resources["s3_buckets"]),
+            "required_permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketAcl",
+            "affected_capability": "S3 storage buckets, encryption, and public access blocks",
+        })
+    except Exception as e:
+        is_partial = True
+        scanner_statuses.append({
+            "service": "S3",
+            "label": "S3 Buckets",
+            "key": "s3_buckets",
+            "region": "global",
+            "status": "FAILED",
+            "count": 0,
+            "reason": str(e),
+            "required_permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketAcl",
+            "affected_capability": "S3 storage buckets, encryption, and public access blocks",
+        })
 
     # Run misconfig and orphan evaluation
     resources = evaluate(session, resources)
@@ -111,14 +298,34 @@ def run_scan(role_arn, regions):
         "orphaned": sum(1 for r in all_resources if r.get("status") == "ORPHANED"),
     }
 
+    # Build honest coverage disclosure
+    services_scanned = sorted(list(set(s["service"] for s in scanner_statuses if s["status"] == "COMPLETED")))
+    coverage = {
+        "regions_scanned": regions,
+        "services_scanned": services_scanned,
+        "resources_inspected": len(all_resources),
+        "findings_detected": sum(len(r.get("issues", [])) for r in all_resources),
+        "is_partial": is_partial,
+        "unsupported_services": [
+            {"service": "CloudTrail Log Ingestion", "reason": "AWS Clarity performs point-in-time configuration inspection, not continuous event log ingestion."},
+            {"service": "AWS WAF / Shield Rules", "reason": "Web application firewall rules and DDoS telemetry are not currently inspected."},
+            {"service": "Amazon GuardDuty Threat Intel", "reason": "GuardDuty automated threat feeds are not queried."},
+            {"service": "AWS Cost & Billing Data", "reason": "Deliberately removed — AWS Clarity makes zero AWS Cost Explorer API requests."},
+            {"service": "Deep Container Vulnerabilities", "reason": "ECR repository metadata is scanned; container image CVE layers are not analyzed."},
+        ],
+        "scanner_statuses": scanner_statuses,
+    }
+
     payload = {
         "status": "success",
         "account_id": account_id,
         "region": regions[0] if len(regions) == 1 else "multi-region",
         "regions": regions,
         "scanned_at": datetime.datetime.utcnow().isoformat() + "Z",
-        "partial": False,
+        "partial": is_partial,
         "summary": summary,
+        "coverage": coverage,
+        "permission_checks": permission_checks,
         "resources": resources,
     }
     return payload
@@ -143,6 +350,30 @@ def handle_trigger(event, context):
         validate_role_arn(role_arn)  # fail fast on bad input — same as today, before anything is created
     except InvalidRoleARNError:
         return _response(400, {"status": "error", "error_code": "INVALID_ROLE_ARN", "message": "The Role ARN format is invalid. Expected: arn:aws:iam::123456789012:role/RoleName"})
+
+    # Check if this is an on-demand permission pre-check request
+    if body.get("action") == "precheck" or body.get("is_precheck") is True:
+        try:
+            session = assume_role(role_arn)
+            account_id = session.client("sts").get_caller_identity()["Account"]
+            permission_checks = validate_permissions(session)
+            return _response(200, {
+                "status": "success",
+                "account_id": account_id,
+                "permission_checks": permission_checks,
+            })
+        except AssumeRoleError:
+            return _response(400, {
+                "status": "error",
+                "error_code": "ASSUME_ROLE_FAILED",
+                "message": "Could not assume the provided role. Verify the trust policy is correctly configured.",
+            })
+        except Exception as e:
+            return _response(500, {
+                "status": "error",
+                "error_code": "INTERNAL_ERROR",
+                "message": str(e),
+            })
 
     regions = body.get("regions", ["us-east-1"])
 
@@ -245,7 +476,6 @@ def handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("resource") == "/scan/{scan_id}/status":
         return handle_status(event)
     return handle_trigger(event, context)
-
 
 
 def _response(status_code, payload):

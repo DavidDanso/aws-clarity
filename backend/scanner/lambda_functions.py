@@ -32,6 +32,12 @@ def scan(session, region="us-east-1"):
                     except Exception as e:
                         logging.warning(f"Error parsing LastModified '{last_modified_str}' for function {fn_name}: {e}")
 
+                vpc_config = fn.get("VpcConfig") or {}
+                vpc_id = vpc_config.get("VpcId")
+                subnet_ids = vpc_config.get("SubnetIds", [])
+                sec_groups = vpc_config.get("SecurityGroupIds", [])
+                role_arn = fn.get("Role")
+
                 resources.append({
                     "id": fn_name,
                     "name": fn_name,
@@ -45,7 +51,12 @@ def scan(session, region="us-east-1"):
                         "memory_size": fn.get("MemorySize"),
                         "timeout": fn.get("Timeout"),
                         "last_modified": fn.get("LastModified"),
-                        "code_size": fn.get("CodeSize")
+                        "code_size": fn.get("CodeSize"),
+                        "role": role_arn,
+                        "vpc_id": vpc_id,
+                        "subnet_id": ", ".join(subnet_ids) if subnet_ids else None,
+                        "subnet_ids": subnet_ids,
+                        "security_groups": sec_groups,
                     }
                 })
     except ClientError as e:

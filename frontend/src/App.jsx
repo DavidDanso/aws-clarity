@@ -6,6 +6,7 @@ import { scanAccount } from "./services/api";
 function App() {
   const [view, setView] = useState("setup");
   const [scanResults, setScanResults] = useState(null);
+  const [previousScanResults, setPreviousScanResults] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
@@ -27,6 +28,10 @@ function App() {
   }, [feedbackOpen]);
 
   const handleScanStart = async (roleArn, regions) => {
+    // If a previous valid scan result exists, keep it as previousScanResults for comparison
+    if (scanResults && scanResults.resources) {
+      setPreviousScanResults(scanResults);
+    }
     setIsLoading(true);
     setScanStatus("STARTING");
     setScanError("");
@@ -50,6 +55,7 @@ function App() {
       handleScanStart(storedRoleArn, storedRegions);
     } else {
       setScanResults(null);
+      setPreviousScanResults(null);
       setScanError("");
       setView("setup");
     }
@@ -66,6 +72,7 @@ function App() {
       ) : (
         <DashboardScreen
           scanResults={scanResults}
+          previousScanResults={previousScanResults}
           onRescan={handleRescan}
           isLoading={isLoading}
           scanStatus={scanStatus}
@@ -73,7 +80,12 @@ function App() {
           storedRoleArn={storedRoleArn}
           storedRegions={storedRegions}
           onStoredRegionsChange={setStoredRegions}
-          onResultsChange={setScanResults}
+          onResultsChange={(newResults) => {
+            if (scanResults && scanResults.resources) {
+              setPreviousScanResults(scanResults);
+            }
+            setScanResults(newResults);
+          }}
         />
       )}
 

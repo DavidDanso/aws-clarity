@@ -66,3 +66,20 @@ export async function scanAccount(roleArn, regions = ["us-east-1"], onProgress) 
   const scanId = await startScan(roleArn, regions);
   return await pollScanStatus(scanId, onProgress);
 }
+
+export async function checkPermissions(roleArn) {
+  const response = await fetch(`${API_URL}/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role_arn: roleArn, action: "precheck" }),
+  });
+
+  const data = await response.json();
+  if (!response.ok || data.status === "error") {
+    const error = new Error(data.message || ERROR_MESSAGES.UNKNOWN || "Precheck failed");
+    error.code = data.error_code || "UNKNOWN_ERROR";
+    throw error;
+  }
+
+  return data;
+}
