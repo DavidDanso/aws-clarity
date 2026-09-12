@@ -11,7 +11,6 @@ from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, reds
 from scanner import sqs_queues, sns_topics, secrets_manager
 from scanner import auto_scaling_groups, ecs_clusters, eks_clusters, ecr_repositories, cloudformation_stacks
 from scanner import cloudwatch_alarms, eventbridge_rules, api_gateways
-from scanner import cost
 from scanner.misconfig import evaluate
 
 import time
@@ -94,7 +93,6 @@ def run_scan(role_arn, regions):
 
     resources["iam_roles"] = iam.scan(session)
     resources["s3_buckets"] = s3.scan(session, selected_regions=regions)
-    cost_data = cost.scan(session, regions=regions)
 
     # Run misconfig and orphan evaluation
     resources = evaluate(session, resources)
@@ -122,7 +120,6 @@ def run_scan(role_arn, regions):
         "partial": False,
         "summary": summary,
         "resources": resources,
-        "costs": cost_data,
     }
     return payload
 
