@@ -46,9 +46,13 @@ function App() {
   };
 
   const handleRescan = () => {
-    setScanResults(null);
-    setScanError("");
-    setView("setup");
+    if (storedRoleArn) {
+      handleScanStart(storedRoleArn, storedRegions);
+    } else {
+      setScanResults(null);
+      setScanError("");
+      setView("setup");
+    }
   };
 
   return (

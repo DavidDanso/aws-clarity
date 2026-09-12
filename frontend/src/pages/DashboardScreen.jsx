@@ -297,7 +297,7 @@ export default function DashboardScreen({
         )}
 
         {/* Main dashboard — only renders when there are resources */}
-        {(scanResults?.summary?.total_resources ?? 0) > 0 && (
+        {(isLoading || scanError || (scanResults?.summary?.total_resources ?? 0) > 0) && (
         <>
 
         {scanResults?.partial === true && (
