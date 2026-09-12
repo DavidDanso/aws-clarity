@@ -23,3 +23,13 @@ export function formatTimestamp(isoString) {
   });
 }
 
+export const formatCost = (amount) => {
+  if (amount === null || amount === undefined) return "—";
+  if (amount === 0) return "$0.00";
+  if (amount < 0.0001) return `$${amount.toFixed(6)}`;
+  if (amount < 0.01) return `$${amount.toFixed(4)}`;
+  if (amount < 1) return `$${amount.toFixed(3)}`;
+  if (amount >= 1000) return `$${(amount / 1000).toFixed(2)}k`;
+  return `$${amount.toFixed(2)}`;
+};
+
