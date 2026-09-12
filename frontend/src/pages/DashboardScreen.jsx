@@ -514,7 +514,7 @@ export default function DashboardScreen({
                     <div className="bg-gray-950/60 rounded-lg p-2.5 border border-gray-800">
                       <p className="text-xs text-gray-500 font-medium">Direct Resource Costs</p>
                       <p className="text-sm font-semibold font-mono text-emerald-400 mt-0.5">{formatCost(reconciliation.directResourceCost)}</p>
-                      <span className="text-[11px] text-gray-500">ACTUAL · 1-to-1 exact service mapping</span>
+                      <span className="text-[11px] text-gray-500">ACTUAL · Direct resource line item</span>
                     </div>
                     <div className="bg-gray-950/60 rounded-lg p-2.5 border border-gray-800">
                       <p className="text-xs text-gray-500 font-medium">Estimated Allocated Costs</p>

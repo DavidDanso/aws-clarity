@@ -189,26 +189,31 @@ export const attributeCosts = (allResources, costData) => {
       const typeShare = (weight * resources.length) / totalWeightedUnits;
       const perResource = (serviceAmount * typeShare) / resources.length;
 
-      const isDirect = (eligibleResources.length === 1 && weight === 100);
-      const status = isDirect ? "ACTUAL" : "ESTIMATED";
+      const byResource = costData?.by_resource ?? {};
 
       resources.forEach(resource => {
+        const directAmount = byResource[resource.id];
+        const hasDirectEvidence = (directAmount !== undefined && directAmount !== null);
+
+        const status = hasDirectEvidence ? "ACTUAL" : "ESTIMATED";
+        const resourceAmount = hasDirectEvidence ? directAmount : perResource;
+
         const existing = resourceCosts.get(resource.id);
-        const newAmount = (existing?.amount ?? 0) + perResource;
-        serviceAllocated += perResource;
+        const newAmount = (existing?.amount ?? 0) + resourceAmount;
+        serviceAllocated += resourceAmount;
 
         resourceCosts.set(resource.id, {
           amount: newAmount,
-          status: existing ? (existing.status === "ESTIMATED" || status === "ESTIMATED" ? "ESTIMATED" : "ACTUAL") : status,
-          isShared: resources.length > 1 || eligibleResources.length > 1,
+          status: hasDirectEvidence ? "ACTUAL" : "ESTIMATED",
+          isShared: !hasDirectEvidence && (resources.length > 1 || eligibleResources.length > 1),
           sharedCount: resources.length,
           serviceName: existing?.serviceName
             ? `${existing.serviceName}, ${serviceName}`
             : serviceName,
-          attributionMethod: isDirect
-            ? "Direct 1-to-1 service mapping"
+          attributionMethod: hasDirectEvidence
+            ? "Direct AWS resource-level line item"
             : `Proportional weighted allocation (÷${resources.length})`,
-          source: isDirect ? "AWS Cost Explorer (Direct)" : "AWS Clarity Weighted Attribution",
+          source: hasDirectEvidence ? "AWS Cost Explorer (Resource-Level)" : "AWS Clarity Defensible Allocation",
         });
       });
     });
