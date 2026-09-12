@@ -10,7 +10,7 @@ from botocore.exceptions import ClientError
 # This ensures CE is called at most once per region per Lambda container lifetime
 
 _CACHE_FILE = "/tmp/ce_cache.json"
-_CACHE_TTL_SECONDS = 3600  # 1 hour — CE data only updates every 24h anyway
+_CACHE_TTL_SECONDS = 86400  # 24 hours — CE data updates once daily; caching prevents unnecessary API charges
 
 
 def _read_tmp_cache(key):

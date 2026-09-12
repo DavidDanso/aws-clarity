@@ -97,41 +97,71 @@ export const CE_SERVICE_WEIGHTS = {
 /**
  * Attribute CE service costs to individual scanned resources.
  *
+ * Cost Status Taxonomy:
+ * - ACTUAL: Direct resource-level or 1-to-1 exact service mapping.
+ * - ESTIMATED: Proportional weighted allocation of service-level totals.
+ * - UNALLOCATED: Real AWS service charges that cannot be attributed to discovered resources.
+ * - ZERO: Discovered resource with no attributable charge ($0.00).
+ *
  * @param {Array} allResources - flat array of all scanned resources, each with .id, .name, .type
  * @param {Object} costData - the costs object from the scan response
- * @returns {Map} resource.id → {
- *   amount: number | null,     // attributed cost in USD, null = no matching CE service
- *   isShared: boolean,         // true = split across multiple resources of this type
- *   sharedCount: number,       // how many resources share this cost
- *   serviceName: string | null // which CE service this cost came from
+ * @returns {Object} {
+ *   resourceCostMap: Map(resource.id -> { amount, status, isShared, sharedCount, serviceName, attributionMethod, source }),
+ *   reconciliation: { totalAccountCost, directResourceCost, estimatedResourceCost, unallocatedCost, zeroCostResourceCount, unallocatedServices }
  * }
  */
 export const attributeCosts = (allResources, costData) => {
   const result = new Map();
   const byService = costData?.by_service ?? {};
+  const totalAccountCost = costData?.total_current_month ?? 0;
 
-  if (!allResources?.length || !Object.keys(byService).length) {
-    // No resources or no cost data — all resources get null
-    allResources?.forEach(r => result.set(r.id, {
-      amount: null, isShared: false, sharedCount: 0, serviceName: null,
-    }));
-    return result;
+  const reconciliation = {
+    totalAccountCost,
+    directResourceCost: 0,
+    estimatedResourceCost: 0,
+    unallocatedCost: 0,
+    zeroCostResourceCount: 0,
+    unallocatedServices: [],
+  };
+
+  if (!allResources || !allResources.length) {
+    Object.entries(byService).forEach(([serviceName, amount]) => {
+      reconciliation.unallocatedCost += amount;
+      reconciliation.unallocatedServices.push({
+        serviceName,
+        amount,
+        reason: "No discovered resources in scanned region",
+      });
+    });
+    return { resourceCostMap: result, reconciliation };
   }
 
-  // Build a map: resource.id → attributed cost info
-  // Pass 1: for each CE service, compute weighted attribution
-  const resourceCosts = new Map(); // resource.id → {amount, serviceName}
+  const resourceCosts = new Map();
+  const allocatedServiceAmounts = {};
 
   Object.entries(byService).forEach(([serviceName, serviceAmount]) => {
     const weights = CE_SERVICE_WEIGHTS[serviceName];
-    if (!weights) return; // service not in our mapping — skip
+    if (!weights) {
+      reconciliation.unallocatedCost += serviceAmount;
+      reconciliation.unallocatedServices.push({
+        serviceName,
+        amount: serviceAmount,
+        reason: "Service not mapped to scanned resource types",
+      });
+      return;
+    }
 
-    // Find all scanned resources that match this service (weight > 0 only)
     const eligibleResources = allResources.filter(r => (weights[r.type] ?? 0) > 0);
-    if (!eligibleResources.length) return;
+    if (!eligibleResources.length) {
+      reconciliation.unallocatedCost += serviceAmount;
+      reconciliation.unallocatedServices.push({
+        serviceName,
+        amount: serviceAmount,
+        reason: "No matching resources discovered for service in scanned region",
+      });
+      return;
+    }
 
-    // Calculate total weighted units
-    // Weight × count for each resource type
     const typeGroups = {};
     eligibleResources.forEach(r => {
       const w = weights[r.type];
@@ -143,47 +173,86 @@ export const attributeCosts = (allResources, costData) => {
       (sum, { weight, resources }) => sum + weight * resources.length,
       0
     );
-    if (totalWeightedUnits === 0) return;
 
-    // Distribute cost proportionally
+    if (totalWeightedUnits === 0) {
+      reconciliation.unallocatedCost += serviceAmount;
+      reconciliation.unallocatedServices.push({
+        serviceName,
+        amount: serviceAmount,
+        reason: "Discovered resources for service have zero weighting",
+      });
+      return;
+    }
+
+    let serviceAllocated = 0;
     Object.values(typeGroups).forEach(({ weight, resources }) => {
       const typeShare = (weight * resources.length) / totalWeightedUnits;
       const perResource = (serviceAmount * typeShare) / resources.length;
 
+      const isDirect = (eligibleResources.length === 1 && weight === 100);
+      const status = isDirect ? "ACTUAL" : "ESTIMATED";
+
       resources.forEach(resource => {
         const existing = resourceCosts.get(resource.id);
+        const newAmount = (existing?.amount ?? 0) + perResource;
+        serviceAllocated += perResource;
+
         resourceCosts.set(resource.id, {
-          amount: (existing?.amount ?? 0) + perResource,
+          amount: newAmount,
+          status: existing ? (existing.status === "ESTIMATED" || status === "ESTIMATED" ? "ESTIMATED" : "ACTUAL") : status,
+          isShared: resources.length > 1 || eligibleResources.length > 1,
+          sharedCount: resources.length,
           serviceName: existing?.serviceName
             ? `${existing.serviceName}, ${serviceName}`
             : serviceName,
-          isShared: resources.length > 1,
-          sharedCount: resources.length,
+          attributionMethod: isDirect
+            ? "Direct 1-to-1 service mapping"
+            : `Proportional weighted allocation (÷${resources.length})`,
+          source: isDirect ? "AWS Cost Explorer (Direct)" : "AWS Clarity Weighted Attribution",
         });
       });
     });
+
+    allocatedServiceAmounts[serviceName] = serviceAllocated;
   });
 
-  // Pass 2: apply to all resources
   allResources.forEach(resource => {
     const cost = resourceCosts.get(resource.id);
-    if (cost) {
+    if (cost && cost.amount > 0.000001) {
+      const roundedAmount = Math.round(cost.amount * 10000) / 10000;
       result.set(resource.id, {
-        amount: Math.round(cost.amount * 10000) / 10000, // 4 decimal places
+        amount: roundedAmount,
+        status: cost.status,
         isShared: cost.isShared,
         sharedCount: cost.sharedCount,
         serviceName: cost.serviceName,
+        attributionMethod: cost.attributionMethod,
+        source: cost.source,
       });
+
+      if (cost.status === "ACTUAL") {
+        reconciliation.directResourceCost += roundedAmount;
+      } else {
+        reconciliation.estimatedResourceCost += roundedAmount;
+      }
     } else {
-      // Resource has no matching CE service or weight is 0 (free resource)
       result.set(resource.id, {
-        amount: null,
+        amount: 0.0,
+        status: "ZERO",
         isShared: false,
         sharedCount: 0,
         serviceName: null,
+        attributionMethod: "No attributable AWS charge found for resource",
+        source: "AWS Cost Explorer",
       });
+      reconciliation.zeroCostResourceCount += 1;
     }
   });
 
-  return result;
+  reconciliation.directResourceCost = Math.round(reconciliation.directResourceCost * 100) / 100;
+  reconciliation.estimatedResourceCost = Math.round(reconciliation.estimatedResourceCost * 100) / 100;
+  reconciliation.unallocatedCost = Math.round(reconciliation.unallocatedCost * 100) / 100;
+
+  return { resourceCostMap: result, reconciliation };
 };
+

@@ -205,25 +205,27 @@ export default function ResourceTable({
                     <td className="text-right pr-3 hidden sm:table-cell whitespace-nowrap">
                       {(() => {
                         const info = resource.costInfo;
-                        if (!info || info.amount === null) {
-                          return <span className="text-gray-700 text-xs font-mono">—</span>;
-                        }
+                        const status = info?.status || "ZERO";
+                        const amount = info?.amount ?? 0.0;
+                        
+                        const badgeStyle = {
+                          ACTUAL: "bg-emerald-950/60 text-emerald-400 border-emerald-700/50",
+                          ESTIMATED: "bg-amber-950/60 text-amber-400 border-amber-700/50",
+                          ZERO: "bg-gray-900 text-gray-500 border-gray-800",
+                        };
+
                         return (
-                          <span
-                            title={
-                              info.serviceName
-                                ? `From: ${info.serviceName}${info.isShared ? ` (split across ${info.sharedCount} resources)` : ''}`
-                                : undefined
-                            }
-                            className="cursor-default"
+                          <div
+                            className="flex items-center justify-end gap-1.5 cursor-help"
+                            title={`${info?.source || 'AWS Cost Explorer'} · ${info?.attributionMethod || 'Attribution'}${info?.serviceName ? ` (${info.serviceName})` : ''}`}
                           >
-                            <span className={`text-sm font-mono ${info.amount > 0 ? "text-gray-100" : "text-gray-500"}`}>
-                              {formatCost(info.amount)}
+                            <span className={`text-sm font-mono ${amount > 0 ? "text-gray-100" : "text-gray-500"}`}>
+                              {formatCost(amount)}
                             </span>
-                            {info.isShared && (
-                              <span className="text-gray-600 text-xs ml-1">÷{info.sharedCount}</span>
-                            )}
-                          </span>
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border uppercase ${badgeStyle[status] || badgeStyle.ZERO}`}>
+                              {status}
+                            </span>
+                          </div>
                         );
                       })()}
                     </td>

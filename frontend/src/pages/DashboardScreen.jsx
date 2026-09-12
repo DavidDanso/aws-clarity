@@ -144,8 +144,8 @@ export default function DashboardScreen({
 
   const maxServiceCost = sortedServiceCosts.length > 0 ? sortedServiceCosts[0][1] : 1;
 
-  // Attribute costs to individual resources using weighted algorithm
-  const resourceCostMap = useMemo(
+  // Attribute costs to individual resources using weighted algorithm & taxonomy
+  const { resourceCostMap, reconciliation } = useMemo(
     () => attributeCosts(allResources, costData),
     [allResources, costData]
   );
@@ -156,7 +156,13 @@ export default function DashboardScreen({
       allResources.map((resource) => ({
         ...resource,
         costInfo: resourceCostMap.get(resource.id) ?? {
-          amount: null, isShared: false, sharedCount: 0, serviceName: null,
+          amount: 0.0,
+          status: "ZERO",
+          isShared: false,
+          sharedCount: 0,
+          serviceName: null,
+          attributionMethod: "No attributable AWS charge found",
+          source: "AWS Cost Explorer",
         },
       })),
     [allResources, resourceCostMap]
@@ -496,6 +502,33 @@ export default function DashboardScreen({
                   .
                 </p>
               </div>
+              {reconciliation && (
+                <div className="mb-4 rounded-xl border border-gray-800 bg-gray-900/60 p-4 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs text-gray-400 pb-2 border-b border-gray-800 gap-1">
+                    <span className="font-semibold uppercase tracking-wider text-gray-300">Cost Reconciliation Breakdown</span>
+                    <span className="font-mono text-gray-200">
+                      Account Total: {formatCost(reconciliation.totalAccountCost)} = {formatCost(reconciliation.directResourceCost)} (Direct) + {formatCost(reconciliation.estimatedResourceCost)} (Allocated) + {formatCost(reconciliation.unallocatedCost)} (Unallocated)
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                    <div className="bg-gray-950/60 rounded-lg p-2.5 border border-gray-800">
+                      <p className="text-xs text-gray-500 font-medium">Direct Resource Costs</p>
+                      <p className="text-sm font-semibold font-mono text-emerald-400 mt-0.5">{formatCost(reconciliation.directResourceCost)}</p>
+                      <span className="text-[11px] text-gray-500">ACTUAL · 1-to-1 exact service mapping</span>
+                    </div>
+                    <div className="bg-gray-950/60 rounded-lg p-2.5 border border-gray-800">
+                      <p className="text-xs text-gray-500 font-medium">Estimated Allocated Costs</p>
+                      <p className="text-sm font-semibold font-mono text-amber-400 mt-0.5">{formatCost(reconciliation.estimatedResourceCost)}</p>
+                      <span className="text-[11px] text-gray-500">ESTIMATED · Proportional weighted split</span>
+                    </div>
+                    <div className="bg-gray-950/60 rounded-lg p-2.5 border border-gray-800">
+                      <p className="text-xs text-gray-500 font-medium">Unallocated / Shared Costs</p>
+                      <p className="text-sm font-semibold font-mono text-sky-400 mt-0.5">{formatCost(reconciliation.unallocatedCost)}</p>
+                      <span className="text-[11px] text-gray-500">UNALLOCATED · Unmapped service charges</span>
+                    </div>
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-gray-500 mb-2">
                 Costs shown by AWS service. Individual resource costs appear in the table below.
               </p>
