@@ -7,18 +7,6 @@ import { computeScore } from "../utils/securityScore";
 import { compareScans } from "../utils/scanComparison";
 import { scanAccount } from "../services/api";
 
-// ── Severity dot + count ──────────────────────────────────────────────────────
-function SeverityLine({ count, label, color, dot }) {
-  if (count === 0) return null;
-  return (
-    <div className={`flex items-center gap-2 ${color}`}>
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
-      <span className="text-[13px] font-semibold tabular-nums leading-none">{count}</span>
-      <span className="text-[13px] text-slate-400 font-normal">{label}</span>
-    </div>
-  );
-}
-
 // ── Score ring ────────────────────────────────────────────────────────────────
 function ScoreRing({ score, label, labelColor }) {
   const r = 34;
@@ -33,7 +21,7 @@ function ScoreRing({ score, label, labelColor }) {
 
   return (
     <div className="flex items-center gap-5 shrink-0">
-      <svg width="80" height="80" viewBox="0 0 80 80" className="-rotate-90 shrink-0">
+      <svg width="76" height="76" viewBox="0 0 80 80" className="-rotate-90 shrink-0">
         <circle cx="40" cy="40" r={r} fill="none" stroke="#1e293b" strokeWidth="6" />
         <circle
           cx="40" cy="40" r={r}
@@ -46,10 +34,9 @@ function ScoreRing({ score, label, labelColor }) {
           style={{ transition: "stroke-dashoffset 0.7s ease" }}
         />
       </svg>
-      <div className="flex flex-col gap-0.5">
-        <span className={`text-4xl font-bold tabular-nums leading-none ${labelColor}`}>{score}</span>
-        <span className={`text-sm font-semibold mt-1 ${labelColor}`}>{label}</span>
-        <span className="text-[11px] text-slate-600 mt-0.5 leading-tight">Security score</span>
+      <div className="flex flex-col">
+        <span className={`text-4xl font-bold tabular-nums leading-none tracking-tight ${labelColor}`}>{score}</span>
+        <span className={`text-sm font-semibold mt-1.5 leading-none ${labelColor}`}>{label}</span>
       </div>
     </div>
   );
@@ -157,7 +144,7 @@ export default function DashboardScreen({
   // ── Security score ─────────────────────────────────────────────────────────
   const scoreData = useMemo(() => computeScore(allResources), [allResources]);
 
-  // ── Sort by severity ───────────────────────────────────────────────────────
+  // ── Sort resources with issues by severity ─────────────────────────────────
   const severityPriority = { CRITICAL: 1, WARNING: 2, ORPHANED: 3 };
 
   const securityResources = useMemo(() =>
@@ -167,25 +154,38 @@ export default function DashboardScreen({
     [allResources]
   );
 
-  const hasIssues = securityResources.length > 0;
-
-  // ── Fix First — top critical issues (max 5) ────────────────────────────────
-  const fixFirstItems = useMemo(() => {
+  // ── Top Attention Item(s) — focused action area ────────────────────────────
+  const topAttentionItems = useMemo(() => {
     const seen = new Set();
     const items = [];
+    // Prioritize critical issues
     for (const r of securityResources) {
-      if (r.status !== "CRITICAL") break;
       for (const issue of (r.issues || [])) {
-        if (issue.severity !== "CRITICAL") continue;
-        const key = `${issue.rule_id || issue.message}::${r.id}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          items.push({ resource: r, issue });
+        if (issue.severity === "CRITICAL") {
+          const key = `${issue.rule_id || issue.message}::${r.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            items.push({ resource: r, issue });
+          }
         }
       }
-      if (items.length >= 5) break;
     }
-    return items;
+    if (items.length > 0) {
+      return items.slice(0, 2);
+    }
+    // Fall back to top warning if no critical issues exist
+    for (const r of securityResources) {
+      for (const issue of (r.issues || [])) {
+        if (issue.severity === "WARNING") {
+          const key = `${issue.rule_id || issue.message}::${r.id}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            items.push({ resource: r, issue });
+          }
+        }
+      }
+    }
+    return items.slice(0, 1);
   }, [securityResources]);
 
   // ── CSV Export (11-column comprehensive) ──────────────────────────────────
@@ -248,11 +248,17 @@ export default function DashboardScreen({
     : comparison.scoreDelta < 0 ? "text-red-400"
     : "text-slate-500";
 
+  const regionDisplay = scanResults?.regions?.length === 1
+    ? scanResults.regions[0]
+    : scanResults?.regions?.length > 1
+    ? `${scanResults.regions.length} regions`
+    : scanResults?.region || "us-east-1";
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 max-w-5xl mx-auto w-full">
 
-        {/* TOP BAR */}
+        {/* ── TOP CONTEXT: Compact TopBar ─────────────────────────────────── */}
         <TopBar
           accountId={scanResults?.account_id || ""}
           region={scanResults?.region || ""}
@@ -287,62 +293,7 @@ export default function DashboardScreen({
         )}
 
         {/* Main content */}
-        <div className={`mt-6 ${isRescanning ? "pointer-events-none opacity-40 select-none" : ""}`}>
-
-          {/* SCAN CONTEXT LINE */}
-          {!isLoading && !scanError && scanResults && (
-            <div className="flex items-center justify-between gap-4 mb-10">
-              <p className="text-[12px] text-slate-500 leading-relaxed">
-                {allResources.length} resources
-                {coverage?.services_scanned?.length
-                  ? ` · ${coverage.services_scanned.length} services`
-                  : ""}
-                {scanResults.regions?.length === 1
-                  ? ` · ${scanResults.regions[0]}`
-                  : scanResults.regions?.length > 1
-                  ? ` · ${scanResults.regions.length} regions`
-                  : ""}
-                {" · "}
-                {scanResults.partial
-                  ? <span className="text-amber-400">⚠ Partial scan</span>
-                  : <span className="text-emerald-500">Full coverage</span>
-                }
-              </p>
-              <button
-                onClick={() => setCoverageModalOpen(true)}
-                className="text-[12px] text-slate-500 hover:text-slate-300 shrink-0 cursor-pointer transition-colors"
-              >
-                Coverage & Scope →
-              </button>
-            </div>
-          )}
-
-          {/* Partial scan inline detail */}
-          {!isLoading && !scanError && scanResults?.partial === true && failedScanners.length > 0 && (
-            <div className="mb-8 flex flex-col gap-2">
-              <p className="text-[11px] text-amber-400/80 font-medium">
-                Some services could not be fully inspected. Findings reflect only successfully scanned resources.
-              </p>
-              <div className="flex flex-col gap-1">
-                {failedScanners.slice(0, 4).map((s, idx) => (
-                  <p key={idx} className="text-[11px] text-slate-500">
-                    <span className="text-amber-400/70">⚠</span>{" "}
-                    <span className="text-slate-400">{s.label || s.service}</span>{" "}
-                    <span className="text-slate-600 font-mono">({s.region || "global"})</span>
-                    {" — "}{s.reason || "missing read permissions"}
-                    {s.required_permission && (
-                      <span className="text-teal-500/80 font-mono ml-1">[{s.required_permission}]</span>
-                    )}
-                  </p>
-                ))}
-                {failedScanners.length > 4 && (
-                  <p className="text-[11px] text-slate-600">
-                    + {failedScanners.length - 4} more — see Coverage & Scope for full details.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+        <div className={`mt-8 sm:mt-12 ${isRescanning ? "pointer-events-none opacity-40 select-none" : ""}`}>
 
           {/* Empty state */}
           {!isLoading && !scanError && scanResults && (scanResults.summary?.total_resources ?? 0) === 0 && (
@@ -353,24 +304,25 @@ export default function DashboardScreen({
               <div>
                 <p className="text-base font-medium text-slate-400">No resources found</p>
                 <p className="text-sm text-slate-600 mt-1">
-                  No active resources were detected in{" "}
-                  {scanResults.regions?.length === 1
-                    ? scanResults.regions[0]
-                    : scanResults.regions?.length > 1
-                    ? `${scanResults.regions.length} selected regions`
-                    : "the selected region"}.
+                  No active resources were detected in {regionDisplay}.
                 </p>
                 <p className="text-xs text-slate-700 mt-2">Try a different region using the selector above.</p>
               </div>
             </div>
           )}
 
-          {/* MAIN DASHBOARD */}
+          {/* MAIN DASHBOARD: Three-Level Progressive Flow */}
           {(isLoading || scanError || (scanResults?.summary?.total_resources ?? 0) > 0) && (
-            <div className="flex flex-col gap-12">
+            <div className="flex flex-col space-y-12 sm:space-y-16">
 
-              {/* SECURITY OVERVIEW */}
+              {/* ──────────────────────────────────────────────────────────── */}
+              {/* LEVEL 1 — SECURITY STATUS                                   */}
+              {/* ──────────────────────────────────────────────────────────── */}
               <section>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-6">
+                  Security Status
+                </p>
+
                 {isLoading ? (
                   <div className="flex flex-col gap-4">
                     <div className="animate-pulse bg-slate-800 h-20 w-48 rounded-xl" />
@@ -384,10 +336,9 @@ export default function DashboardScreen({
                     </button>
                   </p>
                 ) : (
-                  <div className="flex flex-col gap-6">
-
-                    {/* Score + severity breakdown */}
-                    <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-6">
+                  <div className="flex flex-col gap-5">
+                    {/* Score + Breakdown line */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
                       <ScoreRing
                         score={scoreData.score}
                         label={scoreData.label}
@@ -395,146 +346,158 @@ export default function DashboardScreen({
                       />
 
                       {allResources.length > 0 && (
-                        <div className="flex flex-col gap-2.5 sm:items-end sm:pt-1">
-                          <SeverityLine count={scoreData.critical} label="Critical"  color="text-red-400"   dot="bg-red-500" />
-                          <SeverityLine count={scoreData.warning}  label="Warning"   color="text-amber-400" dot="bg-amber-500" />
-                          <SeverityLine count={scoreData.orphaned} label="Orphaned"  color="text-slate-400" dot="bg-slate-500" />
-                          <div className="flex items-center gap-2 text-emerald-400">
-                            <span className="w-1.5 h-1.5 rounded-full shrink-0 bg-emerald-500" />
-                            <span className="text-[13px] font-semibold tabular-nums leading-none">{scoreData.healthy}</span>
-                            <span className="text-[13px] text-slate-400 font-normal">Healthy</span>
+                        <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+                          {scoreData.critical > 0 && (
+                            <div className="flex items-center gap-1.5 text-red-400 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                              <span>{scoreData.critical} Critical</span>
+                            </div>
+                          )}
+                          {scoreData.warning > 0 && (
+                            <div className="flex items-center gap-1.5 text-amber-400 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                              <span>{scoreData.warning} Warning{scoreData.warning > 1 ? "s" : ""}</span>
+                            </div>
+                          )}
+                          {scoreData.orphaned > 0 && (
+                            <div className="flex items-center gap-1.5 text-slate-400 font-medium">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-500 shrink-0" />
+                              <span>{scoreData.orphaned} Orphaned</span>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-1.5 text-emerald-400 font-medium">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <span>{scoreData.healthy} Healthy</span>
                           </div>
-                          <span className="text-[11px] text-slate-600 mt-0.5">
-                            {scoreData.totalResources} resources · {scoreData.totalFindings} findings
-                          </span>
                         </div>
                       )}
                     </div>
 
-                    {/* Scan comparison — compact inline */}
-                    {comparison.hasPrevious && (
-                      <div className="flex flex-col gap-3 pt-1">
-                        <div className="flex items-center gap-3 flex-wrap">
-                          <span className="text-[12px] text-slate-500">
-                            Previous scan:{" "}
-                            <span className="text-slate-400 font-medium">{comparison.previousScore}%</span>
-                            {" → "}
-                            <span className="text-slate-300 font-semibold">{comparison.currentScore}%</span>
+                    {/* Supporting context line */}
+                    <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap pt-1">
+                      <span>Based on checks AWS Clarity performed.</span>
+                      <span>·</span>
+                      <button
+                        onClick={() => setCoverageModalOpen(true)}
+                        className="hover:text-slate-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
+                      >
+                        {scanResults?.partial ? "⚠ Partial scan details" : "Coverage & Scope"}
+                      </button>
+
+                      {comparison.hasPrevious && (
+                        <>
+                          <span>·</span>
+                          <span className="text-slate-400">
+                            Previous scan: {comparison.previousScore}% → {comparison.currentScore}%
                           </span>
-                          <span className={`text-[11px] font-semibold ${deltaColor}`}>{deltaLabel}</span>
-                          {comparison.resolvedCount > 0 && (
-                            <span className="text-[11px] text-emerald-400">✓ {comparison.resolvedCount} resolved</span>
-                          )}
-                          {comparison.stillOpenCount > 0 && (
-                            <span className="text-[11px] text-amber-400">⚠ {comparison.stillOpenCount} still open</span>
-                          )}
-                          {comparison.newCount > 0 && (
-                            <span className="text-[11px] text-cyan-400">⚡ {comparison.newCount} new</span>
-                          )}
+                          <span className={`font-semibold ${deltaColor}`}>{deltaLabel}</span>
                           <button
                             onClick={() => setComparisonExpanded(prev => !prev)}
-                            className="text-[11px] text-slate-500 hover:text-slate-400 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0"
+                            className="hover:text-slate-300 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 text-slate-400"
                           >
                             Details <ChevronIcon open={comparisonExpanded} />
                           </button>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Expandable scan comparison detail panel */}
+                    {comparisonExpanded && comparison.hasPrevious && (
+                      <div className="mt-3 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/40">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {[
+                            { key: "resolved",  label: "✓ Resolved",        count: comparison.resolvedCount,  activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+                            { key: "stillOpen", label: "⚠ Still Open",       count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+                            { key: "new",       label: "⚡ Newly Discovered", count: comparison.newCount,       activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+                          ].map(tab => (
+                            <button
+                              key={tab.key}
+                              onClick={() => setProgressTab(tab.key)}
+                              className={`text-[11px] font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
+                                progressTab === tab.key
+                                  ? tab.activeClass
+                                  : "text-slate-400 hover:text-slate-200 border-transparent"
+                              }`}
+                            >
+                              {tab.label}
+                              <span className="text-[10px] font-mono tabular-nums px-1 rounded bg-slate-800/80">
+                                {tab.count}
+                              </span>
+                            </button>
+                          ))}
                         </div>
 
-                        {/* Expandable comparison detail */}
-                        {comparisonExpanded && (
-                          <div className="border border-slate-800 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/60">
-                            <div className="flex items-center gap-1 flex-wrap">
-                              {[
-                                { key: "resolved",  label: "✓ Resolved",        count: comparison.resolvedCount,  activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-                                { key: "stillOpen", label: "⚠ Still Open",       count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-                                { key: "new",       label: "⚡ Newly Discovered", count: comparison.newCount,       activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
-                              ].map(tab => (
-                                <button
-                                  key={tab.key}
-                                  onClick={() => setProgressTab(tab.key)}
-                                  className={`text-[11px] font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
-                                    progressTab === tab.key
-                                      ? tab.activeClass
-                                      : "text-slate-400 hover:text-slate-200 border-transparent"
-                                  }`}
-                                >
-                                  {tab.label}
-                                  <span className="text-[10px] font-mono tabular-nums px-1 rounded bg-slate-800/80">
-                                    {tab.count}
-                                  </span>
-                                </button>
-                              ))}
-                            </div>
-
-                            <div className="text-xs space-y-1 max-h-44 overflow-y-auto pr-1">
-                              {progressTab === "resolved" && (
-                                comparison.resolvedCount === 0
-                                  ? <p className="text-slate-600 py-1">No findings resolved in this scan.</p>
-                                  : comparison.resolved.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-emerald-950/20">
-                                      <span className="text-emerald-400 font-bold shrink-0">✓</span>
-                                      {item.ruleId && <span className="text-[10px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
-                                      <span className="text-slate-300 truncate">{item.title}</span>
-                                      <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                                    </div>
-                                  ))
-                              )}
-                              {progressTab === "stillOpen" && (
-                                comparison.stillOpenCount === 0
-                                  ? <p className="text-slate-600 py-1">No findings carried over from previous scan.</p>
-                                  : comparison.stillOpen.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-amber-950/20">
-                                      <span className="text-amber-400 font-bold shrink-0">⚠</span>
-                                      {item.ruleId && <span className="text-[10px] font-mono text-amber-400 shrink-0">{item.ruleId}</span>}
-                                      <span className="text-slate-300 truncate">{item.title}</span>
-                                      <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                                    </div>
-                                  ))
-                              )}
-                              {progressTab === "new" && (
-                                comparison.newCount === 0
-                                  ? <p className="text-slate-600 py-1">No new findings discovered.</p>
-                                  : comparison.newFindings.map((item, idx) => (
-                                    <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-cyan-950/20">
-                                      <span className="text-cyan-400 font-bold shrink-0">⚡</span>
-                                      {item.ruleId && <span className="text-[10px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
-                                      <span className="text-slate-300 truncate">{item.title}</span>
-                                      <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                                    </div>
-                                  ))
-                              )}
-                            </div>
-                          </div>
-                        )}
+                        <div className="text-xs space-y-1 max-h-44 overflow-y-auto pr-1">
+                          {progressTab === "resolved" && (
+                            comparison.resolvedCount === 0
+                              ? <p className="text-slate-600 py-1">No findings resolved in this scan.</p>
+                              : comparison.resolved.map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-emerald-950/20">
+                                  <span className="text-emerald-400 font-bold shrink-0">✓</span>
+                                  {item.ruleId && <span className="text-[10px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
+                                  <span className="text-slate-300 truncate">{item.title}</span>
+                                  <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
+                                </div>
+                              ))
+                          )}
+                          {progressTab === "stillOpen" && (
+                            comparison.stillOpenCount === 0
+                              ? <p className="text-slate-600 py-1">No findings carried over from previous scan.</p>
+                              : comparison.stillOpen.map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-amber-950/20">
+                                  <span className="text-amber-400 font-bold shrink-0">⚠</span>
+                                  {item.ruleId && <span className="text-[10px] font-mono text-amber-400 shrink-0">{item.ruleId}</span>}
+                                  <span className="text-slate-300 truncate">{item.title}</span>
+                                  <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
+                                </div>
+                              ))
+                          )}
+                          {progressTab === "new" && (
+                            comparison.newCount === 0
+                              ? <p className="text-slate-600 py-1">No new findings discovered.</p>
+                              : comparison.newFindings.map((item, idx) => (
+                                <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-cyan-950/20">
+                                  <span className="text-cyan-400 font-bold shrink-0">⚡</span>
+                                  {item.ruleId && <span className="text-[10px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
+                                  <span className="text-slate-300 truncate">{item.title}</span>
+                                  <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
+                                </div>
+                              ))
+                          )}
+                        </div>
                       </div>
                     )}
-
                   </div>
                 )}
               </section>
 
-              {/* FIX FIRST */}
+              {/* ──────────────────────────────────────────────────────────── */}
+              {/* LEVEL 2 — WHAT NEEDS ATTENTION                              */}
+              {/* ──────────────────────────────────────────────────────────── */}
               {!isLoading && !scanError && (
                 <section>
-                  <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-5">
-                    Fix first
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-4">
+                    Needs Attention
                   </p>
 
-                  {fixFirstItems.length > 0 ? (
-                    <div className="flex flex-col">
-                      {fixFirstItems.map(({ resource, issue }, idx) => (
+                  {topAttentionItems.length > 0 ? (
+                    <div className="divide-y divide-slate-800/60 border-y border-slate-800/60">
+                      {topAttentionItems.map(({ resource, issue }, idx) => (
                         <div
                           key={`${issue.rule_id}-${resource.id}-${idx}`}
-                          className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 py-4 border-b border-slate-800/60"
+                          className="py-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
                         >
                           <div className="flex flex-col gap-1 min-w-0">
                             <div className="flex items-center gap-2.5 flex-wrap">
-                              <span className="text-[10px] font-semibold uppercase tracking-wider text-red-400">
-                                Critical
+                              <span className={`text-[11px] font-semibold uppercase tracking-wider ${
+                                issue.severity === "CRITICAL" ? "text-red-400" : "text-amber-400"
+                              }`}>
+                                {issue.severity === "CRITICAL" ? "Critical" : "Warning"}
                               </span>
                               {issue.rule_id && (
-                                <span className="text-[10px] font-mono text-slate-500">{issue.rule_id}</span>
+                                <span className="text-[11px] font-mono text-slate-500">{issue.rule_id}</span>
                               )}
-                              <span className="text-[13px] font-medium text-slate-200 leading-snug">
+                              <span className="text-[13px] font-medium text-slate-200">
                                 {issue.title || issue.message}
                               </span>
                             </div>
@@ -549,37 +512,42 @@ export default function DashboardScreen({
                           </div>
                           <button
                             onClick={() => setSelectedResource(resource)}
-                            className="text-[12px] text-blue-400 hover:text-blue-300 font-normal bg-transparent border-none p-0 cursor-pointer shrink-0 self-start sm:pt-0.5 whitespace-nowrap transition-colors"
+                            className="text-[12px] text-blue-400 hover:text-blue-300 font-normal bg-transparent border-none p-0 cursor-pointer shrink-0 sm:pt-0.5 self-start whitespace-nowrap transition-colors"
                           >
                             Inspect →
                           </button>
                         </div>
                       ))}
                     </div>
-                  ) : !hasIssues && allResources.length > 0 ? (
-                    <div className="flex items-center gap-2 py-1">
-                      <svg className="w-3.5 h-3.5 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  ) : (
+                    <div className="flex items-center gap-2.5 py-2 text-slate-400 text-[13px]">
+                      <svg className="w-4 h-4 text-emerald-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                       </svg>
-                      <span className="text-[13px] text-slate-500">
-                        Nothing urgent found based on the checks AWS Clarity performed.
-                      </span>
+                      <span>Nothing urgent found based on checks performed.</span>
                     </div>
-                  ) : null}
+                  )}
                 </section>
               )}
 
-              {/* RESOURCE INVENTORY */}
+              {/* ──────────────────────────────────────────────────────────── */}
+              {/* LEVEL 3 — RESOURCE WORKSPACE                                */}
+              {/* ──────────────────────────────────────────────────────────── */}
               {!isLoading && !scanError && (
                 <section>
-                  <div className="flex items-center justify-between mb-5">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                      All resources
-                    </p>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
+                        All Resources
+                      </p>
+                      <p className="text-[12px] text-slate-500 mt-0.5">
+                        {allResources.length} resources · {regionDisplay}
+                      </p>
+                    </div>
                     {scanResults && (
                       <button
                         onClick={handleExportCSV}
-                        className="text-[12px] text-slate-500 hover:text-slate-400 cursor-pointer bg-transparent border-none p-0 transition-colors"
+                        className="text-[12px] text-slate-500 hover:text-slate-300 cursor-pointer bg-transparent border-none p-0 transition-colors"
                       >
                         Export CSV
                       </button>
