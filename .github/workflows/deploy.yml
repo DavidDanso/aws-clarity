@@ -6,8 +6,8 @@ on:
       - main
     paths:
       - "infra/*.tf"
-      - "frontend/**"
-      - "backend/**"
+      # - "frontend/**"
+      # - "backend/**"
   workflow_dispatch:
     inputs:
       action:
