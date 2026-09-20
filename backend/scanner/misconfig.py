@@ -2,21 +2,127 @@ from botocore.exceptions import ClientError
 import logging
 
 
-def _issue(rule_id, severity, title, why, evidence, fix):
-    """Return a fully-structured finding dict.
+RULE_METADATA = {
+    "S3-001": {
+        "what_found": "Bucket contains 0 objects and has no active storage usage.",
+        "what_checked": "Queried S3 bucket object count and storage usage.",
+    },
+    "S3-002": {
+        "what_found": "Bucket policy explicitly allows public read or write access from the internet.",
+        "what_checked": "Queried S3 GetBucketPolicyStatus API to evaluate policy public access.",
+    },
+    "S3-003": {
+        "what_found": "Bucket Access Control List (ACL) grants permissions to AllUsers or AuthenticatedUsers.",
+        "what_checked": "Queried S3 GetBucketAcl API and inspected grantee URI definitions.",
+    },
+    "S3-004": {
+        "what_found": "Server-side encryption is not enabled by default for objects stored in this bucket.",
+        "what_checked": "Queried S3 GetBucketEncryption API configuration.",
+    },
+    "S3-005": {
+        "what_found": "One or more of the four S3 Block Public Access controls are disabled.",
+        "what_checked": "Queried S3 GetPublicAccessBlock configuration for all 4 security flags.",
+    },
+    "SG-001": {
+        "what_found": "Inbound firewall rule allows all protocols (-1) and all ports from 0.0.0.0/0 or ::/0.",
+        "what_checked": "Evaluated Security Group ingress IP permissions for unrestricted CIDR routes across all protocols.",
+    },
+    "SG-002": {
+        "what_found": "Inbound SSH access is allowed from 0.0.0.0/0 or ::/0 on port 22.",
+        "what_checked": "Evaluated Security Group ingress IP permissions for port 22 with unrestricted CIDR sources.",
+    },
+    "SG-003": {
+        "what_found": "Inbound RDP access is allowed from 0.0.0.0/0 or ::/0 on port 3389.",
+        "what_checked": "Evaluated Security Group ingress IP permissions for port 3389 with unrestricted CIDR sources.",
+    },
+    "RDS-001": {
+        "what_found": "RDS instance PubliclyAccessible flag is set to true and placed in a public subnet.",
+        "what_checked": "Inspected RDS DescribeDBInstances PubliclyAccessible configuration.",
+    },
+    "RDS-002": {
+        "what_found": "RDS instance storage encryption is disabled.",
+        "what_checked": "Inspected RDS DescribeDBInstances StorageEncrypted attribute.",
+    },
+    "RDS-003": {
+        "what_found": "Deletion protection is disabled on this RDS instance.",
+        "what_checked": "Inspected RDS DescribeDBInstances DeletionProtection attribute.",
+    },
+    "EBS-001": {
+        "what_found": "EBS volume block storage has encryption disabled.",
+        "what_checked": "Inspected EC2 DescribeVolumes Encrypted attribute.",
+    },
+    "EBS-002": {
+        "what_found": "EBS volume is in 'available' state and not attached to any EC2 instance.",
+        "what_checked": "Inspected EC2 DescribeVolumes State and Attachments list.",
+    },
+    "IAM-001": {
+        "what_found": "Inline IAM policy statement contains Action: * or Action: iam:* with Effect: Allow.",
+        "what_checked": "Parsed IAM role inline policy documents for unrestricted Action: * statements.",
+    },
+    "IAM-002": {
+        "what_found": "IAM policy statements grant actions with Resource: * without resource scoping.",
+        "what_checked": "Parsed IAM role inline policy documents for statements with Resource: *.",
+    },
+    "IAM-003": {
+        "what_found": "AWS managed policy AdministratorAccess is attached to this IAM role.",
+        "what_checked": "Inspected IAM ListAttachedRolePolicies for AdministratorAccess.",
+    },
+    "IAM-004": {
+        "what_found": "AWS managed policy IAMFullAccess is attached to this IAM role.",
+        "what_checked": "Inspected IAM ListAttachedRolePolicies for IAMFullAccess.",
+    },
+    "IAM-005": {
+        "what_found": "Role trust policy allows Principal: * or AWS: * to assume the role.",
+        "what_checked": "Parsed AssumeRolePolicyDocument for wildcard Principal definitions.",
+    },
+    "IAM-006": {
+        "what_found": "IAM policy statement grants full wildcard actions across an entire service (e.g. s3:*, ec2:*).",
+        "what_checked": "Parsed IAM policy statements for actions ending with :* combined with Resource: *.",
+    },
+    "IAM-007": {
+        "what_found": "AWS managed policy PowerUserAccess is attached to this IAM role.",
+        "what_checked": "Inspected IAM ListAttachedRolePolicies for PowerUserAccess.",
+    },
+    "IAM-008": {
+        "what_found": "Cross-account trust relationship does not enforce an sts:ExternalId condition.",
+        "what_checked": "Inspected AssumeRolePolicyDocument cross-account principals for sts:ExternalId conditions.",
+    },
+    "EC2-001": {
+        "what_found": "EC2 instance is in 'stopped' state while retaining attached storage and IPs.",
+        "what_checked": "Inspected EC2 DescribeInstances instance state.",
+    },
+    "EIP-001": {
+        "what_found": "Elastic IP address has no active AssociationId or attached network interface.",
+        "what_checked": "Inspected EC2 DescribeAddresses association_id field.",
+    },
+    "SNAP-001": {
+        "what_found": "The EBS volume from which this snapshot was taken has been deleted or cannot be found.",
+        "what_checked": "Cross-referenced Snapshot VolumeId against active EBS volumes in the account.",
+    },
+}
+
+
+def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_checked=None):
+    """Return a fully-structured finding dict with explainable evidence.
 
     Every key is always present so the frontend never needs to guard against
     missing fields.
     """
+    meta = RULE_METADATA.get(rule_id, {})
+    resolved_what_found = what_found or meta.get("what_found") or title
+    resolved_what_checked = what_checked or meta.get("what_checked") or "Inspected AWS resource configuration."
+
     return {
-        "rule_id":  rule_id,
-        "severity": severity,   # CRITICAL | WARNING | ORPHANED
-        "title":    title,      # Short, non-technical plain-English summary
-        "why":      why,        # One sentence explaining the risk
-        "evidence": evidence,   # Dict of key→value pairs of actual detected data
-        "fix":      fix,        # Actionable remediation step
+        "rule_id":      rule_id,
+        "severity":     severity,   # CRITICAL | WARNING | ORPHANED
+        "title":        title,      # Short, non-technical plain-English summary
+        "what_found":   resolved_what_found,
+        "why":          why,        # One sentence explaining the risk
+        "what_checked": resolved_what_checked,
+        "evidence":     evidence,   # Dict of key→value pairs of actual detected data
+        "fix":          fix,        # Actionable remediation step
         # Legacy field kept so nothing existing breaks
-        "message":  title,
+        "message":      title,
     }
 
 

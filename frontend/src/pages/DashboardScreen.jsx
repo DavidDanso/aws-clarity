@@ -4,8 +4,9 @@ import DetailDrawer from "../components/DetailDrawer";
 import ResourceTable from "../components/ResourceTable";
 import { RESOURCE_TYPE_LABELS } from "../utils/constants";
 import { computeScore } from "../utils/securityScore";
-import { compareScans } from "../utils/scanComparison";
+import { compareScans, getStableResourceId } from "../utils/scanComparison";
 import { scanAccount } from "../services/api";
+import { SECURITY_CHECKS, evaluateCheckStatus } from "../utils/securityChecksCatalog";
 
 // ── Score ring ────────────────────────────────────────────────────────────────
 function ScoreRing({ score, label, labelColor }) {
@@ -69,6 +70,10 @@ export default function DashboardScreen({
 }) {
   const [selectedResource, setSelectedResource] = useState(null);
   const [coverageModalOpen, setCoverageModalOpen] = useState(false);
+  const [scoreModalOpen, setScoreModalOpen] = useState(false);
+  const [catalogModalOpen, setCatalogModalOpen] = useState(false);
+  const [catalogFilter, setCatalogFilter] = useState("all");
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState("resolved");
   const [isRescanning, setIsRescanning] = useState(false);
@@ -144,6 +149,45 @@ export default function DashboardScreen({
 
   // ── Security score ─────────────────────────────────────────────────────────
   const scoreData = useMemo(() => computeScore(allResources), [allResources]);
+
+  // ── Evaluated Security Checks Catalog ─────────────────────────────────────
+  const evaluatedChecks = useMemo(() => {
+    return SECURITY_CHECKS.map(check => ({
+      ...check,
+      eval: evaluateCheckStatus(check, allResources),
+    }));
+  }, [allResources]);
+
+  const filteredChecks = useMemo(() => {
+    let list = evaluatedChecks;
+    if (catalogFilter === "violated") {
+      list = list.filter(c => c.eval.status === "VIOLATED");
+    } else if (catalogFilter === "passed") {
+      list = list.filter(c => c.eval.status === "PASSED");
+    } else if (catalogFilter === "na") {
+      list = list.filter(c => c.eval.status === "NOT_APPLICABLE");
+    }
+
+    if (catalogSearch.trim()) {
+      const q = catalogSearch.toLowerCase().trim();
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        c.id.toLowerCase().includes(q) ||
+        c.service.toLowerCase().includes(q) ||
+        c.whatItChecks.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [evaluatedChecks, catalogFilter, catalogSearch]);
+
+  const checkCounts = useMemo(() => {
+    return {
+      total: evaluatedChecks.length,
+      violated: evaluatedChecks.filter(c => c.eval.status === "VIOLATED").length,
+      passed: evaluatedChecks.filter(c => c.eval.status === "PASSED").length,
+      na: evaluatedChecks.filter(c => c.eval.status === "NOT_APPLICABLE").length,
+    };
+  }, [evaluatedChecks]);
 
   // ── Sort resources with issues by severity ─────────────────────────────────
   const severityPriority = { CRITICAL: 1, WARNING: 2, ORPHANED: 3 };
@@ -381,6 +425,20 @@ export default function DashboardScreen({
                       <span>Based on checks AWS Clarity performed.</span>
                       <span>·</span>
                       <button
+                        onClick={() => setScoreModalOpen(true)}
+                        className="hover:text-slate-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
+                      >
+                        How is this calculated?
+                      </button>
+                      <span>·</span>
+                      <button
+                        onClick={() => setCatalogModalOpen(true)}
+                        className="hover:text-slate-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
+                      >
+                        Security checks catalog ({SECURITY_CHECKS.length} checks)
+                      </button>
+                      <span>·</span>
+                      <button
                         onClick={() => setCoverageModalOpen(true)}
                         className="hover:text-slate-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
                       >
@@ -396,6 +454,17 @@ export default function DashboardScreen({
                             Previous scan: {comparison.previousScore}% → {comparison.currentScore}%
                           </span>
                           <span className={`font-semibold ${deltaColor}`}>{deltaLabel}</span>
+                          {comparison.hasMeaningfulChanges && (
+                            <span className="text-slate-400">
+                              ({[
+                                comparison.resolvedCount > 0 && `${comparison.resolvedCount} resolved`,
+                                comparison.newCount > 0 && `${comparison.newCount} new issue${comparison.newCount > 1 ? "s" : ""}`,
+                                comparison.newResourcesCount > 0 && `${comparison.newResourcesCount} new resource${comparison.newResourcesCount > 1 ? "s" : ""}`,
+                                comparison.removedResourcesCount > 0 && `${comparison.removedResourcesCount} removed`,
+                                comparison.statusChangesCount > 0 && `${comparison.statusChangesCount} status change${comparison.statusChangesCount > 1 ? "s" : ""}`,
+                              ].filter(Boolean).join(", ")})
+                            </span>
+                          )}
                           <button
                             onClick={() => setComparisonExpanded(prev => !prev)}
                             className="hover:text-slate-300 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 text-slate-400"
@@ -411,9 +480,12 @@ export default function DashboardScreen({
                       <div className="mt-3 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/40">
                         <div className="flex items-center gap-1 flex-wrap">
                           {[
-                            { key: "resolved",  label: "✓ Resolved",        count: comparison.resolvedCount,  activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-                            { key: "stillOpen", label: "⚠ Still Open",       count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-                            { key: "new",       label: "⚡ Newly Discovered", count: comparison.newCount,       activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+                            { key: "resolved",       label: "✓ Resolved Issues",    count: comparison.resolvedCount,         activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+                            { key: "stillOpen",      label: "⚠ Still Open",         count: comparison.stillOpenCount,        activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
+                            { key: "new",            label: "⚡ New Issues",        count: comparison.newCount,              activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+                            { key: "newResources",   label: "📦 New Resources",     count: comparison.newResourcesCount,     activeClass: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
+                            { key: "removedResources", label: "🗑 Removed Resources", count: comparison.removedResourcesCount, activeClass: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
+                            { key: "statusChanges",  label: "🔄 Status Changes",    count: comparison.statusChangesCount,    activeClass: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
                           ].map(tab => (
                             <button
                               key={tab.key}
@@ -466,6 +538,54 @@ export default function DashboardScreen({
                                   {item.ruleId && <span className="text-[10px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
                                   <span className="text-slate-300 truncate">{item.title}</span>
                                   <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
+                                </div>
+                              ))
+                          )}
+                          {progressTab === "newResources" && (
+                            comparison.newResourcesCount === 0
+                              ? <p className="text-slate-600 py-1">No new resources discovered since last scan.</p>
+                              : comparison.newResources.map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-sky-950/20">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="text-sky-400 font-bold shrink-0">📦</span>
+                                    <span className="text-[10px] font-mono text-sky-400 shrink-0 uppercase">{item.type}</span>
+                                    <span className="text-slate-300 truncate">{item.name || item.id}</span>
+                                  </div>
+                                  <span className={`text-[10px] font-semibold uppercase ${STATUS_COLOR[item.status] || "text-slate-400"}`}>
+                                    {item.status}
+                                  </span>
+                                </div>
+                              ))
+                          )}
+                          {progressTab === "removedResources" && (
+                            comparison.removedResourcesCount === 0
+                              ? <p className="text-slate-600 py-1">No resources removed since last scan.</p>
+                              : comparison.removedResources.map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-rose-950/20">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="text-rose-400 font-bold shrink-0">🗑</span>
+                                    <span className="text-[10px] font-mono text-rose-400 shrink-0 uppercase">{item.type}</span>
+                                    <span className="text-slate-300 truncate">{item.name || item.id}</span>
+                                  </div>
+                                  <span className="text-[10px] text-slate-500 font-mono">Removed</span>
+                                </div>
+                              ))
+                          )}
+                          {progressTab === "statusChanges" && (
+                            comparison.statusChangesCount === 0
+                              ? <p className="text-slate-600 py-1">No resource status changes detected.</p>
+                              : comparison.statusChanges.map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-indigo-950/20">
+                                  <div className="flex items-center gap-2 truncate">
+                                    <span className="text-indigo-400 font-bold shrink-0">🔄</span>
+                                    <span className="text-[10px] font-mono text-indigo-400 shrink-0 uppercase">{item.resourceType}</span>
+                                    <span className="text-slate-300 truncate">{item.resourceName}</span>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono">
+                                    <span className={STATUS_COLOR[item.previousStatus] || "text-slate-400"}>{item.previousStatus}</span>
+                                    <span className="text-slate-500">→</span>
+                                    <span className={STATUS_COLOR[item.currentStatus] || "text-slate-400"}>{item.currentStatus}</span>
+                                  </div>
                                 </div>
                               ))
                           )}
@@ -739,10 +859,278 @@ export default function DashboardScreen({
         </div>
       )}
 
+      {/* ── SCORE EXPLANATION MODAL ────────────────────────────────────── */}
+      {scoreModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fade-in">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">How Your Security Score Is Calculated</h3>
+                <p className="text-xs text-slate-400 mt-0.5">Transparent, deterministic scoring based on scan findings</p>
+              </div>
+              <button
+                onClick={() => setScoreModalOpen(false)}
+                className="text-slate-400 hover:text-slate-200 transition-colors p-1 cursor-pointer bg-transparent border-none"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 text-xs">
+              {/* Formula Card */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Scoring Formula</p>
+                <div className="font-mono text-xs sm:text-sm text-teal-300 bg-slate-900/90 p-3 rounded-lg border border-slate-800">
+                  Score = max(0, 100 − [10 × Critical + 4 × Warnings + 1 × Orphaned])
+                </div>
+                <p className="text-slate-400 text-[11px] leading-relaxed">
+                  Scoring starts at 100 points. Points are subtracted per detected issue according to its severity level. The score is floored at 0.
+                </p>
+              </div>
+
+              {/* Live Calculation */}
+              <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Live Account Calculation</p>
+                  <span className="text-xs font-mono font-bold text-slate-200">
+                    Final Score: <span className="text-teal-400">{scoreData.score} / 100</span> ({scoreData.label})
+                  </span>
+                </div>
+
+                <div className="divide-y divide-slate-800/80 font-mono text-[11px]">
+                  <div className="py-1.5 flex justify-between">
+                    <span className="text-slate-400">Base Starting Score:</span>
+                    <span className="text-slate-200">+100 pts</span>
+                  </div>
+                  <div className="py-1.5 flex justify-between text-red-400">
+                    <span>Critical Findings ({scoreData.critical} × −10 pts):</span>
+                    <span>−{scoreData.critical * 10} pts</span>
+                  </div>
+                  <div className="py-1.5 flex justify-between text-amber-400">
+                    <span>Warning Findings ({scoreData.warning} × −4 pts):</span>
+                    <span>−{scoreData.warning * 4} pts</span>
+                  </div>
+                  <div className="py-1.5 flex justify-between text-slate-400">
+                    <span>Orphaned Resources ({scoreData.orphaned} × −1 pt):</span>
+                    <span>−{scoreData.orphaned * 1} pts</span>
+                  </div>
+                  <div className="py-2 flex justify-between font-bold text-xs border-t border-slate-700">
+                    <span className="text-white font-sans">Calculated Score:</span>
+                    <span className="text-teal-300">{scoreData.score} pts</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Supporting Counts */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Scanned</span>
+                  <span className="text-base font-bold text-white font-mono">{scoreData.totalResources}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block">Healthy (0 Issues)</span>
+                  <span className="text-base font-bold text-emerald-400 font-mono">{scoreData.healthy}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block">Need Attention</span>
+                  <span className="text-base font-bold text-amber-400 font-mono">{scoreData.needsAttention}</span>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
+                  <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Findings</span>
+                  <span className="text-base font-bold text-slate-200 font-mono">{scoreData.totalFindings}</span>
+                </div>
+              </div>
+
+              {/* Score Tiers */}
+              <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                <p className="font-semibold text-slate-300">Score Range Interpretations:</p>
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 font-mono pt-1 text-center text-[10px]">
+                  <span className="p-1 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-500/20">90–100: Excellent</span>
+                  <span className="p-1 rounded bg-teal-950/40 text-teal-300 border border-teal-500/20">75–89: Good</span>
+                  <span className="p-1 rounded bg-amber-950/40 text-amber-300 border border-amber-500/20">50–74: Fair</span>
+                  <span className="p-1 rounded bg-orange-950/40 text-orange-300 border border-orange-500/20">25–49: Poor</span>
+                  <span className="p-1 rounded bg-red-950/40 text-red-300 border border-red-500/20">0–24: Critical</span>
+                </div>
+              </div>
+
+              {/* Non-certification Disclaimer */}
+              <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
+                <p className="font-semibold text-slate-300 mb-0.5">Important Clarification</p>
+                This score is an operational security posture indicator derived strictly from the checks performed above. It does not certify compliance with industry standards (e.g. SOC 2, ISO 27001, PCI-DSS, HIPAA, or CIS benchmarks) and does not guarantee that your AWS account is completely immune to security threats.
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end">
+              <button
+                onClick={() => setScoreModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SECURITY CHECK CATALOG MODAL ──────────────────────────────── */}
+      {catalogModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-fade-in">
+            <div className="p-5 border-b border-slate-800 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold text-white">Security Check Catalog</h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {SECURITY_CHECKS.length} security checks executed by AWS Clarity
+                </p>
+              </div>
+              <button
+                onClick={() => setCatalogModalOpen(false)}
+                className="text-slate-400 hover:text-slate-200 transition-colors p-1 cursor-pointer bg-transparent border-none"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filter bar */}
+            <div className="px-5 pt-4 pb-3 border-b border-slate-800 space-y-3 bg-slate-950/40">
+              <input
+                type="text"
+                value={catalogSearch}
+                onChange={(e) => setCatalogSearch(e.target.value)}
+                placeholder="Filter checks by name, rule ID, or service…"
+                className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+              />
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {[
+                  { key: "all",      label: "All Checks", count: checkCounts.total },
+                  { key: "violated", label: "Violated",   count: checkCounts.violated, activeClass: "text-red-400 bg-red-500/10 border-red-500/20" },
+                  { key: "passed",   label: "Passed",     count: checkCounts.passed,   activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
+                  { key: "na",       label: "No Resources", count: checkCounts.na,     activeClass: "text-slate-400 bg-slate-500/10 border-slate-500/20" },
+                ].map(tab => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setCatalogFilter(tab.key)}
+                    className={`text-[11px] font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
+                      catalogFilter === tab.key
+                        ? (tab.activeClass || "text-teal-400 bg-teal-500/10 border-teal-500/20")
+                        : "text-slate-400 hover:text-slate-200 border-transparent"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span className="text-[10px] font-mono tabular-nums px-1 rounded bg-slate-800">
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Checks list */}
+            <div className="p-5 overflow-y-auto space-y-3 text-xs flex-1">
+              {filteredChecks.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  No security checks match the current filter.
+                </div>
+              ) : (
+                filteredChecks.map(check => {
+                  const isViolated = check.eval.status === "VIOLATED";
+                  const isPassed = check.eval.status === "PASSED";
+
+                  return (
+                    <div
+                      key={check.id}
+                      className={`p-3.5 rounded-xl border ${
+                        isViolated
+                          ? "border-red-500/30 bg-red-950/10"
+                          : "border-slate-800 bg-slate-950/60"
+                      } space-y-2`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap min-w-0">
+                          <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
+                            {check.id}
+                          </span>
+                          <span className="font-semibold text-slate-100 text-xs">
+                            {check.service} — {check.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className="text-[10px] text-slate-400 px-1.5 py-0.5 rounded bg-slate-800">
+                            {check.service}
+                          </span>
+                          <span className={`text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded ${
+                            check.severity === "CRITICAL"
+                              ? "text-red-400 bg-red-500/10"
+                              : check.severity === "WARNING"
+                              ? "text-amber-400 bg-amber-500/10"
+                              : "text-slate-400 bg-slate-500/10"
+                          }`}>
+                            {check.severity}
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-slate-400 text-[11px] leading-relaxed">
+                        {check.whatItChecks}
+                      </p>
+
+                      <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-800/60">
+                        <span className="text-slate-500">Live Status:</span>
+                        <div className="flex items-center gap-1.5">
+                          {isViolated && (
+                            <span className="font-medium text-red-400 flex items-center gap-1">
+                              <span>⚠ Violated</span>
+                              <span className="font-mono text-[10px] text-red-300">
+                                ({check.eval.label})
+                              </span>
+                            </span>
+                          )}
+                          {isPassed && (
+                            <span className="font-medium text-emerald-400 flex items-center gap-1">
+                              <span>✓ Passed</span>
+                              <span className="font-mono text-[10px] text-emerald-500">
+                                ({check.eval.label})
+                              </span>
+                            </span>
+                          )}
+                          {!isViolated && !isPassed && (
+                            <span className="text-slate-500 font-mono text-[10px]">
+                              — No resources scanned
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">
+                Checks derived directly from scanner engine · Zero hypothetical checks
+              </span>
+              <button
+                onClick={() => setCatalogModalOpen(false)}
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── DETAIL DRAWER ─────────────────────────────────────────────────── */}
       {selectedResource && (
         <DetailDrawer
           resource={selectedResource}
+          scannedAt={scannedAt || scanResults?.scanned_at}
+          previousScannedAt={previousScanResults?.scanned_at}
+          history={comparison.resourceHistoryMap?.get(getStableResourceId(selectedResource))}
           onClose={() => setSelectedResource(null)}
         />
       )}
