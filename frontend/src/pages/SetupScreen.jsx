@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { validateRoleArn } from "../utils/formatters";
 import { SUPPORTED_REGIONS } from "../utils/constants";
 import { checkPermissions } from "../services/api";
@@ -54,16 +54,24 @@ const IAM_POLICY_JSON = `{
 
 const FAQ_ITEMS = [
   {
-    question: "Is this safe?",
-    answer: "Yes. AWS Clarity uses a strictly read-only IAM role. It cannot create, modify, or delete any resources in your AWS account."
+    question: "Is AWS Clarity safe to connect?",
+    answer: "Yes. AWS Clarity uses a strictly read-only IAM role temporarily assumed via AWS STS for 1 hour. It cannot create, modify, stop, or delete any resources in your AWS account."
   },
   {
-    question: "What permissions does AWS Clarity need?",
-    answer: "Only read-only (Describe/List) permissions for supported services. We never ask for admin rights or write permissions, and we make zero AWS billing or Cost Explorer API requests."
+    question: "Does AWS Clarity ask for my AWS passwords or access keys?",
+    answer: "No. AWS Clarity never asks for, handles, or stores AWS root passwords, IAM user credentials, or secret access keys. Authentication is handled entirely through temporary STS credentials."
+  },
+  {
+    question: "What permissions does AWS Clarity require?",
+    answer: "Only read-only (Describe and List) permissions for supported services. We never ask for admin rights or write permissions, and we make zero AWS billing or Cost Explorer API requests."
+  },
+  {
+    question: "What is the External ID and why is it used?",
+    answer: "The External ID ('aws-clarity-scan') ensures only AWS Clarity can assume this cross-account role, preventing the 'confused deputy' security vulnerability per official AWS IAM architecture guidelines."
   },
   {
     question: "What happens if a permission is missing?",
-    answer: "AWS Clarity will perform a partial scan. It will inspect only the services you permitted, mark the scan as partial, and explain exactly which service was skipped."
+    answer: "AWS Clarity performs a partial scan. It inspects only the services you permitted, marks the scan as partial, and explains exactly which service was skipped and what permission is required."
   },
   {
     question: "How do I revoke access?",
@@ -76,17 +84,13 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const [localError, setLocalError] = useState("");
   const [copied, setCopied] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState("us-east-1");
-  const [currentStep, setCurrentStep] = useState(1);
   const [openFaq, setOpenFaq] = useState(null);
+  const [showRoleGuide, setShowRoleGuide] = useState(false);
 
   // Permission pre-check states
   const [isPrechecking, setIsPrechecking] = useState(false);
   const [precheckResults, setPrecheckResults] = useState(null);
   const [precheckError, setPrecheckError] = useState(null);
-
-  useEffect(() => {
-    setCurrentStep(1);
-  }, []);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(IAM_POLICY_JSON);
@@ -148,395 +152,310 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const activeError = localError || scanError;
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-start px-4 py-10">
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-start px-4 py-8 sm:py-12 text-slate-100">
 
-      {/* Hero */}
-      <div className="text-center mb-6">
-        <div className="flex items-center justify-center gap-2 mb-3">
-          <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-teal-400">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-            </svg>
-          </div>
-          <span className="text-lg font-semibold text-white tracking-tight">AWS Clarity</span>
-        </div>
-        <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight mb-1">
-          Full visibility into your AWS account
-        </h1>
-        <p className="text-xs text-gray-400 mb-3">
-          Security misconfigs and orphaned resources — in one scan.
-        </p>
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          {["🔒 Read-only", "⏱ Expires in 1hr", "🚫 No credentials stored"].map(label => (
-            <span key={label} className="text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded-full px-3 py-1">
-              {label}
-            </span>
-          ))}
-        </div>
-      </div>
+      {/* Main Container */}
+      <div className="w-full max-w-lg flex flex-col space-y-8">
 
-      {/* Wizard card */}
-      <div className="w-full max-w-md bg-gray-900 border border-gray-800 rounded-2xl shadow-2xl overflow-hidden">
-
-        {/* Stepper header */}
-        <div className="px-6 pt-5 pb-4 border-b border-gray-800">
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-gray-500 font-medium">Step {currentStep} of 3</span>
-            <span className="text-xs text-teal-400 font-medium">
-              {currentStep === 1 && "Create Role"}
-              {currentStep === 2 && "Attach Policy"}
-              {currentStep === 3 && "Scan Account"}
-            </span>
-          </div>
-          {/* Progress bar */}
-          <div className="flex items-center gap-1.5">
-            {[1, 2, 3].map(step => (
-              <div
-                key={step}
-                className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-                  step <= currentStep ? "bg-teal-500" : "bg-gray-700"
-                }`}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Step content */}
-        <div className="p-6">
-          {currentStep === 1 && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-white mb-1">Create a read-only IAM role</h2>
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  In the AWS IAM Console, create a new role. When prompted for trusted entity, choose{" "}
-                  <span className="text-gray-200 font-medium">Another AWS Account</span>{" "}
-                  and enter:
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2.5">
-                  <span className="text-xs text-gray-400">App Account ID</span>
-                  <code className="text-xs text-teal-400 font-mono break-all">
-                    {import.meta.env.VITE_APP_ACCOUNT_ID}
-                  </code>
-                </div>
-                <div className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2.5">
-                  <span className="text-xs text-gray-400">External ID</span>
-                  <code className="text-xs text-teal-400 font-mono">aws-clarity-scan</code>
-                </div>
-              </div>
-
-              <p className="text-xs text-gray-500">
-                The External ID ensures only AWS Clarity can use this role — not anyone else who knows the account ID.
-              </p>
-
-              <div className="flex items-center justify-between pt-2">
-                <a
-                  href="https://console.aws.amazon.com/iam/home#/roles"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-teal-400 hover:text-teal-300 transition-colors"
-                >
-                  Open IAM Console
-                  <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
-                    <polyline points="15 3 21 3 21 9" />
-                    <line x1="10" y1="14" x2="21" y2="3" />
-                  </svg>
-                </a>
-                <button
-                  onClick={() => setCurrentStep(2)}
-                  className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
-                >
-                  Next: Attach Policy
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {currentStep === 2 && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-white mb-1">Attach the permissions policy</h2>
-                <p className="text-xs text-gray-400 leading-relaxed">
-                  Add this inline policy to your new role. Every permission is read-only — none can create, modify, or delete anything.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-gray-700 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
-                  <span className="text-xs text-gray-400 font-mono font-medium">IAM Policy JSON</span>
-                  <button
-                    onClick={handleCopy}
-                    className="text-xs font-medium transition-colors text-teal-400 hover:text-teal-300 cursor-pointer"
-                  >
-                    {copied ? "Copied ✓" : "Copy"}
-                  </button>
-                </div>
-                <pre className="text-xs text-gray-300 p-3 overflow-x-auto overflow-y-auto max-h-52 font-mono leading-relaxed bg-gray-950">
-                  {IAM_POLICY_JSON}
-                </pre>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  onClick={() => setCurrentStep(1)}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors cursor-pointer"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                  Back
-                </button>
-                <button
-                  onClick={() => setCurrentStep(3)}
-                  className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
-                >
-                  Next: Enter ARN
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {currentStep === 3 && (
-            <div className="space-y-4">
-              <div>
-                <h2 className="text-base font-semibold text-white mb-1">Paste your Role ARN and scan</h2>
-                <p className="text-xs text-gray-400">
-                  Copy the Role ARN from the IAM role you just created and paste it below.
-                </p>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Role ARN</label>
-                  <button
-                    type="button"
-                    onClick={handlePrecheck}
-                    disabled={isPrechecking || !roleArn.trim()}
-                    className={`text-xs font-medium px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
-                      isPrechecking || !roleArn.trim()
-                        ? "text-gray-500 bg-gray-800/50 cursor-not-allowed"
-                        : "text-teal-400 hover:text-teal-300 bg-teal-500/10 border border-teal-500/20 cursor-pointer"
-                    }`}
-                  >
-                    {isPrechecking ? (
-                      <>
-                        <svg className="animate-spin w-3 h-3 text-teal-400" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                        </svg>
-                        Checking...
-                      </>
-                    ) : (
-                      <>
-                        <span>⚡</span> Test Permissions
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                <input
-                  type="text"
-                  value={roleArn}
-                  onChange={(e) => {
-                    setRoleArn(e.target.value);
-                    if (localError) setLocalError("");
-                    if (scanError) setScanError("");
-                    if (precheckResults) setPrecheckResults(null);
-                    if (precheckError) setPrecheckError(null);
-                  }}
-                  placeholder="arn:aws:iam::123456789012:role/AWSClarityReadOnly"
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/30 transition-colors font-mono"
-                />
-
-                {/* Precheck error */}
-                {precheckError && (
-                  <div className="flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-900/20">
-                    <svg className="w-4 h-4 text-red-400 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span>{precheckError}</span>
-                  </div>
-                )}
-
-                {/* Precheck results display */}
-                {precheckResults && (
-                  <div className="mt-2 rounded-lg bg-gray-950 border border-gray-800 p-3 space-y-2">
-                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-800">
-                      <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider">Role Permissions Pre-Check</span>
-                      <span className="text-[10px] text-teal-400 font-mono">Read-Only</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {Object.entries(precheckResults).map(([svc, info]) => {
-                        const isOk = info.status === "PASSED";
-                        return (
-                          <div key={svc} className="flex items-center gap-1.5 min-w-0">
-                            <span className={isOk ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
-                              {isOk ? "✓" : "⚠"}
-                            </span>
-                            <span className="text-gray-300 font-medium truncate">{svc}</span>
-                            <span className={`text-[10px] px-1 rounded truncate ${isOk ? "text-emerald-400/80 bg-emerald-500/10" : "text-amber-400/80 bg-amber-500/10"}`}>
-                              {isOk ? "Ready" : "Missing"}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    {/* Missing permission explanation */}
-                    {Object.values(precheckResults).some(info => info.status !== "PASSED") && (
-                      <div className="mt-2 pt-2 border-t border-gray-800 text-[11px] space-y-1">
-                        {Object.values(precheckResults).filter(info => info.status !== "PASSED").map(info => (
-                          <div key={info.service} className="text-amber-300">
-                            <span className="font-semibold">⚠ {info.service}:</span> Requires <code className="text-[10px] text-amber-200 font-mono bg-amber-950/60 px-1 py-0.5 rounded">{info.required_permission}</code>
-                            <p className="text-gray-400 text-[10px] pl-3.5 mt-0.5">Affected capability: {info.capability}. Without this, the scan will be partial.</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {activeError && (
-                  <div className="flex items-start gap-2 border border-slate-700/50 rounded-lg px-3 py-2 text-xs text-slate-400 bg-red-900/20 border-red-800/40">
-                    <svg
-                      className="w-4 h-4 text-red-400 shrink-0 mt-0.5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-                      />
-                    </svg>
-                    <span>{activeError}</span>
-                  </div>
-                )}
-              </div>
-
-              <div>
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Region</p>
-                <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto pr-1">
-                  {SUPPORTED_REGIONS.map(region => (
-                    <label
-                      key={region.id}
-                      className={`flex items-center gap-2 text-xs rounded-lg px-2.5 py-2 cursor-pointer select-none transition-colors ${
-                        selectedRegion === region.id
-                          ? "bg-teal-500/10 text-teal-400 border border-teal-500/30"
-                          : "text-gray-400 hover:text-gray-200 border border-transparent"
-                      }`}
-                    >
-                      <input
-                        type="radio"
-                        name="region"
-                        value={region.id}
-                        checked={selectedRegion === region.id}
-                        onChange={() => setSelectedRegion(region.id)}
-                        className="shrink-0 accent-teal-500"
-                      />
-                      {region.label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <button
-                  onClick={() => setCurrentStep(2)}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 transition-colors cursor-pointer"
-                >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="15 18 9 12 15 6" />
-                  </svg>
-                  Back
-                </button>
-
-                <button
-                  onClick={handleSubmit}
-                  className="flex items-center gap-1.5 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold px-5 py-2 rounded-lg transition-colors shadow-lg shadow-teal-500/10 cursor-pointer"
-                >
-                  Scan My Account
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="9 18 15 12 9 6" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* FAQ — outside the card, compact links */}
-      <div className="w-full max-w-md mt-4 px-1">
-        {FAQ_ITEMS.map((item, index) => (
-          <div key={index} className="border-b border-gray-800 last:border-b-0">
-            <button
-              onClick={() => setOpenFaq(prev => prev === index ? null : index)}
-              className="w-full flex items-center justify-between py-2.5 text-left cursor-pointer"
-            >
-              <span className="text-xs text-gray-500 hover:text-gray-300 transition-colors">{item.question}</span>
-              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={`shrink-0 text-gray-600 transition-transform ${openFaq === index ? "rotate-180" : ""}`}>
-                <polyline points="6 9 12 15 18 9" />
+        {/* ── HEADER ──────────────────────────────────────────────────────── */}
+        <header className="flex flex-col items-center text-center">
+          <div className="flex items-center gap-2 mb-2">
+            <div className="w-7 h-7 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-teal-400">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
+            </div>
+            <span className="text-base font-semibold text-white tracking-tight">AWS Clarity</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+            Connect Your AWS Account
+          </h1>
+          <p className="text-xs text-slate-400 mt-1 max-w-sm">
+            Read-only configuration inspection and security posture assessment.
+          </p>
+        </header>
+
+        {/* ── 1. WHAT CLARITY NEEDS & WHY (Trust Principles) ─────────────── */}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+            Trust & Read-Only Guarantees
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <div className="flex items-start gap-2">
+              <span className="text-teal-400 text-sm">✓</span>
+              <div>
+                <span className="font-medium text-slate-200">Temporary STS Access</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed mt-0.5">
+                  Assumed via AWS STS for 1 hour. No AWS passwords or keys are ever requested.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-teal-400 text-sm">✓</span>
+              <div>
+                <span className="font-medium text-slate-200">Strictly Read-Only</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed mt-0.5">
+                  Zero write or delete permissions. Cannot create, modify, stop, or delete resources.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-teal-400 text-sm">✓</span>
+              <div>
+                <span className="font-medium text-slate-200">Metadata Inspection</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed mt-0.5">
+                  Inspects configuration across EC2, S3, RDS, IAM, and VPC. Never reads internal files or DB rows.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-teal-400 text-sm">✓</span>
+              <div>
+                <span className="font-medium text-slate-200">Confused Deputy Protection</span>
+                <p className="text-slate-400 text-[11px] leading-relaxed mt-0.5">
+                  Secured with an External ID to ensure only AWS Clarity can assume this cross-account role.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ── 2. ROLE ARN INPUT & SETUP ───────────────────────────────────── */}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 space-y-5">
+          
+          {/* Collapsible IAM Role Setup Guide */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowRoleGuide(prev => !prev)}
+              className="flex items-center justify-between w-full text-xs font-medium text-slate-300 hover:text-white py-1 transition-colors cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="text-teal-400">ℹ</span>
+                <span>Need to create the read-only role? View setup steps</span>
+              </span>
+              <span className="text-slate-500">{showRoleGuide ? "Hide ▲" : "Show ▼"}</span>
             </button>
-            {openFaq === index && (
-              <p className="text-xs text-gray-600 pb-2.5 leading-relaxed">{item.answer}</p>
+
+            {showRoleGuide && (
+              <div className="mt-3 pt-3 border-t border-slate-800 text-xs space-y-3">
+                <p className="text-slate-400 leading-relaxed text-[11px]">
+                  1. In the AWS IAM Console, create a new role with trusted entity:{" "}
+                  <strong className="text-slate-200">Another AWS Account</strong>.
+                </p>
+                <div className="space-y-1.5 font-mono text-[11px]">
+                  <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded border border-slate-800">
+                    <span className="text-slate-500">App Account ID:</span>
+                    <span className="text-teal-400">{import.meta.env.VITE_APP_ACCOUNT_ID || "123456789012"}</span>
+                  </div>
+                  <div className="flex items-center justify-between bg-slate-950 px-3 py-1.5 rounded border border-slate-800">
+                    <span className="text-slate-500">External ID:</span>
+                    <span className="text-teal-400">aws-clarity-scan</span>
+                  </div>
+                </div>
+                <div className="pt-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[11px] text-slate-400">2. Attach this read-only inline policy:</span>
+                    <button
+                      type="button"
+                      onClick={handleCopy}
+                      className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer"
+                    >
+                      {copied ? "Copied ✓" : "Copy Policy JSON"}
+                    </button>
+                  </div>
+                  <pre className="text-[10px] text-slate-300 p-2.5 overflow-x-auto max-h-36 font-mono leading-relaxed bg-slate-950 rounded border border-slate-800">
+                    {IAM_POLICY_JSON}
+                  </pre>
+                </div>
+              </div>
             )}
           </div>
-        ))}
-      </div>
 
-      <footer className="w-full max-w-md mt-4 px-1">
+          {/* Role ARN input + Test Permissions */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label htmlFor="role-arn-input" className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Role ARN
+              </label>
+              <button
+                type="button"
+                onClick={handlePrecheck}
+                disabled={isPrechecking || !roleArn.trim()}
+                className={`text-xs font-medium px-2.5 py-1 rounded transition-colors flex items-center gap-1.5 ${
+                  isPrechecking || !roleArn.trim()
+                    ? "text-slate-600 bg-slate-800/40 cursor-not-allowed"
+                    : "text-teal-400 hover:text-teal-300 bg-teal-500/10 border border-teal-500/20 cursor-pointer"
+                }`}
+              >
+                {isPrechecking ? (
+                  <>
+                    <svg className="animate-spin w-3 h-3 text-teal-400" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                    </svg>
+                    <span>Testing...</span>
+                  </>
+                ) : (
+                  <>
+                    <span>⚡</span> Test Permissions
+                  </>
+                )}
+              </button>
+            </div>
 
-        {/* Top row — builder credit and LinkedIn */}
-        <div className="flex items-center justify-between py-3 border-t border-gray-800/60">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-gray-500">Built by</span>
+            <input
+              id="role-arn-input"
+              type="text"
+              value={roleArn}
+              onChange={(e) => {
+                setRoleArn(e.target.value);
+                if (localError) setLocalError("");
+                if (scanError) setScanError("");
+                if (precheckResults) setPrecheckResults(null);
+                if (precheckError) setPrecheckError(null);
+              }}
+              placeholder="arn:aws:iam::123456789012:role/AWSClarityReadOnly"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/30 transition-colors font-mono"
+            />
+
+            {/* Precheck error */}
+            {precheckError && (
+              <div className="flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30">
+                <span className="text-red-400 font-bold shrink-0">⚠</span>
+                <span>{precheckError}</span>
+              </div>
+            )}
+
+            {/* Precheck results display */}
+            {precheckResults && (
+              <div className="mt-2 rounded-lg bg-slate-950 border border-slate-800 p-3 space-y-2">
+                <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Permission Pre-Check</span>
+                  <span className="text-[10px] text-teal-400 font-mono">Read-Only</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  {Object.entries(precheckResults).map(([svc, info]) => {
+                    const isOk = info.status === "PASSED";
+                    return (
+                      <div key={svc} className="flex items-center gap-1.5 min-w-0">
+                        <span className={isOk ? "text-emerald-400 font-bold" : "text-amber-400 font-bold"}>
+                          {isOk ? "✓" : "⚠"}
+                        </span>
+                        <span className="text-slate-300 font-medium truncate">{svc}</span>
+                        <span className={`text-[10px] px-1 rounded truncate ${isOk ? "text-emerald-400/80 bg-emerald-500/10" : "text-amber-400/80 bg-amber-500/10"}`}>
+                          {isOk ? "Ready" : "Missing"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {Object.values(precheckResults).some(info => info.status !== "PASSED") && (
+                  <div className="mt-2 pt-2 border-t border-slate-800 text-[11px] space-y-1">
+                    {Object.values(precheckResults).filter(info => info.status !== "PASSED").map(info => (
+                      <div key={info.service} className="text-amber-300">
+                        <span className="font-semibold">⚠ {info.service}:</span> Requires <code className="text-[10px] text-amber-200 font-mono bg-amber-950/60 px-1 py-0.5 rounded">{info.required_permission}</code>
+                        <p className="text-slate-400 text-[10px] mt-0.5">Affected capability: {info.capability}. Without this, the scan will be partial.</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeError && (
+              <div className="flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30">
+                <span className="text-red-400 font-bold shrink-0">⚠</span>
+                <span>{activeError}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Region selection */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Region to Scan</p>
+            <div className="grid grid-cols-2 gap-1 max-h-36 overflow-y-auto pr-1">
+              {SUPPORTED_REGIONS.map(region => (
+                <label
+                  key={region.id}
+                  className={`flex items-center gap-2 text-xs rounded-lg px-2.5 py-1.5 cursor-pointer select-none transition-colors ${
+                    selectedRegion === region.id
+                      ? "bg-teal-500/10 text-teal-300 border border-teal-500/30"
+                      : "text-slate-400 hover:text-slate-200 border border-transparent"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="region"
+                    value={region.id}
+                    checked={selectedRegion === region.id}
+                    onChange={() => setSelectedRegion(region.id)}
+                    className="shrink-0 accent-teal-500"
+                  />
+                  <span>{region.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {/* Scan action */}
+          <div className="pt-2">
+            <button
+              onClick={handleSubmit}
+              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors shadow-lg shadow-teal-500/10 cursor-pointer"
+            >
+              <span>Scan My Account</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+        </div>
+
+        {/* ── FAQ ACCORDION ────────────────────────────────────────────────── */}
+        <div className="px-1 space-y-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
+            Frequently Asked Questions
+          </p>
+          {FAQ_ITEMS.map((item, index) => (
+            <div key={index} className="border-b border-slate-800/80 last:border-b-0">
+              <button
+                onClick={() => setOpenFaq(prev => prev === index ? null : index)}
+                className="w-full flex items-center justify-between py-2 text-left cursor-pointer"
+              >
+                <span className="text-xs text-slate-400 hover:text-slate-200 transition-colors font-medium">{item.question}</span>
+                <span className="text-slate-500 text-xs ml-2">{openFaq === index ? "−" : "+"}</span>
+              </button>
+              {openFaq === index && (
+                <p className="text-xs text-slate-500 pb-2.5 leading-relaxed">{item.answer}</p>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* ── FOOTER ──────────────────────────────────────────────────────── */}
+        <footer className="pt-4 border-t border-slate-800/60 flex flex-col items-center gap-2 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Built by</span>
             <a
               href="https://www.linkedin.com/in/david-danso/"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs font-medium text-gray-300 hover:text-teal-400 transition-colors"
+              className="text-slate-300 hover:text-teal-400 transition-colors font-medium"
             >
               David Danso
             </a>
-            <span className="text-gray-700">·</span>
-            <span className="text-xs text-gray-600">AWS Cloud Engineer</span>
+            <span>·</span>
+            <span>AWS Cloud Engineer</span>
           </div>
+          <p className="text-[11px] text-slate-600">
+            Read-only configuration inspection. Zero customer resources modified. Zero billing calls.
+          </p>
+        </footer>
 
-          {/* LinkedIn icon link */}
-          <a
-            href="https://www.linkedin.com/in/david-danso/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-teal-400 transition-colors group"
-            aria-label="Connect on LinkedIn"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="currentColor" className="shrink-0">
-              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-            </svg>
-            <span className="text-xs group-hover:text-teal-400 transition-colors">LinkedIn</span>
-          </a>
-        </div>
-
-        {/* Bottom row — legal/trust */}
-        <p className="text-xs text-gray-700 pb-2 text-center">
-          Read-only access only. No resources are modified.
-        </p>
-
-      </footer>
+      </div>
 
     </div>
   );

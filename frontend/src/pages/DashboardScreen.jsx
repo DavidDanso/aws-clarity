@@ -77,6 +77,7 @@ export default function DashboardScreen({
   const coverage = scanResults?.coverage || {};
   const permissionChecks = scanResults?.permission_checks || coverage?.permission_checks || {};
   const scannerStatuses = coverage?.scanner_statuses || [];
+  const completedScanners = scannerStatuses.filter(s => s.status === "COMPLETED");
   const failedScanners = scannerStatuses.filter(s => s.status !== "COMPLETED");
 
   const handleRegionChange = async (newRegions) => {
@@ -254,6 +255,8 @@ export default function DashboardScreen({
     ? `${scanResults.regions.length} regions`
     : scanResults?.region || "us-east-1";
 
+  const servicesCount = coverage?.services_scanned?.length || completedScanners.length || 0;
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 max-w-5xl mx-auto w-full">
@@ -381,7 +384,9 @@ export default function DashboardScreen({
                         onClick={() => setCoverageModalOpen(true)}
                         className="hover:text-slate-300 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
                       >
-                        {scanResults?.partial ? "⚠ Partial scan details" : "Coverage & Scope"}
+                        {scanResults?.partial
+                          ? "⚠ Partial scan · View coverage details"
+                          : `Coverage: ${servicesCount} services checked · View scope`}
                       </button>
 
                       {comparison.hasPrevious && (
@@ -576,7 +581,7 @@ export default function DashboardScreen({
         </div>
       </div>
 
-      {/* COVERAGE & SCOPE MODAL */}
+      {/* ── COVERAGE & SCOPE MODAL ────────────────────────────────────────── */}
       {coverageModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto flex flex-col">
@@ -596,10 +601,32 @@ export default function DashboardScreen({
             </div>
 
             <div className="p-5 space-y-5 text-xs">
+
+              {/* Scope Summary Stats */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
+                  <p className="text-[10px] uppercase font-semibold text-slate-500">Region(s)</p>
+                  <p className="text-xs font-bold text-slate-200 mt-0.5 truncate">{coverage?.regions_scanned?.join(", ") || regionDisplay}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
+                  <p className="text-[10px] uppercase font-semibold text-slate-500">Services Checked</p>
+                  <p className="text-xs font-bold text-teal-400 mt-0.5">{servicesCount}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
+                  <p className="text-[10px] uppercase font-semibold text-slate-500">Resources Inspected</p>
+                  <p className="text-xs font-bold text-slate-200 mt-0.5">{coverage?.resources_inspected ?? allResources.length}</p>
+                </div>
+                <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
+                  <p className="text-[10px] uppercase font-semibold text-slate-500">Findings Detected</p>
+                  <p className="text-xs font-bold text-amber-400 mt-0.5">{coverage?.findings_detected ?? 0}</p>
+                </div>
+              </div>
+
+              {/* Core Permission Pre-Check Status */}
               {Object.keys(permissionChecks).length > 0 && (
                 <div>
                   <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Permission Pre-Check Status
+                    Core Permission Status
                   </h4>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {Object.entries(permissionChecks).map(([svc, info]) => {
@@ -628,9 +655,58 @@ export default function DashboardScreen({
                 </div>
               )}
 
+              {/* Supported Scanners Breakdown */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    Scanners Breakdown ({scannerStatuses.length || 28} registered)
+                  </h4>
+                  <span className="text-[10px] text-slate-500">
+                    {completedScanners.length} completed{failedScanners.length > 0 ? ` · ${failedScanners.length} failed` : ""}
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-lg bg-slate-950 border border-slate-800 divide-y divide-slate-800/60 pr-1">
+                  {scannerStatuses.length > 0 ? (
+                    scannerStatuses.map((s, idx) => {
+                      const isOk = s.status === "COMPLETED";
+                      return (
+                        <div key={idx} className="p-2 flex items-center justify-between text-[11px]">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={isOk ? "text-emerald-400" : "text-amber-400"}>
+                              {isOk ? "✓" : "⚠"}
+                            </span>
+                            <span className="text-slate-300 font-medium truncate">{s.label || s.service}</span>
+                            <span className="text-[10px] text-slate-600 font-mono">({s.region || "global"})</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {isOk ? (
+                              <span className="text-slate-400">{s.count ?? 0} found</span>
+                            ) : (
+                              <span className="text-amber-400/90 text-[10px] truncate max-w-[140px]">{s.reason || "Skipped"}</span>
+                            )}
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                              isOk
+                                ? "text-emerald-400/80 bg-emerald-500/10"
+                                : "text-amber-400/80 bg-amber-500/10"
+                            }`}>
+                              {s.status}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="p-3 text-slate-500 text-center">
+                      Read-only configuration inspection performed across configured AWS services.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* What AWS Clarity Does NOT Inspect */}
               <div>
                 <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  What AWS Clarity Does NOT Inspect
+                  What AWS Clarity Does NOT Inspect (Out of Scope)
                 </h4>
                 <div className="rounded-lg bg-slate-950 border border-slate-800 divide-y divide-slate-800/60 overflow-hidden">
                   {(coverage?.unsupported_services || [
@@ -648,46 +724,13 @@ export default function DashboardScreen({
                 </div>
               </div>
 
-              <div>
-                <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Supported Scanners ({scannerStatuses.length || 28} scanners)
-                </h4>
-                <div className="max-h-48 overflow-y-auto rounded-lg bg-slate-950 border border-slate-800 divide-y divide-slate-800/60 pr-1">
-                  {scannerStatuses.length > 0 ? (
-                    scannerStatuses.map((s, idx) => (
-                      <div key={idx} className="p-2 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className={s.status === "COMPLETED" ? "text-emerald-400" : "text-amber-400"}>
-                            {s.status === "COMPLETED" ? "✓" : "⚠"}
-                          </span>
-                          <span className="text-slate-300 font-medium truncate">{s.label || s.service}</span>
-                          <span className="text-[10px] text-slate-600 font-mono">({s.region || "global"})</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-slate-400">{s.count ?? 0} found</span>
-                          <span className={`text-[10px] px-1 rounded font-mono ${
-                            s.status === "COMPLETED"
-                              ? "text-emerald-400/80 bg-emerald-500/10"
-                              : "text-amber-400/80 bg-amber-500/10"
-                          }`}>
-                            {s.status}
-                          </span>
-                        </div>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="p-3 text-slate-500 text-center">
-                      Full read-only inspection performed across all configured AWS services.
-                    </div>
-                  )}
-                </div>
-              </div>
             </div>
 
-            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end">
+            <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
+              <span className="text-[11px] text-slate-500">Point-in-time read-only inspection · Zero customer data modified</span>
               <button
                 onClick={() => setCoverageModalOpen(false)}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 rounded-lg transition-colors cursor-pointer"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
               >
                 Close
               </button>
@@ -696,7 +739,7 @@ export default function DashboardScreen({
         </div>
       )}
 
-      {/* DETAIL DRAWER */}
+      {/* ── DETAIL DRAWER ─────────────────────────────────────────────────── */}
       {selectedResource && (
         <DetailDrawer
           resource={selectedResource}
