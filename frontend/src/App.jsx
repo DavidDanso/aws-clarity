@@ -3,18 +3,60 @@ import SetupScreen from "./pages/SetupScreen";
 import DashboardScreen from "./pages/DashboardScreen";
 import { scanAccount } from "./services/api";
 
+const SESSION_KEY = "aws_clarity_session";
+
+function loadSession() {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.scanResults && parsed.scanResults.resources) {
+      return parsed;
+    }
+  } catch (e) {
+    // Ignore parse errors and fall back
+  }
+  return null;
+}
+
+function saveSession(data) {
+  try {
+    if (data && data.scanResults && data.scanResults.resources) {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    } else {
+      sessionStorage.removeItem(SESSION_KEY);
+    }
+  } catch (e) {
+    // Ignore storage quota or security errors
+  }
+}
+
 function App() {
-  const [view, setView] = useState("setup");
-  const [scanResults, setScanResults] = useState(null);
-  const [previousScanResults, setPreviousScanResults] = useState(null);
+  const initialSession = loadSession();
+
+  const [view, setView] = useState(() => (initialSession ? "dashboard" : "setup"));
+  const [scanResults, setScanResults] = useState(() => initialSession?.scanResults || null);
+  const [previousScanResults, setPreviousScanResults] = useState(() => initialSession?.previousScanResults || null);
   const [isLoading, setIsLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
-  const [storedRoleArn, setStoredRoleArn] = useState("");
-  const [storedRegions, setStoredRegions] = useState(["us-east-1"]);
+  const [storedRoleArn, setStoredRoleArn] = useState(() => initialSession?.storedRoleArn || "");
+  const [storedRegions, setStoredRegions] = useState(() => initialSession?.storedRegions || ["us-east-1"]);
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedbackRef = useRef(null);
+
+  // Sync to sessionStorage whenever active scan session data changes
+  useEffect(() => {
+    if (scanResults && scanResults.resources) {
+      saveSession({
+        scanResults,
+        previousScanResults,
+        storedRoleArn,
+        storedRegions,
+      });
+    }
+  }, [scanResults, previousScanResults, storedRoleArn, storedRegions]);
 
   useEffect(() => {
     if (!feedbackOpen) return;
@@ -57,6 +99,7 @@ function App() {
       setScanResults(null);
       setPreviousScanResults(null);
       setScanError("");
+      sessionStorage.removeItem(SESSION_KEY);
       setView("setup");
     }
   };

@@ -1178,7 +1178,7 @@ export default function DashboardScreen({
       {selectedResource && (
         <DetailDrawer
           resource={selectedResource}
-          scannedAt={scannedAt || scanResults?.scanned_at}
+          scannedAt={scanResults?.scanned_at}
           previousScannedAt={previousScanResults?.scanned_at}
           history={comparison.resourceHistoryMap?.get(getStableResourceId(selectedResource))}
           onClose={() => setSelectedResource(null)}

@@ -199,7 +199,42 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  if (!resource) return null;
+  if (!resource || typeof resource !== "object") {
+    return (
+      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
+        <div
+          ref={drawerRef}
+          className="absolute right-0 top-0 h-full w-full sm:w-[480px] md:w-[560px] bg-slate-900 border-l border-slate-700/50 shadow-2xl p-6 overflow-y-auto animate-slide-in flex flex-col justify-between"
+        >
+          <div>
+            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
+              <h3 className="text-base font-semibold text-slate-200">Resource Details</h3>
+              <button
+                onClick={onClose}
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                aria-label="Close inspection drawer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="mt-8 p-4 rounded-xl bg-slate-950/80 border border-slate-800 text-center space-y-3">
+              <span className="text-amber-400 text-2xl block">⚠</span>
+              <p className="text-sm font-medium text-slate-200">Resource details could not be loaded</p>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                The requested resource data is unavailable or incomplete in the current scan results.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-full py-2 px-4 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+          >
+            Return to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const rawEntries = Object.entries(resource.raw || {}).filter(
     ([key]) => !RAW_SKIP_KEYS.includes(key)
