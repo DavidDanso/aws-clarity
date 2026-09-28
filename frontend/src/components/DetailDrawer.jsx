@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { STATUS_COLOR } from "../utils/constants";
 
 // ── Severity styles ────────────────────────────────────────────────────────────
 const SEVERITY_STYLE = {
@@ -19,12 +20,7 @@ const SEVERITY_STYLE = {
   },
 };
 
-const STATUS_COLOR = {
-  CRITICAL: "text-red-400",
-  WARNING:  "text-amber-400",
-  HEALTHY:  "text-emerald-400",
-  ORPHANED: "text-slate-400",
-};
+// STATUS_COLOR is imported from "../utils/constants"
 
 // Fallback metadata for rules in case of legacy/mock finding objects
 const RULE_EXPLANATIONS = {
@@ -475,15 +471,28 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
             </div>
 
             {(!resource.issues || resource.issues.length === 0) ? (
-              <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4 flex items-center gap-3 text-sm text-emerald-400">
-                <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-                <div>
-                  <p className="font-medium text-emerald-300">No issues detected</p>
-                  <p className="text-xs text-emerald-500 mt-0.5">Configuration aligns with AWS security best practices.</p>
+              resource.status === "NOT_ASSESSED" ? (
+                <div className="rounded-xl border border-slate-600/30 bg-slate-800/20 p-4 flex items-center gap-3 text-sm text-slate-400">
+                  <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="10" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4m0 4h.01" />
+                  </svg>
+                  <div>
+                    <p className="font-medium text-slate-300">Not assessed</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Clarity discovered this resource but does not currently have checks defined for its configuration. No conclusion about its security posture can be drawn.</p>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4 flex items-center gap-3 text-sm text-emerald-400">
+                  <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  <div>
+                    <p className="font-medium text-emerald-300">No issues detected</p>
+                    <p className="text-xs text-emerald-500 mt-0.5">Configuration aligns with AWS security best practices.</p>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="space-y-5">
                 {resource.issues.map((rawIssue, idx) => {

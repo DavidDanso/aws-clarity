@@ -296,6 +296,8 @@ def run_scan(role_arn, regions):
         "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),
         "warnings": sum(1 for r in all_resources if r.get("status") == "WARNING"),
         "orphaned": sum(1 for r in all_resources if r.get("status") == "ORPHANED"),
+        "healthy": sum(1 for r in all_resources if r.get("status") == "HEALTHY"),
+        "not_assessed": sum(1 for r in all_resources if r.get("status") == "NOT_ASSESSED"),
     }
 
     # Build honest coverage disclosure

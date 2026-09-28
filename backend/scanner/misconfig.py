@@ -99,10 +99,145 @@ RULE_METADATA = {
         "what_found": "The EBS volume from which this snapshot was taken has been deleted or cannot be found.",
         "what_checked": "Cross-referenced Snapshot VolumeId against active EBS volumes in the account.",
     },
+    "ECR-001": {
+        "what_found": "ECR repository allows image tags to be overwritten by new pushes.",
+        "what_checked": "Inspected ECR DescribeRepositories imageTagMutability configuration.",
+        "category": "Security",
+    },
+    "ECR-002": {
+        "what_found": "Automatic vulnerability scanning on push is not enabled for this repository.",
+        "what_checked": "Inspected ECR DescribeRepositories imageScanningConfiguration scanOnPush flag.",
+        "category": "Security",
+    },
+    "EKS-001": {
+        "what_found": "Kubernetes API server endpoint is publicly accessible from any IP address (0.0.0.0/0).",
+        "what_checked": "Inspected EKS DescribeCluster resourcesVpcConfig endpointPublicAccess and publicAccessCidrs.",
+        "category": "Security",
+    },
+    "RS-001": {
+        "what_found": "Redshift cluster has PubliclyAccessible set to true and can receive connections from the internet.",
+        "what_checked": "Inspected Redshift DescribeClusters PubliclyAccessible attribute.",
+        "category": "Security",
+    },
+    "RS-002": {
+        "what_found": "Redshift cluster data warehouse storage is not encrypted at rest.",
+        "what_checked": "Inspected Redshift DescribeClusters Encrypted attribute.",
+        "category": "Security",
+    },
+    "AUR-001": {
+        "what_found": "Aurora database cluster storage encryption is disabled.",
+        "what_checked": "Inspected RDS DescribeDBClusters StorageEncrypted attribute.",
+        "category": "Security",
+    },
+    "AUR-002": {
+        "what_found": "Accidental deletion protection is disabled on this Aurora cluster.",
+        "what_checked": "Inspected RDS DescribeDBClusters DeletionProtection attribute.",
+        "category": "Reliability",
+    },
+    "EC-001": {
+        "what_found": "In-memory cache cluster is not encrypted at rest.",
+        "what_checked": "Inspected ElastiCache DescribeCacheClusters AtRestEncryptionEnabled flag.",
+        "category": "Security",
+    },
+    "EC-002": {
+        "what_found": "Transit encryption (TLS) is disabled for cache communication.",
+        "what_checked": "Inspected ElastiCache DescribeCacheClusters TransitEncryptionEnabled flag.",
+        "category": "Security",
+    },
+    "DDB-001": {
+        "what_found": "Table uses default AWS-owned key rather than customer-managed KMS encryption (KMS CMK).",
+        "what_checked": "Inspected DynamoDB DescribeTable SSEDescription configuration.",
+        "category": "Security",
+    },
+    "SEC-001": {
+        "what_found": "Automatic secret rotation is not enabled for this secret.",
+        "what_checked": "Inspected Secrets Manager ListSecrets RotationEnabled attribute.",
+        "category": "Security",
+    },
+    "SEC-002": {
+        "what_found": "Secret is encrypted with the default aws/secretsmanager key rather than a customer-managed KMS key.",
+        "what_checked": "Inspected Secrets Manager ListSecrets KmsKeyId attribute.",
+        "category": "Security",
+    },
+    "SQS-001": {
+        "what_found": "SQS message queue does not have server-side encryption enabled with a KMS key.",
+        "what_checked": "Inspected SQS GetQueueAttributes KmsMasterKeyId attribute.",
+        "category": "Security",
+    },
+    "SNS-001": {
+        "what_found": "SNS topic is not encrypted with a customer-managed KMS key.",
+        "what_checked": "Inspected SNS GetTopicAttributes KmsMasterKeyId attribute.",
+        "category": "Security",
+    },
+    "NAT-001": {
+        "what_found": "NAT Gateway is in a failed state and cannot route outbound internet traffic.",
+        "what_checked": "Inspected EC2 DescribeNatGateways State attribute.",
+        "category": "Reliability",
+    },
+    "NAT-002": {
+        "what_found": "Active NAT Gateway configuration generates continuous hourly availability charges.",
+        "what_checked": "Inspected EC2 DescribeNatGateways State and SubnetId.",
+        "category": "Cost Risk",
+    },
+    "ASG-001": {
+        "what_found": "Auto Scaling Group has both desired capacity and minimum size set to 0.",
+        "what_checked": "Inspected AutoScaling DescribeAutoScalingGroups DesiredCapacity and MinSize.",
+        "category": "Orphaned",
+    },
+    "ECS-001": {
+        "what_found": "ECS cluster is empty with 0 registered container instances and 0 active services.",
+        "what_checked": "Inspected ECS DescribeClusters registeredContainerInstancesCount and activeServicesCount.",
+        "category": "Orphaned",
+    },
+    "IGW-001": {
+        "what_found": "Internet Gateway exists but has no active VPC attachments.",
+        "what_checked": "Inspected EC2 DescribeInternetGateways Attachments array.",
+        "category": "Orphaned",
+    },
+    "CW-001": {
+        "what_found": "Alarm actions are disabled; this alarm will not execute notifications when triggered.",
+        "what_checked": "Inspected CloudWatch DescribeAlarms ActionsEnabled flag.",
+        "category": "Reliability",
+    },
+    "CW-002": {
+        "what_found": "Alarm state is INSUFFICIENT_DATA and cannot determine health.",
+        "what_checked": "Inspected CloudWatch DescribeAlarms StateValue attribute.",
+        "category": "Reliability",
+    },
+    "EV-001": {
+        "what_found": "EventBridge rule state is DISABLED and is not processing events or schedules.",
+        "what_checked": "Inspected EventBridge ListRules State attribute.",
+        "category": "Orphaned",
+    },
+    "CFN-001": {
+        "what_found": "Stack status indicates failed provisioning, rollback, or failed deletion.",
+        "what_checked": "Inspected CloudFormation DescribeStacks StackStatus attribute.",
+        "category": "Orphaned",
+    },
+    "CFN-002": {
+        "what_found": "Termination protection is not enabled on this CloudFormation stack.",
+        "what_checked": "Inspected CloudFormation DescribeStacks EnableTerminationProtection attribute.",
+        "category": "Reliability",
+    },
+    "LAM-001": {
+        "what_found": "Function code and configuration have not been updated in over 90 days.",
+        "what_checked": "Inspected Lambda ListFunctions LastModified timestamp.",
+        "category": "Hygiene",
+    },
+    "ELB-001": {
+        "what_found": "Load balancer scheme is configured as internet-facing with a public DNS name.",
+        "what_checked": "Inspected Elastic Load Balancing DescribeLoadBalancers Scheme attribute.",
+        "category": "Security",
+    },
+    "VPC-001": {
+        "what_found": "This VPC is the AWS default VPC with standard public subnets and open routing.",
+        "what_checked": "Inspected EC2 DescribeVpcs IsDefault flag.",
+        "category": "Security",
+    },
 }
 
 
-def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_checked=None):
+def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_checked=None, resource_type=None, resource_id=None, category=None):
     """Return a fully-structured finding dict with explainable evidence.
 
     Every key is always present so the frontend never needs to guard against
@@ -111,8 +246,9 @@ def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_c
     meta = RULE_METADATA.get(rule_id, {})
     resolved_what_found = what_found or meta.get("what_found") or title
     resolved_what_checked = what_checked or meta.get("what_checked") or "Inspected AWS resource configuration."
+    resolved_category = category or meta.get("category") or "Security"
 
-    return {
+    item = {
         "rule_id":      rule_id,
         "severity":     severity,   # CRITICAL | WARNING | ORPHANED
         "title":        title,      # Short, non-technical plain-English summary
@@ -121,9 +257,15 @@ def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_c
         "what_checked": resolved_what_checked,
         "evidence":     evidence,   # Dict of key→value pairs of actual detected data
         "fix":          fix,        # Actionable remediation step
+        "category":     resolved_category,
         # Legacy field kept so nothing existing breaks
         "message":      title,
     }
+    if resource_type:
+        item["resource_type"] = resource_type
+    if resource_id:
+        item["resource_id"] = resource_id
+    return item
 
 
 def evaluate(session, resources: dict) -> dict:
@@ -137,9 +279,28 @@ def evaluate(session, resources: dict) -> dict:
     # Precompute active volume IDs for orphan snapshot check
     active_volume_ids = {v["id"] for v in resources.get("ebs_volumes", [])}
 
+    ASSESSED_RESOURCE_TYPES = {
+        "s3_buckets", "security_groups", "rds_instances", "ebs_volumes", "iam_roles",
+        "ec2_instances", "elastic_ips", "snapshots", "ecr_repositories", "eks_clusters",
+        "redshift_clusters", "aurora_clusters", "elasticache_clusters", "dynamodb_tables",
+        "secrets", "sqs_queues", "sns_topics", "nat_gateways", "auto_scaling_groups",
+        "ecs_clusters", "internet_gateways", "cloudwatch_alarms", "eventbridge_rules",
+        "cloudformation_stacks", "lambda_functions", "load_balancers", "vpcs"
+    }
+
     for r_type, items in resources.items():
         for r in items:
-            raw = r.get("raw", {})
+            raw = r.get("raw")
+            if r_type not in ASSESSED_RESOURCE_TYPES:
+                r["status"] = "NOT_ASSESSED"
+                r["issues"] = []
+                continue
+
+            if not raw or not isinstance(raw, dict) or len(raw) == 0:
+                r["status"] = "NOT_ASSESSED"
+                r["issues"] = []
+                continue
+
             issues = []
 
             # ------------------------------------------------------------------
@@ -624,6 +785,481 @@ def evaluate(session, resources: dict) -> dict:
                             "VolumeStatus":  "deleted or not found",
                         },
                         fix="Review whether this snapshot is still needed for disaster recovery or audit purposes. If not, delete it to stop storage charges.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+
+            # ------------------------------------------------------------------
+            # ECR Repositories
+            # ------------------------------------------------------------------
+            elif r_type == "ecr_repositories":
+                repo_name = r["name"]
+                mutability = raw.get("image_tag_mutability")
+                scan_config = raw.get("image_scanning_configuration")
+                if isinstance(scan_config, dict):
+                    scan_on_push = scan_config.get("scanOnPush", False)
+                else:
+                    scan_on_push = False
+
+                if mutability == "MUTABLE":
+                    issues.append(_issue(
+                        rule_id="ECR-001",
+                        severity="WARNING",
+                        title="ECR repository allows mutable image tags",
+                        why="Mutable image tags allow existing container image tags to be overwritten, which can introduce unverified changes or vulnerabilities into production deployments.",
+                        evidence={"Repository": repo_name, "ImageTagMutability": "MUTABLE"},
+                        fix="Enable tag immutability: ECR Console → Select Repository → Edit settings → Turn on 'Tag immutability'.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+                if not scan_on_push:
+                    issues.append(_issue(
+                        rule_id="ECR-002",
+                        severity="WARNING",
+                        title="ECR automatic image vulnerability scanning disabled",
+                        why="Automatic vulnerability scanning is disabled. Newly pushed images will not be assessed for known security flaws.",
+                        evidence={"Repository": repo_name, "ScanOnPush": "False"},
+                        fix="Enable scan on push: ECR Console → Select Repository → Edit settings → Turn on 'Scan on push'.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # EKS Clusters
+            # ------------------------------------------------------------------
+            elif r_type == "eks_clusters":
+                cluster_name = r["name"]
+                vpc_config = raw.get("resources_vpc_config") or {}
+                if vpc_config.get("endpointPublicAccess") is True and "0.0.0.0/0" in vpc_config.get("publicAccessCidrs", []):
+                    issues.append(_issue(
+                        rule_id="EKS-001",
+                        severity="CRITICAL",
+                        title="EKS API server endpoint is publicly accessible to all IPs",
+                        why="Kubernetes API server endpoint is exposed to 0.0.0.0/0, allowing any host on the internet to attempt to connect and exploit potential vulnerabilities.",
+                        evidence={"Cluster": cluster_name, "EndpointPublicAccess": "True", "PublicAccessCidrs": "0.0.0.0/0"},
+                        fix="Restrict API server access: EKS Console → Select Cluster → Networking → Manage networking → Restrict public access CIDRs or disable public access.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Redshift Clusters
+            # ------------------------------------------------------------------
+            elif r_type == "redshift_clusters":
+                cluster_id = r["id"]
+                if raw.get("publicly_accessible") is True:
+                    issues.append(_issue(
+                        rule_id="RS-001",
+                        severity="CRITICAL",
+                        title="Redshift cluster is publicly accessible",
+                        why="The data warehouse cluster is reachable directly from the public internet, exposing analytical data to external connection attempts.",
+                        evidence={"Cluster": cluster_id, "PubliclyAccessible": "True"},
+                        fix="Modify cluster network settings: disable 'Publicly accessible' and connect via private VPC subnets.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+                if raw.get("encrypted") is False:
+                    issues.append(_issue(
+                        rule_id="RS-002",
+                        severity="WARNING",
+                        title="Redshift cluster storage is not encrypted",
+                        why="Data warehouse storage is not encrypted at rest, which risks data exposure if physical storage media is accessed outside normal AWS controls.",
+                        evidence={"Cluster": cluster_id, "Encrypted": "False"},
+                        fix="Enable encryption on the Redshift cluster or create an encrypted snapshot copy and restore to an encrypted cluster.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Aurora DB Clusters
+            # ------------------------------------------------------------------
+            elif r_type == "aurora_clusters":
+                cluster_id = r["id"]
+                if raw.get("storage_encrypted") is False:
+                    issues.append(_issue(
+                        rule_id="AUR-001",
+                        severity="WARNING",
+                        title="Aurora cluster storage is not encrypted",
+                        why="Aurora DB cluster storage volume is not encrypted at rest, creating compliance and data exposure risks.",
+                        evidence={"Cluster": cluster_id, "StorageEncrypted": "False"},
+                        fix="Take a snapshot of the Aurora cluster, copy it with KMS encryption enabled, and restore an encrypted cluster.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+                if raw.get("deletion_protection") is False:
+                    issues.append(_issue(
+                        rule_id="AUR-002",
+                        severity="WARNING",
+                        title="Aurora cluster deletion protection is disabled",
+                        why="Without deletion protection, the database cluster can be inadvertently deleted through the console, CLI, or automation.",
+                        evidence={"Cluster": cluster_id, "DeletionProtection": "Disabled"},
+                        fix="Enable deletion protection: RDS Console → Databases → Select Aurora Cluster → Modify → Check 'Enable deletion protection'.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Reliability",
+                    ))
+
+            # ------------------------------------------------------------------
+            # ElastiCache Clusters
+            # ------------------------------------------------------------------
+            elif r_type == "elasticache_clusters":
+                cluster_id = r["id"]
+                if raw.get("at_rest_encryption_enabled") is False:
+                    issues.append(_issue(
+                        rule_id="EC-001",
+                        severity="WARNING",
+                        title="ElastiCache cluster encryption at rest is disabled",
+                        why="In-memory cache data persisted to disk or backups is unencrypted.",
+                        evidence={"CacheCluster": cluster_id, "AtRestEncryption": "Disabled"},
+                        fix="Enable encryption at rest when creating replication groups or clusters.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+                if raw.get("transit_encryption_enabled") is False:
+                    issues.append(_issue(
+                        rule_id="EC-002",
+                        severity="WARNING",
+                        title="ElastiCache cluster in-transit encryption is disabled",
+                        why="Network traffic between clients and cache nodes is not encrypted with TLS, risking credential and data interception in transit.",
+                        evidence={"CacheCluster": cluster_id, "TransitEncryption": "Disabled"},
+                        fix="Enable in-transit encryption (TLS) on the replication group.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # DynamoDB Tables
+            # ------------------------------------------------------------------
+            elif r_type == "dynamodb_tables":
+                table_name = r["name"]
+                sse_desc = raw.get("sse_description") or {}
+                if not sse_desc or sse_desc.get("Status") != "ENABLED":
+                    issues.append(_issue(
+                        rule_id="DDB-001",
+                        severity="WARNING",
+                        title="DynamoDB table not encrypted with customer-managed KMS key",
+                        why="Table relies on the default AWS-owned key instead of a customer-managed KMS key, preventing fine-grained access audits in CloudTrail.",
+                        evidence={"Table": table_name, "SSEStatus": sse_desc.get("Status", "DEFAULT")},
+                        fix="Update encryption: DynamoDB Console → Select Table → Additional settings → Encryption at rest → Manage KMS encryption.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Secrets Manager
+            # ------------------------------------------------------------------
+            elif r_type == "secrets":
+                secret_name = r["name"]
+                if raw.get("rotation_enabled") is False:
+                    issues.append(_issue(
+                        rule_id="SEC-001",
+                        severity="WARNING",
+                        title="Secrets Manager automatic rotation is disabled",
+                        why="Static secrets that are not regularly rotated increase the exposure window if credentials become compromised.",
+                        evidence={"Secret": secret_name, "RotationEnabled": "False"},
+                        fix="Configure automatic rotation: Secrets Manager → Select Secret → Rotation configuration → Turn on automatic rotation.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+                if not raw.get("kms_key_id"):
+                    issues.append(_issue(
+                        rule_id="SEC-002",
+                        severity="WARNING",
+                        title="Secret encrypted with default key rather than customer KMS key",
+                        why="The default AWS managed key cannot be audited or shared across accounts using custom KMS key policies.",
+                        evidence={"Secret": secret_name, "KmsKeyId": "Default/None"},
+                        fix="Edit secret encryption: Secrets Manager → Select Secret → Edit encryption key → Specify a customer managed KMS key.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # SQS Queues
+            # ------------------------------------------------------------------
+            elif r_type == "sqs_queues":
+                queue_name = r["name"]
+                if not raw.get("kms_master_key_id"):
+                    issues.append(_issue(
+                        rule_id="SQS-001",
+                        severity="WARNING",
+                        title="SQS queue server-side encryption disabled",
+                        why="Queue messages stored in transit and at rest are not encrypted with a KMS master key.",
+                        evidence={"Queue": queue_name, "KmsMasterKeyId": "None"},
+                        fix="Enable encryption: SQS Console → Select Queue → Edit → Encryption → Enable SSE-KMS.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # SNS Topics
+            # ------------------------------------------------------------------
+            elif r_type == "sns_topics":
+                topic_name = r["name"]
+                if not raw.get("kms_master_key_id"):
+                    issues.append(_issue(
+                        rule_id="SNS-001",
+                        severity="WARNING",
+                        title="SNS topic server-side encryption disabled",
+                        why="Notification topic messages are not encrypted at rest with a KMS master key.",
+                        evidence={"Topic": topic_name, "KmsMasterKeyId": "None"},
+                        fix="Enable encryption: SNS Console → Select Topic → Edit → Encryption → Enable SSE with KMS.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # NAT Gateways
+            # ------------------------------------------------------------------
+            elif r_type == "nat_gateways":
+                nat_id = r["id"]
+                state = str(raw.get("state", "")).lower()
+                if state == "failed":
+                    issues.append(_issue(
+                        rule_id="NAT-001",
+                        severity="WARNING",
+                        title="NAT Gateway is in a failed state",
+                        why="NAT Gateway has failed and cannot route outbound internet traffic from private subnets.",
+                        evidence={"NatGateway": nat_id, "State": "failed"},
+                        fix="Check VPC route tables and subnet configuration, recreate the NAT Gateway, and update routing.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Reliability",
+                    ))
+                elif state == "available":
+                    issues.append(_issue(
+                        rule_id="NAT-002",
+                        severity="WARNING",
+                        title="Active NAT Gateway configuration generates continuous hourly charges",
+                        why="NAT Gateways incur hourly availability charges and data processing fees while provisioned. Verify whether private subnets actively require internet egress.",
+                        evidence={"NatGateway": nat_id, "State": "available", "SubnetId": str(raw.get("subnet_id"))},
+                        fix="Audit private subnet route tables. If instances do not require outbound internet access, delete the NAT Gateway to avoid unnecessary charges.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Cost Risk",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Auto Scaling Groups
+            # ------------------------------------------------------------------
+            elif r_type == "auto_scaling_groups":
+                asg_name = r["name"]
+                desired = raw.get("desired_capacity", 0)
+                min_size = raw.get("min_size", 0)
+                if desired == 0 and min_size == 0:
+                    issues.append(_issue(
+                        rule_id="ASG-001",
+                        severity="ORPHANED",
+                        title="Auto Scaling Group has zero active capacity",
+                        why="Auto Scaling Group has both desired capacity and minimum size set to 0. It is running no compute instances and may be abandoned.",
+                        evidence={"AutoScalingGroup": asg_name, "DesiredCapacity": "0", "MinSize": "0"},
+                        fix="If this scaling group is obsolete, delete it to keep your AWS account clean.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+
+            # ------------------------------------------------------------------
+            # ECS Clusters
+            # ------------------------------------------------------------------
+            elif r_type == "ecs_clusters":
+                cluster_name = r["name"]
+                registered = raw.get("registered_container_instances_count", 0)
+                active = raw.get("active_services_count", 0)
+                if registered == 0 and active == 0:
+                    issues.append(_issue(
+                        rule_id="ECS-001",
+                        severity="ORPHANED",
+                        title="ECS cluster has no registered instances or active services",
+                        why="The cluster has 0 EC2/Fargate instances and 0 running services, serving no active workloads.",
+                        evidence={"Cluster": cluster_name, "RegisteredInstances": "0", "ActiveServices": "0"},
+                        fix="If the cluster is no longer needed, delete it: ECS Console → Select Cluster → Delete Cluster.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Internet Gateways
+            # ------------------------------------------------------------------
+            elif r_type == "internet_gateways":
+                igw_id = r["id"]
+                attachments = raw.get("attachments", [])
+                if len(attachments) == 0:
+                    issues.append(_issue(
+                        rule_id="IGW-001",
+                        severity="ORPHANED",
+                        title="Internet Gateway is not attached to any VPC",
+                        why="The Internet Gateway exists independently without routing traffic for any VPC, representing an abandoned networking resource.",
+                        evidence={"InternetGateway": igw_id, "Attachments": "0"},
+                        fix="Attach the gateway to a VPC if needed, or delete it from the VPC console.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+
+            # ------------------------------------------------------------------
+            # CloudWatch Alarms
+            # ------------------------------------------------------------------
+            elif r_type == "cloudwatch_alarms":
+                alarm_name = r["name"]
+                actions_enabled = raw.get("actions_enabled", True)
+                state_value = raw.get("state_value")
+                if actions_enabled is False:
+                    issues.append(_issue(
+                        rule_id="CW-001",
+                        severity="WARNING",
+                        title="CloudWatch alarm actions are disabled",
+                        why="The alarm has actions disabled and will not send notifications or execute automated remediation when triggered.",
+                        evidence={"Alarm": alarm_name, "ActionsEnabled": "False"},
+                        fix="Enable alarm actions: CloudWatch Console → Alarms → Select Alarm → Actions → Enable actions.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Reliability",
+                    ))
+                if state_value == "INSUFFICIENT_DATA":
+                    issues.append(_issue(
+                        rule_id="CW-002",
+                        severity="WARNING",
+                        title="CloudWatch alarm has insufficient metric data",
+                        why="Alarm is in INSUFFICIENT_DATA state, which typically indicates the monitored resource was deleted or metric publishing stopped.",
+                        evidence={"Alarm": alarm_name, "StateValue": "INSUFFICIENT_DATA"},
+                        fix="Verify if the underlying resource exists. If the monitored workload was decommissioned, delete the alarm.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Reliability",
+                    ))
+
+            # ------------------------------------------------------------------
+            # EventBridge Rules
+            # ------------------------------------------------------------------
+            elif r_type == "eventbridge_rules":
+                rule_name = r["name"]
+                state = raw.get("state")
+                if state == "DISABLED":
+                    issues.append(_issue(
+                        rule_id="EV-001",
+                        severity="ORPHANED",
+                        title="EventBridge rule is disabled",
+                        why="Rule is in DISABLED state and does not process events or trigger scheduled targets.",
+                        evidence={"Rule": rule_name, "State": "DISABLED"},
+                        fix="Re-enable the rule if automation is active, or delete it to remove obsolete event routes.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+
+            # ------------------------------------------------------------------
+            # CloudFormation Stacks
+            # ------------------------------------------------------------------
+            elif r_type == "cloudformation_stacks":
+                stack_name = r["name"]
+                stack_status = raw.get("stack_status", "")
+                term_protection = raw.get("enable_termination_protection", False)
+                if stack_status in ["ROLLBACK_COMPLETE", "UPDATE_ROLLBACK_COMPLETE", "DELETE_FAILED", "CREATE_FAILED"]:
+                    issues.append(_issue(
+                        rule_id="CFN-001",
+                        severity="ORPHANED",
+                        title="CloudFormation stack is in a failed or rollback state",
+                        why=f"Stack is in '{stack_status}' state and may retain orphaned cloud resources from failed deployments.",
+                        evidence={"Stack": stack_name, "StackStatus": stack_status},
+                        fix="Inspect stack events for root cause errors, delete the failed stack, or trigger a clean rollback.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Orphaned",
+                    ))
+                elif term_protection is False:
+                    issues.append(_issue(
+                        rule_id="CFN-002",
+                        severity="WARNING",
+                        title="CloudFormation stack termination protection is disabled",
+                        why="Without termination protection, the entire stack and all its managed resources can be deleted with a single command.",
+                        evidence={"Stack": stack_name, "TerminationProtection": "Disabled"},
+                        fix="Enable termination protection: CloudFormation → Select Stack → Stack actions → Edit termination protection.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Reliability",
+                    ))
+
+            # ------------------------------------------------------------------
+            # Lambda Functions
+            # ------------------------------------------------------------------
+            elif r_type == "lambda_functions":
+                fn_name = r["name"]
+                last_mod = raw.get("last_modified")
+                if last_mod:
+                    try:
+                        import datetime
+                        if "+" in last_mod:
+                            time_part = last_mod.split("+")[0]
+                            dt = datetime.datetime.strptime(time_part, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=datetime.timezone.utc)
+                        else:
+                            dt = datetime.datetime.strptime(last_mod, "%Y-%m-%dT%H:%M:%S.%f%z")
+                        age_days = (datetime.datetime.now(datetime.timezone.utc) - dt).days
+                        if age_days > 90:
+                            issues.append(_issue(
+                                rule_id="LAM-001",
+                                severity="WARNING",
+                                title="Lambda function has not been modified in over 90 days",
+                                why="Serverless functions left unmaintained may use older runtimes or contain unpatched third-party library dependencies.",
+                                evidence={"Function": fn_name, "LastModified": str(last_mod), "DaysSinceModified": str(age_days)},
+                                fix="Verify if the function is still actively used. Update its runtime and dependencies, or delete obsolete functions.",
+                                resource_type=r["type"],
+                                resource_id=r["id"],
+                                category="Hygiene",
+                            ))
+                    except Exception:
+                        pass
+
+            # ------------------------------------------------------------------
+            # Load Balancers
+            # ------------------------------------------------------------------
+            elif r_type == "load_balancers":
+                lb_name = r["name"]
+                scheme = raw.get("scheme")
+                if scheme == "internet-facing":
+                    issues.append(_issue(
+                        rule_id="ELB-001",
+                        severity="WARNING",
+                        title="Load balancer is publicly accessible from the internet",
+                        why="Load balancer scheme is configured as internet-facing with a public DNS name.",
+                        evidence={"LoadBalancer": lb_name, "Scheme": "internet-facing"},
+                        fix="Verify whether public exposure is intended. Internal backend services should be deployed with 'internal' scheme.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
+                    ))
+
+            # ------------------------------------------------------------------
+            # VPCs
+            # ------------------------------------------------------------------
+            elif r_type == "vpcs":
+                vpc_id = r["id"]
+                if raw.get("is_default") is True:
+                    issues.append(_issue(
+                        rule_id="VPC-001",
+                        severity="WARNING",
+                        title="Default VPC is present and active",
+                        why="Default VPCs have public subnets by default and lack customized network segmentation suitable for production workloads.",
+                        evidence={"VpcId": vpc_id, "IsDefault": "True", "CidrBlock": str(raw.get("cidr_block", "unknown"))},
+                        fix="Deploy production resources in custom VPCs with private subnets, security groups, and explicit routing.",
+                        resource_type=r["type"],
+                        resource_id=r["id"],
+                        category="Security",
                     ))
 
             # ------------------------------------------------------------------

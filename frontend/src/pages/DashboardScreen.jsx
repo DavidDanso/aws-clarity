@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import ResourceTable from "../components/ResourceTable";
-import { RESOURCE_TYPE_LABELS } from "../utils/constants";
+import { RESOURCE_TYPE_LABELS, STATUS_COLOR } from "../utils/constants";
 import { computeScore } from "../utils/securityScore";
 import { compareScans, getStableResourceId } from "../utils/scanComparison";
 import { scanAccount } from "../services/api";

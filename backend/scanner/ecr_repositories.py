@@ -15,24 +15,12 @@ def scan(session, region="us-east-1"):
                 mutability = repo.get("imageTagMutability")
                 scan_config = repo.get("imageScanningConfiguration", {})
                 
-                status = "HEALTHY"
-                issues = []
-                
-                if mutability == "MUTABLE":
-                    status = "WARNING"
-                    issues.append("Image tags are mutable and can be overwritten")
-                
-                if not scan_config.get("scanOnPush", False):
-                    if status != "CRITICAL":
-                        status = "WARNING"
-                    issues.append("Automatic vulnerability scanning on push is disabled")
-                    
                 resources.append({
                     "id": name,
                     "name": name,
                     "type": "ecr_repository",
-                    "status": status,
-                    "issues": issues,
+                    "status": "HEALTHY",
+                    "issues": [],
                     "region": region,
                     "raw": {
                         "repository_arn": arn,

@@ -48,7 +48,8 @@ export function computeScore(allResources) {
   for (const r of allResources) {
     const issues = r.issues || [];
     if (issues.length === 0) {
-      healthy++;
+      // NOT_ASSESSED resources are neutral — not penalized, not credited as HEALTHY
+      if (r.status !== "NOT_ASSESSED") healthy++;
       continue;
     }
     for (const issue of issues) {

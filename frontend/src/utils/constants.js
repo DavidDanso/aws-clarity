@@ -30,10 +30,20 @@ export const RESOURCE_TYPE_LABELS = {
 };
 
 export const STATUS_BADGE = {
-  CRITICAL: "bg-red-500/20 text-red-400 border-red-500/30",
-  WARNING: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  HEALTHY: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-  ORPHANED: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  CRITICAL:     "bg-red-500/20 text-red-400 border-red-500/30",
+  WARNING:      "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  HEALTHY:      "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  ORPHANED:     "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  NOT_ASSESSED: "bg-slate-700/30 text-slate-400 border-slate-600/30",
+};
+
+// Shared text-color classes for status values (used in comparison panels, drawers, etc.)
+export const STATUS_COLOR = {
+  CRITICAL:     "text-red-400",
+  WARNING:      "text-amber-400",
+  HEALTHY:      "text-emerald-400",
+  ORPHANED:     "text-slate-400",
+  NOT_ASSESSED: "text-slate-500",
 };
 
 export const SUPPORTED_REGIONS = [
