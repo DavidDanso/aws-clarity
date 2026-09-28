@@ -2,6 +2,7 @@ import { useState } from "react";
 import { validateRoleArn } from "../utils/formatters";
 import { SUPPORTED_REGIONS } from "../utils/constants";
 import { checkPermissions } from "../services/api";
+import TrustModal from "../components/TrustModal";
 
 const IAM_POLICY_JSON = `{
   "Version": "2012-10-17",
@@ -91,6 +92,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
   const [isPrechecking, setIsPrechecking] = useState(false);
   const [precheckResults, setPrecheckResults] = useState(null);
   const [precheckError, setPrecheckError] = useState(null);
+  const [trustModalOpen, setTrustModalOpen] = useState(false);
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(IAM_POLICY_JSON);
@@ -437,7 +439,7 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
 
         {/* ── FOOTER ──────────────────────────────────────────────────────── */}
         <footer className="pt-4 border-t border-slate-800/60 flex flex-col items-center gap-2 text-xs text-slate-500">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-center">
             <span>Built by</span>
             <a
               href="https://www.linkedin.com/in/david-danso/"
@@ -449,13 +451,24 @@ export default function SetupScreen({ onScanStart, scanError, setScanError }) {
             </a>
             <span>·</span>
             <span>AWS Cloud Engineer</span>
+            <span>·</span>
+            <button
+              type="button"
+              onClick={() => setTrustModalOpen(true)}
+              className="text-teal-400 hover:text-teal-300 transition-colors font-medium bg-transparent border-none p-0 cursor-pointer"
+            >
+              Trust & Security Architecture
+            </button>
           </div>
-          <p className="text-[11px] text-slate-600">
+          <p className="text-[11px] text-slate-600 text-center">
             Read-only configuration inspection. Zero customer resources modified. Zero billing calls.
           </p>
         </footer>
 
       </div>
+
+      {/* Trust & Security Modal */}
+      <TrustModal isOpen={trustModalOpen} onClose={() => setTrustModalOpen(false)} />
 
     </div>
   );

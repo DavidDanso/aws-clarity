@@ -7,6 +7,7 @@ import { computeScore } from "../utils/securityScore";
 import { compareScans, getStableResourceId } from "../utils/scanComparison";
 import { scanAccount } from "../services/api";
 import { SECURITY_CHECKS, evaluateCheckStatus } from "../utils/securityChecksCatalog";
+import TrustModal from "../components/TrustModal";
 
 // ── Score ring ────────────────────────────────────────────────────────────────
 function ScoreRing({ score, label, labelColor }) {
@@ -78,6 +79,7 @@ export default function DashboardScreen({
   const [progressTab, setProgressTab] = useState("resolved");
   const [isRescanning, setIsRescanning] = useState(false);
   const [rescanError, setRescanError] = useState(null);
+  const [trustModalOpen, setTrustModalOpen] = useState(false);
 
   const coverage = scanResults?.coverage || {};
   const permissionChecks = scanResults?.permission_checks || coverage?.permission_checks || {};
@@ -315,6 +317,7 @@ export default function DashboardScreen({
           selectedRegions={storedRegions}
           onRegionChange={handleRegionChange}
           isRescanning={isRescanning}
+          onOpenTrust={() => setTrustModalOpen(true)}
         />
 
         {/* Region-switch spinner */}
@@ -361,6 +364,53 @@ export default function DashboardScreen({
           {/* MAIN DASHBOARD: Three-Level Progressive Flow */}
           {(isLoading || scanError || (scanResults?.summary?.total_resources ?? 0) > 0) && (
             <div className="flex flex-col space-y-12 sm:space-y-16">
+
+              {/* ── SCAN RELIABILITY & COMPLETION CONTEXT ──────────────────── */}
+              {!isLoading && !scanError && scanResults && (
+                <div className={`p-3 sm:p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs ${
+                  failedScanners.length > 0 || scanResults.partial
+                    ? "bg-amber-950/20 border-amber-500/30 text-amber-200"
+                    : "bg-slate-900/50 border-slate-800 text-slate-300"
+                }`}>
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    {failedScanners.length > 0 || scanResults.partial ? (
+                      <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full bg-teal-400 shrink-0" />
+                    )}
+                    <span className="font-semibold text-slate-100">
+                      {failedScanners.length > 0 || scanResults.partial
+                        ? `Scan completed with ${failedScanners.length} error${failedScanners.length === 1 ? "" : "s"}`
+                        : "Scan complete"}
+                    </span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-300 font-mono">
+                      {allResources.length} resources discovered
+                    </span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-300 font-mono">
+                      {servicesCount} services checked
+                    </span>
+                    <span className="text-slate-500">·</span>
+                    <span className="text-slate-300 font-mono">
+                      {regionDisplay}
+                    </span>
+                    <span className="text-slate-500">·</span>
+                    <span className={failedScanners.length > 0 ? "text-amber-400 font-mono" : "text-slate-400 font-mono"}>
+                      {failedScanners.length} scan error{failedScanners.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setCoverageModalOpen(true)}
+                    className="text-[11px] font-semibold text-slate-400 hover:text-slate-200 underline underline-offset-2 transition-colors cursor-pointer bg-transparent border-none p-0 self-start sm:self-auto shrink-0"
+                  >
+                    {failedScanners.length > 0 || scanResults.partial
+                      ? "View partial errors & scope →"
+                      : "View coverage breakdown →"}
+                  </button>
+                </div>
+              )}
 
               {/* ──────────────────────────────────────────────────────────── */}
               {/* LEVEL 1 — SECURITY STATUS                                   */}
@@ -1134,6 +1184,9 @@ export default function DashboardScreen({
           onClose={() => setSelectedResource(null)}
         />
       )}
+
+      {/* ── TRUST & SECURITY ARCHITECTURE MODAL ─────────────────────────────── */}
+      <TrustModal isOpen={trustModalOpen} onClose={() => setTrustModalOpen(false)} />
     </div>
   );
 }

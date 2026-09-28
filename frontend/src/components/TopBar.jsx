@@ -40,6 +40,7 @@ export default function TopBar({
   selectedRegions = ["us-east-1"],
   onRegionChange,
   isRescanning = false,
+  onOpenTrust,
 }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [draftRegion, setDraftRegion] = useState(selectedRegions?.[0] ?? "us-east-1");
@@ -155,15 +156,26 @@ export default function TopBar({
         )}
       </div>
 
-      {/* Right Slot: Re-scan button — outline only, no fill, 13px, ghost style */}
-      <button
-        id="rescan-button"
-        onClick={onRescan}
-        disabled={isLoading}
-        className="w-full sm:w-auto px-2.5 py-1 text-[13px] border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white rounded bg-transparent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        Re-scan
-      </button>
+      {/* Right Slot: Trust Center & Re-scan buttons */}
+      <div className="flex items-center gap-2 w-full sm:w-auto">
+        {onOpenTrust && (
+          <button
+            onClick={onOpenTrust}
+            className="w-full sm:w-auto px-2.5 py-1 text-[13px] border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded bg-slate-900/60 transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
+            <span>Trust & Security</span>
+          </button>
+        )}
+        <button
+          id="rescan-button"
+          onClick={onRescan}
+          disabled={isLoading}
+          className="w-full sm:w-auto px-2.5 py-1 text-[13px] border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white rounded bg-transparent transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Re-scan
+        </button>
+      </div>
     </div>
   );
 }
