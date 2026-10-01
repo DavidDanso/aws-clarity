@@ -147,6 +147,13 @@ function formatLastChecked(ts) {
   }
 }
 
+function getDisplayedStatus(resource) {
+  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "ASSESSED") {
+    return "NOT_ASSESSED";
+  }
+  return resource?.status || "NOT_ASSESSED";
+}
+
 function normalizeIssue(issue) {
   if (typeof issue === "string") {
     return {
@@ -158,6 +165,8 @@ function normalizeIssue(issue) {
       what_checked: "Inspected resource configuration and activity timestamps.",
       evidence: null,
       fix: "Review whether this resource is still in active use. Terminate or archive if obsolete.",
+      category: "Orphaned",
+      source: "AWS API configuration",
     };
   }
 
@@ -172,7 +181,9 @@ function normalizeIssue(issue) {
     why: issue.why || null,
     what_checked: issue.what_checked || fallback?.what_checked || (ruleId ? `Evaluated ${ruleId} security rule criteria.` : "Inspected AWS configuration."),
     evidence: issue.evidence && typeof issue.evidence === "object" && Object.keys(issue.evidence).length > 0 ? issue.evidence : null,
-    fix: issue.fix || "Review resource configuration and align with AWS security best practices.",
+    fix: issue.fix || "Review the observed configuration and choose a setting appropriate for this resource's use.",
+    category: issue.category || "Security",
+    source: issue.source || "AWS API configuration",
     scanned_at: issue.scanned_at || null,
   };
 }
@@ -276,6 +287,11 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
   }
 
   const resolvedScannedAt = resource.scanned_at || scannedAt;
+  const displayedStatus = getDisplayedStatus(resource);
+  const assessment = resource.assessment;
+  const unassessedChecks = Array.isArray(assessment?.checks)
+    ? assessment.checks.filter((check) => check?.status === "NOT_ASSESSED")
+    : [];
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm">
@@ -291,9 +307,9 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 {resource.type}
               </span>
               <span className={`text-[11px] font-bold px-2 py-0.5 rounded ${
-                STATUS_COLOR[resource.status] || "text-slate-300"
+                STATUS_COLOR[displayedStatus] || "text-slate-300"
               } bg-slate-800/80`}>
-                {resource.status}
+                {displayedStatus}
               </span>
             </div>
             <h2 className="text-lg font-bold text-white truncate">{resource.name}</h2>
@@ -339,8 +355,8 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                       Current Status
                     </span>
                     <div className="flex items-center gap-2">
-                      <span className={`font-bold px-2 py-0.5 rounded text-[11px] bg-slate-800/80 ${STATUS_COLOR[history.currentStatus] || "text-slate-300"}`}>
-                        {history.currentStatus}
+                      <span className={`font-bold px-2 py-0.5 rounded text-[11px] bg-slate-800/80 ${STATUS_COLOR[displayedStatus] || "text-slate-300"}`}>
+                        {displayedStatus}
                       </span>
                       <span className="text-slate-400 text-[11px] font-mono">
                         {formatLastChecked(resolvedScannedAt)}
@@ -378,7 +394,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                       Status transitioned from{" "}
                       <span className={STATUS_COLOR[history.previousStatus]}>{history.previousStatus}</span>
                       {" "}to{" "}
-                      <span className={STATUS_COLOR[history.currentStatus]}>{history.currentStatus}</span>
+                      <span className={STATUS_COLOR[displayedStatus]}>{displayedStatus}</span>
                     </span>
                   </div>
                 )}
@@ -461,17 +477,32 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-sm font-semibold text-slate-200">
-                Security Findings ({resource.issues?.length || 0})
+                Findings ({resource.issues?.length || 0})
               </h3>
-              {resource.issues?.length > 0 && (
-                <span className="text-[11px] text-slate-500">
-                  Evidence-based verification
-                </span>
-              )}
+              <span className="text-[11px] text-slate-500">Based on configuration observed during this scan.</span>
             </div>
 
+            {(displayedStatus === "NOT_ASSESSED" || unassessedChecks.length > 0 || !assessment) && (
+              <div className="mb-3 rounded-lg border border-slate-700/70 bg-slate-950/50 px-3 py-2.5 text-xs text-slate-400">
+                <p className="font-medium text-slate-300">
+                  {displayedStatus === "NOT_ASSESSED" ? "This resource was not fully assessed." : "Some checks could not be completed."}
+                </p>
+                {assessment?.reason && <p className="mt-1">{assessment.reason}</p>}
+                {unassessedChecks.length > 0 && (
+                  <ul className="mt-1 list-disc pl-4">
+                    {unassessedChecks.map((check, idx) => (
+                      <li key={`${check.rule_id || "check"}-${idx}`}>
+                        {check.rule_id ? `${check.rule_id}: ` : ""}{check.reason || "Required configuration evidence was unavailable."}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {!assessment && <p className="mt-1">Assessment details are missing from these scan results, so a healthy status cannot be confirmed.</p>}
+              </div>
+            )}
+
             {(!resource.issues || resource.issues.length === 0) ? (
-              resource.status === "NOT_ASSESSED" ? (
+              displayedStatus === "NOT_ASSESSED" ? (
                 <div className="rounded-xl border border-slate-600/30 bg-slate-800/20 p-4 flex items-center gap-3 text-sm text-slate-400">
                   <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <circle cx="12" cy="12" r="10" />
@@ -489,7 +520,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                   </svg>
                   <div>
                     <p className="font-medium text-emerald-300">No issues detected</p>
-                    <p className="text-xs text-emerald-500 mt-0.5">Configuration aligns with AWS security best practices.</p>
+                    <p className="text-xs text-emerald-500 mt-0.5">All applicable checks ran and passed.</p>
                   </div>
                 </div>
               )
@@ -515,6 +546,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                               {issue.rule_id}
                             </span>
                           )}
+                          <span className="text-[10px] text-slate-400">{issue.category}</span>
                           <span className={`text-[11px] font-bold uppercase tracking-wider ${style.badge.split(" ")[0]}`}>
                             {issue.severity}
                           </span>
@@ -534,7 +566,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                         {issue.what_found && (
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                              What Was Found
+                              What We Found
                             </span>
                             <p className="text-slate-200 leading-relaxed bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/70">
                               {issue.what_found}
@@ -567,7 +599,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
 
                         <div>
                           <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                            Evidence Observed by Scanner
+                            Evidence
                           </span>
                           {evidenceEntries.length > 0 ? (
                             <div className="rounded-lg bg-slate-950 border border-slate-800/80 divide-y divide-slate-800/60 overflow-hidden font-mono text-[11px]">
@@ -591,13 +623,14 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                         {issue.fix && (
                           <div className="pt-1">
                             <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400 block mb-1">
-                              Recommended Action
+                              What You Should Do
                             </span>
                             <div className="p-3 rounded-lg bg-teal-950/20 border border-teal-500/20 text-teal-200 leading-relaxed text-[12px]">
                               {issue.fix}
                             </div>
                           </div>
                         )}
+                        <p className="text-[10px] text-slate-500">Source: {issue.source}</p>
                       </div>
                     </div>
                   );

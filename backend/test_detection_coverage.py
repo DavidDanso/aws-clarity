@@ -2,6 +2,10 @@ import unittest
 import datetime
 import os
 import sys
+from unittest.mock import MagicMock, patch
+from botocore.exceptions import ClientError
+from contextlib import ExitStack
+from exceptions import ScannerError
 
 sys.path.insert(0, os.path.dirname(__file__))
 from scanner.misconfig import evaluate
@@ -21,7 +25,10 @@ class TestDetectionCoverage(unittest.TestCase):
                     "raw": {
                         "repository_arn": "arn:aws:ecr:us-east-1:123456789012:repository/app-repo",
                         "image_tag_mutability": "MUTABLE",
+                        "image_tag_mutability_exclusion_filters": [],
                         "image_scanning_configuration": {"scanOnPush": False},
+                        "scan_frequency": "MANUAL",
+                        "applied_scan_filters": [],
                     },
                 }
             ]
@@ -37,8 +44,12 @@ class TestDetectionCoverage(unittest.TestCase):
         ecr001 = next(i for i in repo["issues"] if i["rule_id"] == "ECR-001")
         self.assertEqual(ecr001["evidence"]["Repository"], "app-repo")
         self.assertEqual(ecr001["evidence"]["ImageTagMutability"], "MUTABLE")
-        self.assertIn("Tag immutability", ecr001["fix"])
+        self.assertIn("immutable", ecr001["fix"])
         self.assertEqual(ecr001["resource_type"], "ecr_repository")
+        self.assertEqual(ecr001["resource_id"], "app-repo")
+        self.assertEqual(ecr001["category"], "Security")
+        self.assertEqual(ecr001["source"], "AWS API configuration")
+        self.assertEqual(repo["assessment"]["status"], "ASSESSED")
 
     def test_ecr_healthy_configuration(self):
         """ECR repository with immutable tags and scanOnPush enabled should be HEALTHY."""
@@ -52,7 +63,10 @@ class TestDetectionCoverage(unittest.TestCase):
                     "raw": {
                         "repository_arn": "arn:aws:ecr:us-east-1:123456789012:repository/secure-repo",
                         "image_tag_mutability": "IMMUTABLE",
+                        "image_tag_mutability_exclusion_filters": [],
                         "image_scanning_configuration": {"scanOnPush": True},
+                        "scan_frequency": "CONTINUOUS_SCAN",
+                        "applied_scan_filters": [{"filter": "*", "filterType": "WILDCARD"}],
                     },
                 }
             ]
@@ -61,6 +75,54 @@ class TestDetectionCoverage(unittest.TestCase):
         repo = res["ecr_repositories"][0]
         self.assertEqual(repo["status"], "HEALTHY")
         self.assertEqual(len(repo["issues"]), 0)
+
+    def test_ecr_missing_effective_scan_configuration_is_not_assessed(self):
+        resources = {"ecr_repositories": [{
+            "id": "unknown-repo", "name": "unknown-repo", "type": "ecr_repository",
+            "raw": {"image_tag_mutability": "IMMUTABLE", "scan_frequency": None},
+        }]}
+        repo = evaluate(None, resources)["ecr_repositories"][0]
+        self.assertEqual(repo["status"], "NOT_ASSESSED")
+        self.assertEqual(repo["assessment"]["status"], "PARTIAL")
+        self.assertEqual(repo["assessment"]["checks"][1]["status"], "NOT_ASSESSED")
+        self.assertEqual(repo["issues"], [])
+
+    def test_ecr_null_tag_mutability_is_not_reported_as_healthy(self):
+        resources = {"ecr_repositories": [{
+            "id": "unknown-tags", "name": "unknown-tags", "type": "ecr_repository",
+            "raw": {"image_tag_mutability": None, "scan_frequency": "SCAN_ON_PUSH"},
+        }]}
+        repo = evaluate(None, resources)["ecr_repositories"][0]
+        self.assertEqual(repo["status"], "NOT_ASSESSED")
+        self.assertEqual(repo["assessment"]["checks"][0]["status"], "NOT_ASSESSED")
+        self.assertEqual(repo["issues"], [])
+
+    def test_ecr_enhanced_continuous_scanning_passes(self):
+        resources = {"ecr_repositories": [{
+            "id": "enhanced-repo", "name": "enhanced-repo", "type": "ecr_repository",
+            "raw": {
+                "image_tag_mutability": "IMMUTABLE",
+                "image_tag_mutability_exclusion_filters": [],
+                "scan_frequency": "CONTINUOUS_SCAN",
+                "applied_scan_filters": [{"filter": "*", "filterType": "WILDCARD"}],
+            },
+        }]}
+        repo = evaluate(None, resources)["ecr_repositories"][0]
+        self.assertEqual(repo["status"], "HEALTHY")
+        self.assertEqual(repo["assessment"]["status"], "ASSESSED")
+
+    def test_ecr_exclusion_mutability_is_reported(self):
+        resources = {"ecr_repositories": [{
+            "id": "filtered-repo", "name": "filtered-repo", "type": "ecr_repository",
+            "raw": {
+                "image_tag_mutability": "IMMUTABLE_WITH_EXCLUSION",
+                "image_tag_mutability_exclusion_filters": [{"filterType": "WILDCARD", "filter": "latest"}],
+                "scan_frequency": "SCAN_ON_PUSH",
+            },
+        }]}
+        repo = evaluate(None, resources)["ecr_repositories"][0]
+        self.assertEqual(repo["status"], "WARNING")
+        self.assertEqual(repo["issues"][0]["rule_id"], "ECR-001")
 
     def test_eks_public_endpoint(self):
         """EKS cluster with public endpoint open to 0.0.0.0/0 should be CRITICAL (EKS-001)."""
@@ -257,6 +319,136 @@ class TestDetectionCoverage(unittest.TestCase):
         repo = res["ecr_repositories"][0]
         self.assertEqual(repo["status"], "NOT_ASSESSED")
         self.assertEqual(len(repo["issues"]), 0)
+        self.assertEqual(repo["assessment"]["status"], "NOT_ASSESSED")
+
+    def test_missing_rule_attribute_does_not_become_healthy(self):
+        resources = {"rds_instances": [{
+            "id": "db-1", "name": "db-1", "type": "rds_instance",
+            "raw": {"publicly_accessible": False, "storage_encrypted": True},
+        }]}
+        db = evaluate(None, resources)["rds_instances"][0]
+        self.assertEqual(db["status"], "NOT_ASSESSED")
+        self.assertEqual(db["assessment"]["status"], "PARTIAL")
+
+    def test_finding_status_survives_other_unassessed_check(self):
+        resources = {"rds_instances": [{
+            "id": "db-1", "name": "db-1", "type": "rds_instance",
+            "raw": {"publicly_accessible": True, "storage_encrypted": True},
+        }]}
+        db = evaluate(None, resources)["rds_instances"][0]
+        self.assertEqual(db["status"], "CRITICAL")
+        self.assertEqual(db["assessment"]["status"], "PARTIAL")
+        self.assertEqual(db["issues"][0]["resource_id"], "db-1")
+
+    def test_unchecked_resource_type_is_not_assessed(self):
+        resources = {"unsupported_group": [{"id": "x", "name": "x", "raw": {"value": True}}]}
+        result = evaluate(None, resources)["unsupported_group"][0]
+        self.assertEqual(result["status"], "NOT_ASSESSED")
+        self.assertEqual(result["assessment"]["checks"], [])
+
+    def test_ecr_scanner_uses_effective_batch_scan_frequency(self):
+        from scanner.ecr_repositories import scan
+        session = MagicMock()
+        client = session.client.return_value
+        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
+            "repositoryName": "repo", "repositoryArn": "arn:repo", "imageTagMutability": "IMMUTABLE",
+            "imageScanningConfiguration": {"scanOnPush": False},
+        }]}]
+        client.batch_get_repository_scanning_configuration.return_value = {
+            "scanningConfigurations": [{"repositoryName": "repo", "scanFrequency": "CONTINUOUS_SCAN", "appliedScanFilters": []}],
+            "failures": [],
+        }
+        result = scan(session)[0]
+        self.assertEqual(result["raw"]["scan_frequency"], "CONTINUOUS_SCAN")
+        self.assertEqual(result["raw"]["image_scanning_configuration"]["scanOnPush"], False)
+        client.batch_get_repository_scanning_configuration.assert_called_once_with(repositoryNames=["repo"])
+
+    def test_ecr_scanner_discloses_per_repository_configuration_failure(self):
+        from scanner.ecr_repositories import scan
+        session = MagicMock()
+        client = session.client.return_value
+        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
+            "repositoryName": "repo", "imageTagMutability": "IMMUTABLE",
+        }]}]
+        client.batch_get_repository_scanning_configuration.return_value = {
+            "scanningConfigurations": [],
+            "failures": [{"repositoryName": "repo", "failureReason": "denied"}],
+        }
+        result = scan(session)[0]
+        self.assertIn("ECR-002", result["assessment_errors"])
+
+    def test_ecr_scanner_preserves_discovery_when_scan_configuration_api_is_denied(self):
+        from scanner.ecr_repositories import scan
+        session = MagicMock()
+        client = session.client.return_value
+        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
+            "repositoryName": "repo", "imageTagMutability": "IMMUTABLE",
+        }]}]
+        client.batch_get_repository_scanning_configuration.side_effect = ClientError(
+            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
+            "BatchGetRepositoryScanningConfiguration",
+        )
+        result = scan(session)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["name"], "repo")
+        self.assertIn("ECR-002", result[0]["assessment_errors"])
+
+    def test_scanner_permission_failure_is_disclosed_as_partial_coverage(self):
+        import lambda_handler
+        regional_modules = [
+            "ec2", "ebs", "elastic_ip", "security_group", "snapshots", "rds",
+            "lambda_functions", "nat_gateways", "load_balancers", "dynamodb_tables",
+            "vpcs", "auto_scaling_groups", "ecs_clusters", "eks_clusters",
+            "elasticache_clusters", "sqs_queues", "sns_topics", "secrets_manager",
+            "api_gateways", "aurora_clusters", "cloudformation_stacks", "eventbridge_rules",
+            "ecr_repositories", "internet_gateways", "cloudwatch_alarms", "redshift_clusters",
+        ]
+        session = MagicMock()
+        session.client.return_value.get_caller_identity.return_value = {"Account": "123456789012"}
+        discovered = {"id": "i-1", "name": "web", "type": "ec2_instance", "raw": {"state": "running"}}
+        denied = ScannerError("AccessDenied after partial EC2 discovery", [discovered])
+        with ExitStack() as stack:
+            stack.enter_context(patch("lambda_handler.assume_role", return_value=session))
+            stack.enter_context(patch("lambda_handler.validate_permissions", return_value={}))
+            for name in regional_modules:
+                scan_mock = stack.enter_context(patch.object(getattr(lambda_handler, name), "scan", return_value=[]))
+                if name == "ec2":
+                    scan_mock.side_effect = denied
+            stack.enter_context(patch.object(lambda_handler.iam, "scan", return_value=[]))
+            stack.enter_context(patch.object(lambda_handler.s3, "scan", return_value=[]))
+            result = lambda_handler.run_scan("arn:aws:iam::123456789012:role/ReadOnly", ["us-east-1"])
+        self.assertTrue(result["partial"])
+        ec2_status = next(item for item in result["coverage"]["scanner_statuses"] if item["key"] == "ec2_instances")
+        self.assertEqual(ec2_status["status"], "PARTIAL")
+        self.assertEqual(ec2_status["count"], 1)
+        self.assertIn("AccessDenied", ec2_status["reason"])
+        self.assertEqual(result["resources"]["ec2_instances"][0]["id"], "i-1")
+
+    def test_s3_permission_error_marks_only_that_check_not_assessed(self):
+        session = MagicMock()
+        s3 = session.client.return_value
+        s3.get_bucket_policy_status.side_effect = ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "denied"}}, "GetBucketPolicyStatus"
+        )
+        s3.get_bucket_acl.return_value = {"Grants": []}
+        s3.get_bucket_encryption.side_effect = ClientError(
+            {"Error": {"Code": "ServerSideEncryptionConfigurationNotFoundError", "Message": "none"}},
+            "GetBucketEncryption",
+        )
+        s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
+            "BlockPublicAcls": True, "IgnorePublicAcls": True,
+            "BlockPublicPolicy": True, "RestrictPublicBuckets": True,
+        }}
+        resources = {"s3_buckets": [{
+            "id": "bucket", "name": "bucket", "type": "s3_bucket",
+            "raw": {"name": "bucket", "is_empty": False},
+        }]}
+        bucket = evaluate(session, resources)["s3_buckets"][0]
+        self.assertEqual(bucket["status"], "NOT_ASSESSED")
+        self.assertEqual(bucket["assessment"]["status"], "PARTIAL")
+        check = next(item for item in bucket["assessment"]["checks"] if item["rule_id"] == "S3-002")
+        self.assertEqual(check["status"], "NOT_ASSESSED")
+        self.assertIn("AccessDenied", check["reason"])
 
     def test_unrelated_resources_unaffected(self):
         """Existing Security Group and S3 checks evaluate accurately alongside new rules."""
@@ -322,7 +514,7 @@ class TestDetectionCoverage(unittest.TestCase):
         self.assertEqual(rule_ids, {"EC-001", "EC-002"})
 
     def test_dynamodb_kms_encryption(self):
-        """DynamoDB table without KMS CMK triggers DDB-001."""
+        """An explicit DynamoDB SSE disabled state triggers DDB-001."""
         resources = {
             "dynamodb_tables": [
                 {
@@ -373,7 +565,7 @@ class TestDetectionCoverage(unittest.TestCase):
                     "name": "orders-queue",
                     "type": "sqs_queue",
                     "status": "HEALTHY",
-                    "raw": {"kms_master_key_id": None},
+                    "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": False},
                 }
             ],
             "sns_topics": [
@@ -389,6 +581,33 @@ class TestDetectionCoverage(unittest.TestCase):
         res = evaluate(None, resources)
         self.assertEqual(res["sqs_queues"][0]["issues"][0]["rule_id"], "SQS-001")
         self.assertEqual(res["sns_topics"][0]["issues"][0]["rule_id"], "SNS-001")
+
+    def test_sqs_sqs_managed_encryption_passes_without_kms_key(self):
+        resources = {"sqs_queues": [{
+            "id": "encrypted-queue", "name": "encrypted-queue", "type": "sqs_queue",
+            "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": "true"},
+        }]}
+        queue = evaluate(None, resources)["sqs_queues"][0]
+        self.assertEqual(queue["status"], "HEALTHY")
+        self.assertEqual(queue["assessment"]["checks"][0]["status"], "PASSED")
+
+    def test_sqs_missing_encryption_attributes_is_not_assessed(self):
+        resources = {"sqs_queues": [{
+            "id": "unknown-queue", "name": "unknown-queue", "type": "sqs_queue",
+            "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": None},
+        }]}
+        queue = evaluate(None, resources)["sqs_queues"][0]
+        self.assertEqual(queue["status"], "NOT_ASSESSED")
+        self.assertEqual(queue["issues"], [])
+
+    def test_dynamodb_missing_sse_status_is_not_assessed(self):
+        resources = {"dynamodb_tables": [{
+            "id": "unknown-table", "name": "unknown-table", "type": "dynamodb_table",
+            "raw": {"sse_description": {}},
+        }]}
+        table = evaluate(None, resources)["dynamodb_tables"][0]
+        self.assertEqual(table["status"], "NOT_ASSESSED")
+        self.assertEqual(table["issues"], [])
 
     def test_cloudwatch_and_eventbridge(self):
         """CloudWatch alarms and EventBridge rules trigger CW-001, CW-002, EV-001."""

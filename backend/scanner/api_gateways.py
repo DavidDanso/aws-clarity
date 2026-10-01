@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -30,8 +31,7 @@ def scan(session, region="us-east-1"):
                 }
             })
     except ClientError as e:
-        logging.warning(f"Error scanning REST API Gateways: {e}")
-
+        raise ScannerError(str(e), resources) from e
     # HTTP APIs (apigatewayv2)
     try:
         apigwv2_client = session.client("apigatewayv2", region_name=region)
@@ -58,6 +58,5 @@ def scan(session, region="us-east-1"):
                 }
             })
     except ClientError as e:
-        logging.warning(f"Error scanning HTTP API Gateways: {e}")
-
+        raise ScannerError(str(e), resources) from e
     return resources

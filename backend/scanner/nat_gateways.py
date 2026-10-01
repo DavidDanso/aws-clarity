@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -19,7 +20,7 @@ def scan(session, region="us-east-1"):
                 
                 if state == "available":
                     status = "WARNING"
-                    issues.append("NAT Gateways cost ~$0.045/hour plus data charges. Verify this is still needed.")
+                    issues.append("Active NAT Gateway may incur ongoing usage charges. Verify that private subnet internet egress is required.")
                 elif state == "failed":
                     status = "WARNING"
                     issues.append("NAT Gateway is in a failed state")
@@ -48,5 +49,5 @@ def scan(session, region="us-east-1"):
                     }
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning NAT gateways: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

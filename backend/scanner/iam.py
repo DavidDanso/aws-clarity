@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 import urllib.parse
 import json
@@ -27,9 +28,8 @@ def scan(session):
                         else:
                             doc = raw_doc
                         inline_policies[policy_name] = doc
-                except ClientError as e:
-                    logging.warning(f"Error getting inline policies for role {role_name}: {e}")
-
+                except ClientError:
+                    raise
                 # ---- Attached managed policies ----
                 attached_managed_policies = []
                 try:
@@ -39,9 +39,8 @@ def scan(session):
                             "PolicyName": p.get("PolicyName"),
                             "PolicyArn":  p.get("PolicyArn"),
                         })
-                except ClientError as e:
-                    logging.warning(f"Error getting attached policies for role {role_name}: {e}")
-
+                except ClientError:
+                    raise
                 # ---- Trust policy (AssumeRolePolicyDocument) ----
                 trust_policy_raw = role.get("AssumeRolePolicyDocument", {})
                 if isinstance(trust_policy_raw, str):
@@ -69,5 +68,5 @@ def scan(session):
                     },
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning IAM Roles: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

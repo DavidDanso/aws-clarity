@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -48,9 +49,8 @@ def scan(session, region="us-east-1"):
                             "active_services_count": active
                         }
                     })
-            except ClientError as e:
-                logging.warning(f"Error describing ECS clusters: {e}")
-
+            except ClientError:
+                raise
     except ClientError as e:
-        logging.warning(f"Error listing ECS clusters: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

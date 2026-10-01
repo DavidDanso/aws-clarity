@@ -1,11 +1,12 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, selected_regions=None):
     if selected_regions is None:
         selected_regions = ["us-east-1"]
+    resources = []
     try:
-        resources = []
         s3 = session.client("s3")
         response = s3.list_buckets()
         
@@ -17,20 +18,16 @@ def scan(session, selected_regions=None):
                 location_resp = s3.get_bucket_location(Bucket=bucket_name)
                 raw_location = location_resp["LocationConstraint"]
                 bucket_region = raw_location if raw_location is not None else "us-east-1"
-            except ClientError as e:
-                logging.warning(f"Could not get location for bucket {bucket_name}: {e}")
-                continue
-
+            except ClientError:
+                raise
             if bucket_region not in selected_regions:
                 continue
 
             try:
                 objs_resp = s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
                 is_empty = objs_resp.get("KeyCount", 0) == 0
-            except ClientError as e:
-                is_empty = False
-                logging.warning(f"Could not list objects for bucket {bucket_name}: {e}")
-
+            except ClientError:
+                raise
             resources.append({
                 "id": bucket_name,
                 "name": bucket_name,
@@ -49,5 +46,4 @@ def scan(session, selected_regions=None):
         return resources
 
     except ClientError as e:
-        logging.warning(f"Error scanning S3 buckets: {e}")
-        return []
+        raise ScannerError(str(e), resources) from e

@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -37,5 +38,5 @@ def scan(session, region="us-east-1"):
                     }
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning Auto Scaling Groups: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -41,8 +42,8 @@ def scan(session, region="us-east-1"):
                         "resources_vpc_config": vpc_config
                     }
                 })
-            except ClientError as e:
-                logging.warning(f"Error describing EKS cluster {name}: {e}")
+            except ClientError:
+                raise
     except ClientError as e:
-        logging.warning(f"Error listing EKS clusters: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

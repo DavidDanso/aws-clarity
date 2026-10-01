@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -42,8 +43,7 @@ def scan(session, region="us-east-1"):
                     }
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning elbv2 Load Balancers: {e}")
-
+        raise ScannerError(str(e), resources) from e
     # elb (Classic ELB)
     try:
         elb_client = session.client("elb", region_name=region)
@@ -82,6 +82,5 @@ def scan(session, region="us-east-1"):
                     }
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning classic Load Balancers: {e}")
-
+        raise ScannerError(str(e), resources) from e
     return resources

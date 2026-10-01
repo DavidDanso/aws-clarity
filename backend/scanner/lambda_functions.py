@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 from datetime import datetime, timezone
 
@@ -60,5 +61,5 @@ def scan(session, region="us-east-1"):
                     }
                 })
     except ClientError as e:
-        logging.warning(f"Error scanning Lambda functions: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

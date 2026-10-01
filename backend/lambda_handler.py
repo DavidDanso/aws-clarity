@@ -6,7 +6,7 @@ import uuid
 import time
 from botocore.exceptions import ClientError
 from utils import assume_role, validate_role_arn
-from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError
+from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError, ScannerError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
 from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, load_balancers
 from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, redshift_clusters
@@ -82,7 +82,7 @@ SCANNER_METADATA = {
     "aurora_clusters": {"service": "RDS", "label": "Aurora Clusters", "permission": "rds:DescribeDBClusters", "capability": "Aurora DB clusters"},
     "cloudformation_stacks": {"service": "CloudFormation", "label": "CloudFormation Stacks", "permission": "cloudformation:DescribeStacks", "capability": "Infrastructure templates"},
     "eventbridge_rules": {"service": "EventBridge", "label": "EventBridge Rules", "permission": "events:ListRules", "capability": "Event bus routing"},
-    "ecr_repositories": {"service": "ECR", "label": "ECR Repositories", "permission": "ecr:DescribeRepositories", "capability": "Container registries"},
+    "ecr_repositories": {"service": "ECR", "label": "ECR Repositories", "permission": "ecr:DescribeRepositories, ecr:BatchGetRepositoryScanningConfiguration", "capability": "Container registries"},
     "internet_gateways": {"service": "VPC", "label": "Internet Gateways", "permission": "ec2:DescribeInternetGateways", "capability": "VPC internet ingress/egress"},
     "cloudwatch_alarms": {"service": "CloudWatch", "label": "CloudWatch Alarms", "permission": "cloudwatch:DescribeAlarms", "capability": "Metric alerts"},
     "redshift_clusters": {"service": "Redshift", "label": "Redshift Clusters", "permission": "redshift:DescribeClusters", "capability": "Data warehouses"},
@@ -181,7 +181,7 @@ def run_scan(role_arn, regions):
     with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
         future_to_task = {
             executor.submit(fn, session, region): (key, region)
-            for key, fn in tasks
+            for key, fn, region in tasks
         }
         for future in concurrent.futures.as_completed(future_to_task):
             key, region = future_to_task[future]
@@ -189,13 +189,22 @@ def run_scan(role_arn, regions):
             try:
                 result = future.result(timeout=25)
                 resources[key].extend(result)
+                assessment_errors = [
+                    (item.get("name") or item.get("id"), message)
+                    for item in result
+                    for message in (item.get("assessment_errors") or {}).values()
+                ]
+                scanner_state = "PARTIAL" if assessment_errors else "COMPLETED"
+                if assessment_errors:
+                    is_partial = True
                 scanner_statuses.append({
                     "service": meta["service"],
                     "label": meta["label"],
                     "key": key,
                     "region": region,
-                    "status": "COMPLETED",
+                    "status": scanner_state,
                     "count": len(result),
+                    **({"reason": "; ".join(f"{name}: {message}" for name, message in assessment_errors[:5])} if assessment_errors else {}),
                     "required_permission": meta["permission"],
                     "affected_capability": meta["capability"],
                 })
@@ -210,6 +219,21 @@ def run_scan(role_arn, regions):
                     "status": "TIMED_OUT",
                     "count": 0,
                     "reason": "Scanner timed out after 25s",
+                    "required_permission": meta["permission"],
+                    "affected_capability": meta["capability"],
+                })
+            except ScannerError as e:
+                is_partial = True
+                resources[key].extend(e.resources)
+                status = "PARTIAL" if e.resources else "FAILED"
+                scanner_statuses.append({
+                    "service": meta["service"],
+                    "label": meta["label"],
+                    "key": key,
+                    "region": region,
+                    "status": status,
+                    "count": len(e.resources),
+                    "reason": str(e),
                     "required_permission": meta["permission"],
                     "affected_capability": meta["capability"],
                 })
@@ -241,6 +265,16 @@ def run_scan(role_arn, regions):
             "required_permission": "iam:ListRoles, iam:GetRolePolicy, iam:ListRolePolicies",
             "affected_capability": "IAM role policies, admin access, and trust relationships",
         })
+    except ScannerError as e:
+        is_partial = True
+        resources["iam_roles"] = e.resources
+        scanner_statuses.append({
+            "service": "IAM", "label": "IAM Roles", "key": "iam_roles", "region": "global",
+            "status": "PARTIAL" if e.resources else "FAILED", "count": len(e.resources),
+            "reason": str(e),
+            "required_permission": "iam:ListRoles, iam:GetRolePolicy, iam:ListRolePolicies",
+            "affected_capability": "IAM role policies, admin access, and trust relationships",
+        })
     except Exception as e:
         is_partial = True
         scanner_statuses.append({
@@ -264,6 +298,16 @@ def run_scan(role_arn, regions):
             "region": "global",
             "status": "COMPLETED",
             "count": len(resources["s3_buckets"]),
+            "required_permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketAcl",
+            "affected_capability": "S3 storage buckets, encryption, and public access blocks",
+        })
+    except ScannerError as e:
+        is_partial = True
+        resources["s3_buckets"] = e.resources
+        scanner_statuses.append({
+            "service": "S3", "label": "S3 Buckets", "key": "s3_buckets", "region": "global",
+            "status": "PARTIAL" if e.resources else "FAILED", "count": len(e.resources),
+            "reason": str(e),
             "required_permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketAcl",
             "affected_capability": "S3 storage buckets, encryption, and public access blocks",
         })
@@ -300,8 +344,16 @@ def run_scan(role_arn, regions):
         "not_assessed": sum(1 for r in all_resources if r.get("status") == "NOT_ASSESSED"),
     }
 
+    # A discovered resource with incomplete rule evidence also makes coverage
+    # partial, even if every scanner API call itself completed.
+    is_partial = is_partial or any(
+        r.get("assessment", {}).get("status") in ("PARTIAL", "NOT_ASSESSED")
+        for group in resources.values() if isinstance(group, list)
+        for r in group
+    )
+
     # Build honest coverage disclosure
-    services_scanned = sorted(list(set(s["service"] for s in scanner_statuses if s["status"] == "COMPLETED")))
+    services_scanned = sorted(list(set(s["service"] for s in scanner_statuses if s["status"] in ("COMPLETED", "PARTIAL"))))
     coverage = {
         "regions_scanned": regions,
         "services_scanned": services_scanned,

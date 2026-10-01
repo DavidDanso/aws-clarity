@@ -3,6 +3,15 @@ import { RESOURCE_TYPE_LABELS, STATUS_BADGE } from "../utils/constants";
 
 const PAGE_SIZE = 5;
 
+function getDisplayedStatus(resource) {
+  // Older cached scan results may not include the explicit assessment contract.
+  // Never present those results as healthy without evidence that checks ran.
+  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "ASSESSED") {
+    return "NOT_ASSESSED";
+  }
+  return resource?.status || "NOT_ASSESSED";
+}
+
 function getPageNumbers(current, total) {
   if (total <= 7) {
     return Array.from({ length: total }, (_, i) => i + 1);
@@ -133,10 +142,10 @@ export default function ResourceTable({
                   <td className="py-3 pr-6">
                     <span
                       className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold border ${
-                        STATUS_BADGE[resource.status] || STATUS_BADGE.HEALTHY
+                        STATUS_BADGE[getDisplayedStatus(resource)] || STATUS_BADGE.NOT_ASSESSED
                       }`}
                     >
-                      {resource.status}
+                      {getDisplayedStatus(resource)}
                     </span>
                   </td>
                   <td className="py-3 pr-6 text-slate-500 hidden sm:table-cell text-[12px] tabular-nums">

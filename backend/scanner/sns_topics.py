@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -36,8 +37,8 @@ def scan(session, region="us-east-1"):
                             "kms_master_key_id": kms_master_key_id
                         }
                     })
-                except ClientError as e:
-                    logging.warning(f"Error describing SNS topic {arn}: {e}")
+                except ClientError:
+                    raise
     except ClientError as e:
-        logging.warning(f"Error scanning SNS topics: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources

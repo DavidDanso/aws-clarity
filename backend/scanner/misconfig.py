@@ -16,8 +16,8 @@ RULE_METADATA = {
         "what_checked": "Queried S3 GetBucketAcl API and inspected grantee URI definitions.",
     },
     "S3-004": {
-        "what_found": "Server-side encryption is not enabled by default for objects stored in this bucket.",
-        "what_checked": "Queried S3 GetBucketEncryption API configuration.",
+        "what_found": "Inspected explicit bucket encryption configuration; S3 applies SSE-S3 to new uploads when no bucket configuration is set.",
+        "what_checked": "Queried S3 GetBucketEncryption and accounted for S3 default SSE-S3 encryption.",
     },
     "S3-005": {
         "what_found": "One or more of the four S3 Block Public Access controls are disabled.",
@@ -105,8 +105,8 @@ RULE_METADATA = {
         "category": "Security",
     },
     "ECR-002": {
-        "what_found": "Automatic vulnerability scanning on push is not enabled for this repository.",
-        "what_checked": "Inspected ECR DescribeRepositories imageScanningConfiguration scanOnPush flag.",
+        "what_found": "Repository scanning is configured for manual scans rather than automatic or continuous scans.",
+        "what_checked": "Inspected ECR BatchGetRepositoryScanningConfiguration scanFrequency and applied filters.",
         "category": "Security",
     },
     "EKS-001": {
@@ -145,7 +145,7 @@ RULE_METADATA = {
         "category": "Security",
     },
     "DDB-001": {
-        "what_found": "Table uses default AWS-owned key rather than customer-managed KMS encryption (KMS CMK).",
+        "what_found": "DynamoDB table encryption at rest is explicitly disabled.",
         "what_checked": "Inspected DynamoDB DescribeTable SSEDescription configuration.",
         "category": "Security",
     },
@@ -160,8 +160,8 @@ RULE_METADATA = {
         "category": "Security",
     },
     "SQS-001": {
-        "what_found": "SQS message queue does not have server-side encryption enabled with a KMS key.",
-        "what_checked": "Inspected SQS GetQueueAttributes KmsMasterKeyId attribute.",
+        "what_found": "SQS message queue has neither SQS-managed nor KMS-managed server-side encryption enabled.",
+        "what_checked": "Inspected SQS GetQueueAttributes SqsManagedSseEnabled and KmsMasterKeyId attributes.",
         "category": "Security",
     },
     "SNS-001": {
@@ -175,7 +175,7 @@ RULE_METADATA = {
         "category": "Reliability",
     },
     "NAT-002": {
-        "what_found": "Active NAT Gateway configuration generates continuous hourly availability charges.",
+        "what_found": "An active NAT Gateway can continue generating usage-based charges.",
         "what_checked": "Inspected EC2 DescribeNatGateways State and SubnetId.",
         "category": "Cost Risk",
     },
@@ -236,6 +236,122 @@ RULE_METADATA = {
     },
 }
 
+# Rules currently implemented by the centralized evaluator. An explicit map
+# ensures a resource with no applicable checks cannot silently become HEALTHY.
+CHECKS_BY_RESOURCE = {
+    "s3_buckets": ["S3-001", "S3-002", "S3-003", "S3-004", "S3-005"],
+    "security_groups": ["SG-001", "SG-002", "SG-003"],
+    "rds_instances": ["RDS-001", "RDS-002", "RDS-003"],
+    "ebs_volumes": ["EBS-001", "EBS-002"],
+    "iam_roles": ["IAM-001", "IAM-002", "IAM-003", "IAM-004", "IAM-005", "IAM-006", "IAM-007", "IAM-008"],
+    "ec2_instances": ["EC2-001"],
+    "elastic_ips": ["EIP-001"],
+    "snapshots": ["SNAP-001"],
+    "ecr_repositories": ["ECR-001", "ECR-002"],
+    "eks_clusters": ["EKS-001"],
+    "redshift_clusters": ["RS-001", "RS-002"],
+    "aurora_clusters": ["AUR-001", "AUR-002"],
+    "elasticache_clusters": ["EC-001", "EC-002"],
+    "dynamodb_tables": ["DDB-001"],
+    "secrets": ["SEC-001", "SEC-002"],
+    "sqs_queues": ["SQS-001"], "sns_topics": ["SNS-001"],
+    "nat_gateways": ["NAT-001", "NAT-002"],
+    "auto_scaling_groups": ["ASG-001"], "ecs_clusters": ["ECS-001"],
+    "internet_gateways": ["IGW-001"], "cloudwatch_alarms": ["CW-001", "CW-002"],
+    "eventbridge_rules": ["EV-001"], "cloudformation_stacks": ["CFN-001", "CFN-002"],
+    "lambda_functions": ["LAM-001"], "load_balancers": ["ELB-001"], "vpcs": ["VPC-001"],
+}
+
+RULE_REQUIRED_FIELDS = {
+    "S3-001": ("is_empty",), "S3-002": ("name",), "S3-003": ("name",), "S3-004": ("name",), "S3-005": ("name",),
+    "SG-001": ("ip_permissions",), "SG-002": ("ip_permissions",), "SG-003": ("ip_permissions",),
+    "RDS-001": ("publicly_accessible",), "RDS-002": ("storage_encrypted",), "RDS-003": ("deletion_protection",),
+    "EBS-001": ("encrypted",), "EBS-002": ("state",),
+    "IAM-001": ("inline_policies",), "IAM-002": ("inline_policies",), "IAM-003": ("attached_managed_policies",),
+    "IAM-004": ("attached_managed_policies",), "IAM-005": ("trust_policy",), "IAM-006": ("inline_policies",),
+    "IAM-007": ("attached_managed_policies",), "IAM-008": ("trust_policy",), "EC2-001": ("state",),
+    "EIP-001": ("association_id",), "SNAP-001": ("volume_id",),
+    "ECR-001": ("image_tag_mutability",), "ECR-002": ("scan_frequency",), "EKS-001": ("resources_vpc_config",),
+    "RS-001": ("publicly_accessible",), "RS-002": ("encrypted",), "AUR-001": ("storage_encrypted",),
+    "AUR-002": ("deletion_protection",), "EC-001": ("at_rest_encryption_enabled",), "EC-002": ("transit_encryption_enabled",),
+    "DDB-001": ("sse_description",), "SEC-001": ("rotation_enabled",), "SEC-002": ("kms_key_id",),
+    "SQS-001": ("kms_master_key_id",), "SNS-001": ("kms_master_key_id",), "NAT-001": ("state",), "NAT-002": ("state",),
+    "ASG-001": ("desired_capacity", "min_size"), "ECS-001": ("registered_container_instances_count", "active_services_count"),
+    "IGW-001": ("attachments",), "CW-001": ("actions_enabled",), "CW-002": ("state_value",),
+    "EV-001": ("state",), "CFN-001": ("stack_status",), "CFN-002": ("enable_termination_protection",),
+    "LAM-001": ("last_modified",), "ELB-001": ("scheme",), "VPC-001": ("is_default",),
+}
+
+RULE_ALLOWED_VALUES = {
+    "ECR-001": {"image_tag_mutability": {"MUTABLE", "IMMUTABLE", "MUTABLE_WITH_EXCLUSION", "IMMUTABLE_WITH_EXCLUSION"}},
+    "ECR-002": {"scan_frequency": {"MANUAL", "SCAN_ON_PUSH", "CONTINUOUS_SCAN"}},
+}
+
+# Some AWS APIs represent a valid, inspected "not configured" state with null.
+NULL_IS_EVIDENCE = {
+    "EIP-001": {"association_id"},
+    "SNS-001": {"kms_master_key_id"},
+    "SEC-002": {"kms_key_id"},
+}
+
+
+def _missing_rule_fields(raw, rule_id):
+    if rule_id == "SQS-001":
+        key_enabled = bool(raw.get("kms_master_key_id"))
+        sqs_setting = raw.get("sqs_managed_sse_enabled")
+        valid_setting = (True, False, "true", "false", "True", "False", "1", "0")
+        if key_enabled or sqs_setting in valid_setting:
+            return []
+        return ["sqs_managed_sse_enabled"]
+    if rule_id == "DDB-001":
+        description = raw.get("sse_description")
+        if isinstance(description, dict) and description.get("Status") in ("ENABLED", "DISABLED"):
+            return []
+        return ["sse_description.Status"]
+    if rule_id == "EKS-001":
+        config = raw.get("resources_vpc_config")
+        if not isinstance(config, dict) or not isinstance(config.get("endpointPublicAccess"), bool):
+            return ["resources_vpc_config.endpointPublicAccess"]
+        if config["endpointPublicAccess"] and not isinstance(config.get("publicAccessCidrs"), list):
+            return ["resources_vpc_config.publicAccessCidrs"]
+        return []
+    return [field for field in RULE_REQUIRED_FIELDS.get(rule_id, ())
+            if field not in raw or (raw[field] is None and field not in NULL_IS_EVIDENCE.get(rule_id, set()))]
+
+
+def _has_rule_evidence(raw, rule_id):
+    return not _missing_rule_fields(raw, rule_id)
+
+
+def _assessment(rule_ids, raw, issues, rule_errors=None):
+    """Return explicit per-rule evaluation states for a resource."""
+    rule_errors = rule_errors or {}
+    results = []
+    for rule_id in rule_ids:
+        missing = _missing_rule_fields(raw, rule_id)
+        invalid = [field for field, allowed in RULE_ALLOWED_VALUES.get(rule_id, {}).items()
+                   if field in raw and raw[field] is not None and raw[field] not in allowed]
+        if missing:
+            status = "NOT_ASSESSED"
+            reason = "Missing required configuration: " + ", ".join(missing)
+        elif invalid:
+            status = "NOT_ASSESSED"
+            reason = "Unsupported configuration value for: " + ", ".join(invalid)
+        elif rule_id in rule_errors:
+            status = "NOT_ASSESSED"
+            reason = rule_errors[rule_id]
+        elif any(issue.get("rule_id") == rule_id for issue in issues):
+            status, reason = "VIOLATED", None
+        else:
+            status, reason = "PASSED", None
+        check = {"rule_id": rule_id, "status": status}
+        if reason:
+            check["reason"] = reason
+        results.append(check)
+    unknown_count = sum(item["status"] == "NOT_ASSESSED" for item in results)
+    state = "NOT_ASSESSED" if unknown_count == len(results) else "PARTIAL" if unknown_count else "ASSESSED"
+    return {"status": state, "checks": results}
+
 
 def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_checked=None, resource_type=None, resource_id=None, category=None):
     """Return a fully-structured finding dict with explainable evidence.
@@ -258,6 +374,7 @@ def _issue(rule_id, severity, title, why, evidence, fix, what_found=None, what_c
         "evidence":     evidence,   # Dict of key→value pairs of actual detected data
         "fix":          fix,        # Actionable remediation step
         "category":     resolved_category,
+        "source":       meta.get("source", "AWS API configuration"),
         # Legacy field kept so nothing existing breaks
         "message":      title,
     }
@@ -279,26 +396,23 @@ def evaluate(session, resources: dict) -> dict:
     # Precompute active volume IDs for orphan snapshot check
     active_volume_ids = {v["id"] for v in resources.get("ebs_volumes", [])}
 
-    ASSESSED_RESOURCE_TYPES = {
-        "s3_buckets", "security_groups", "rds_instances", "ebs_volumes", "iam_roles",
-        "ec2_instances", "elastic_ips", "snapshots", "ecr_repositories", "eks_clusters",
-        "redshift_clusters", "aurora_clusters", "elasticache_clusters", "dynamodb_tables",
-        "secrets", "sqs_queues", "sns_topics", "nat_gateways", "auto_scaling_groups",
-        "ecs_clusters", "internet_gateways", "cloudwatch_alarms", "eventbridge_rules",
-        "cloudformation_stacks", "lambda_functions", "load_balancers", "vpcs"
-    }
-
     for r_type, items in resources.items():
         for r in items:
             raw = r.get("raw")
-            if r_type not in ASSESSED_RESOURCE_TYPES:
+            if not isinstance(raw, dict):
+                raw = {}
+            rule_errors = dict(r.get("assessment_errors") or raw.get("_assessment_errors") or {})
+            rule_ids = CHECKS_BY_RESOURCE.get(r_type, [])
+            if not rule_ids:
                 r["status"] = "NOT_ASSESSED"
                 r["issues"] = []
+                r["assessment"] = {"status": "NOT_ASSESSED", "checks": [], "reason": "No checks are currently defined for this resource type."}
                 continue
 
-            if not raw or not isinstance(raw, dict) or len(raw) == 0:
+            if not raw:
                 r["status"] = "NOT_ASSESSED"
                 r["issues"] = []
+                r["assessment"] = _assessment(rule_ids, raw, [])
                 continue
 
             issues = []
@@ -332,8 +446,9 @@ def evaluate(session, resources: dict) -> dict:
                             evidence={"Bucket": bucket_name, "AccessSource": "Bucket Policy", "PublicAccess": "True"},
                             fix="Remove or update the bucket policy to deny public access. Enable Block Public Access on the bucket.",
                         ))
-                except ClientError:
-                    pass
+                except ClientError as e:
+                    if e.response.get("Error", {}).get("Code") != "NoSuchBucketPolicy":
+                        rule_errors["S3-002"] = "Could not read bucket policy status: " + e.response.get("Error", {}).get("Code", "AWS error")
 
                 # S3-003 — ACL grants public access
                 try:
@@ -356,22 +471,16 @@ def evaluate(session, resources: dict) -> dict:
                             evidence={"Bucket": bucket_name, "AccessSource": "ACL", "PublicGrantees": ", ".join(public_grants)},
                             fix="Change the bucket ACL to private: S3 → Bucket → Permissions → ACL → Remove public grants.",
                         ))
-                except ClientError:
-                    pass
+                except ClientError as e:
+                    rule_errors["S3-003"] = "Could not read bucket ACL: " + e.response.get("Error", {}).get("Code", "AWS error")
 
                 # S3-004 — encryption not enabled
                 try:
                     s3_client.get_bucket_encryption(Bucket=bucket_name)
                 except ClientError as e:
-                    if e.response["Error"]["Code"] == "ServerSideEncryptionConfigurationNotFoundError":
-                        issues.append(_issue(
-                            rule_id="S3-004",
-                            severity="WARNING",
-                            title="S3 bucket has no default encryption",
-                            why="Objects stored without encryption can be read if the bucket is accessed without authorisation.",
-                            evidence={"Bucket": bucket_name, "DefaultEncryption": "Disabled"},
-                            fix="Enable default server-side encryption: S3 → Bucket → Properties → Default encryption → Enable (SSE-S3 or SSE-KMS).",
-                        ))
+                    code = e.response.get("Error", {}).get("Code", "AWS error")
+                    if code != "ServerSideEncryptionConfigurationNotFoundError":
+                        rule_errors["S3-004"] = "Could not read bucket encryption configuration: " + code
 
                 # S3-005 — Block Public Access not fully enabled
                 try:
@@ -391,7 +500,8 @@ def evaluate(session, resources: dict) -> dict:
                             fix="Enable all four Block Public Access settings: S3 → Bucket → Permissions → Block public access.",
                         ))
                 except ClientError as e:
-                    if e.response["Error"]["Code"] == "NoSuchPublicAccessBlockConfiguration":
+                    code = e.response.get("Error", {}).get("Code", "AWS error")
+                    if code == "NoSuchPublicAccessBlockConfiguration":
                         issues.append(_issue(
                             rule_id="S3-005",
                             severity="WARNING",
@@ -400,6 +510,8 @@ def evaluate(session, resources: dict) -> dict:
                             evidence={"Bucket": bucket_name, "DisabledSettings": "All four settings missing"},
                             fix="Enable all four Block Public Access settings: S3 → Bucket → Permissions → Block public access.",
                         ))
+                    else:
+                        rule_errors["S3-005"] = "Could not read Block Public Access settings: " + code
 
             # ------------------------------------------------------------------
             # Security Groups
@@ -796,33 +908,32 @@ def evaluate(session, resources: dict) -> dict:
             elif r_type == "ecr_repositories":
                 repo_name = r["name"]
                 mutability = raw.get("image_tag_mutability")
-                scan_config = raw.get("image_scanning_configuration")
-                if isinstance(scan_config, dict):
-                    scan_on_push = scan_config.get("scanOnPush", False)
-                else:
-                    scan_on_push = False
-
-                if mutability == "MUTABLE":
+                exclusions = raw.get("image_tag_mutability_exclusion_filters")
+                if mutability in ("MUTABLE_WITH_EXCLUSION", "IMMUTABLE_WITH_EXCLUSION") and exclusions is None:
+                    rule_errors["ECR-001"] = "AWS did not return image tag mutability exclusion filters"
+                exclusions = exclusions or []
+                if mutability in ("MUTABLE", "MUTABLE_WITH_EXCLUSION") or (mutability == "IMMUTABLE_WITH_EXCLUSION" and exclusions):
                     issues.append(_issue(
                         rule_id="ECR-001",
                         severity="WARNING",
                         title="ECR repository allows mutable image tags",
-                        why="Mutable image tags allow existing container image tags to be overwritten, which can introduce unverified changes or vulnerabilities into production deployments.",
-                        evidence={"Repository": repo_name, "ImageTagMutability": "MUTABLE"},
-                        fix="Enable tag immutability: ECR Console → Select Repository → Edit settings → Turn on 'Tag immutability'.",
+                        why="Mutable tags can be overwritten, which may change the image a deployment receives without changing its tag.",
+                        evidence={"Repository": repo_name, "ImageTagMutability": mutability, "MutableTagExclusions": exclusions},
+                        fix="Review the mutable-tag setting and its exclusion filters. Make deployment tags immutable where overwrites are not intended.",
                         resource_type=r["type"],
                         resource_id=r["id"],
                         category="Security",
                     ))
 
-                if not scan_on_push:
+                scan_frequency = raw.get("scan_frequency")
+                if scan_frequency == "MANUAL":
                     issues.append(_issue(
                         rule_id="ECR-002",
                         severity="WARNING",
-                        title="ECR automatic image vulnerability scanning disabled",
-                        why="Automatic vulnerability scanning is disabled. Newly pushed images will not be assessed for known security flaws.",
-                        evidence={"Repository": repo_name, "ScanOnPush": "False"},
-                        fix="Enable scan on push: ECR Console → Select Repository → Edit settings → Turn on 'Scan on push'.",
+                        title="ECR repository is not automatically scanned",
+                        why="This repository is configured for manual image scans, so images are not scanned automatically on push or continuously.",
+                        evidence={"Repository": repo_name, "ScanFrequency": scan_frequency, "AppliedScanFilters": raw.get("applied_scan_filters") or []},
+                        fix="Review the registry and repository scan filters and configure scan-on-push or continuous scanning if it matches your security requirements.",
                         resource_type=r["type"],
                         resource_id=r["id"],
                         category="Security",
@@ -943,14 +1054,14 @@ def evaluate(session, resources: dict) -> dict:
             elif r_type == "dynamodb_tables":
                 table_name = r["name"]
                 sse_desc = raw.get("sse_description") or {}
-                if not sse_desc or sse_desc.get("Status") != "ENABLED":
+                if sse_desc.get("Status") == "DISABLED":
                     issues.append(_issue(
                         rule_id="DDB-001",
                         severity="WARNING",
-                        title="DynamoDB table not encrypted with customer-managed KMS key",
-                        why="Table relies on the default AWS-owned key instead of a customer-managed KMS key, preventing fine-grained access audits in CloudTrail.",
-                        evidence={"Table": table_name, "SSEStatus": sse_desc.get("Status", "DEFAULT")},
-                        fix="Update encryption: DynamoDB Console → Select Table → Additional settings → Encryption at rest → Manage KMS encryption.",
+                        title="DynamoDB table encryption at rest is disabled",
+                        why="The table is explicitly reported as not encrypted at rest.",
+                        evidence={"Table": table_name, "SSEStatus": "DISABLED"},
+                        fix="Enable encryption at rest for the table using the AWS-owned, AWS-managed, or customer-managed key appropriate for your requirements.",
                         resource_type=r["type"],
                         resource_id=r["id"],
                         category="Security",
@@ -991,14 +1102,17 @@ def evaluate(session, resources: dict) -> dict:
             # ------------------------------------------------------------------
             elif r_type == "sqs_queues":
                 queue_name = r["name"]
-                if not raw.get("kms_master_key_id"):
+                kms_key = raw.get("kms_master_key_id")
+                managed_sse = raw.get("sqs_managed_sse_enabled")
+                managed_sse_disabled = managed_sse is False or str(managed_sse).lower() in ("false", "0")
+                if not kms_key and managed_sse_disabled:
                     issues.append(_issue(
                         rule_id="SQS-001",
                         severity="WARNING",
-                        title="SQS queue server-side encryption disabled",
-                        why="Queue messages stored in transit and at rest are not encrypted with a KMS master key.",
-                        evidence={"Queue": queue_name, "KmsMasterKeyId": "None"},
-                        fix="Enable encryption: SQS Console → Select Queue → Edit → Encryption → Enable SSE-KMS.",
+                        title="SQS queue server-side encryption is disabled",
+                        why="The queue reports that SQS-managed encryption is disabled and has no KMS encryption key configured.",
+                        evidence={"Queue": queue_name, "SqsManagedSseEnabled": "False", "KmsMasterKeyId": "None"},
+                        fix="Enable SQS-managed SSE-SQS or configure an AWS KMS key for SSE-KMS.",
                         resource_type=r["type"],
                         resource_id=r["id"],
                         category="Security",
@@ -1044,8 +1158,8 @@ def evaluate(session, resources: dict) -> dict:
                     issues.append(_issue(
                         rule_id="NAT-002",
                         severity="WARNING",
-                        title="Active NAT Gateway configuration generates continuous hourly charges",
-                        why="NAT Gateways incur hourly availability charges and data processing fees while provisioned. Verify whether private subnets actively require internet egress.",
+                        title="Active NAT Gateway may incur ongoing usage charges",
+                        why="An active NAT Gateway can incur availability and data-processing charges. This is configuration risk and does not estimate your bill.",
                         evidence={"NatGateway": nat_id, "State": "available", "SubnetId": str(raw.get("subnet_id"))},
                         fix="Audit private subnet route tables. If instances do not require outbound internet access, delete the NAT Gateway to avoid unnecessary charges.",
                         resource_type=r["type"],
@@ -1265,6 +1379,10 @@ def evaluate(session, resources: dict) -> dict:
             # ------------------------------------------------------------------
             # Deduplication — same rule_id only once per resource
             # ------------------------------------------------------------------
+            issues = [issue for issue in issues if issue.get("rule_id") not in rule_errors and _has_rule_evidence(raw, issue.get("rule_id"))]
+            for issue in issues:
+                issue.setdefault("resource_type", r.get("type", r_type))
+                issue.setdefault("resource_id", r.get("id"))
             seen_rule_ids = set()
             unique_issues = []
             for issue in issues:
@@ -1273,6 +1391,8 @@ def evaluate(session, resources: dict) -> dict:
                     unique_issues.append(issue)
 
             r["issues"] = unique_issues
+            assessment = _assessment(rule_ids, raw, unique_issues, rule_errors)
+            r["assessment"] = assessment
 
             # Apply status priority rule (unchanged)
             has_crit = any(i["severity"] == "CRITICAL"  for i in r["issues"])
@@ -1286,6 +1406,6 @@ def evaluate(session, resources: dict) -> dict:
             elif has_orph:
                 r["status"] = "ORPHANED"
             else:
-                r["status"] = "HEALTHY"
+                r["status"] = "HEALTHY" if assessment["status"] == "ASSESSED" else "NOT_ASSESSED"
 
     return resources

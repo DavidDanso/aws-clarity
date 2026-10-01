@@ -109,6 +109,7 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "eks:ListClusters",
           "eks:DescribeCluster",
           "ecr:DescribeRepositories",
+          "ecr:BatchGetRepositoryScanningConfiguration",
           "cloudformation:DescribeStacks",
           "cloudwatch:DescribeAlarms",
           "events:ListRules",

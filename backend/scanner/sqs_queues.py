@@ -1,4 +1,5 @@
 from botocore.exceptions import ClientError
+from exceptions import ScannerError
 import logging
 
 def scan(session, region="us-east-1"):
@@ -37,11 +38,12 @@ def scan(session, region="us-east-1"):
                     "raw": {
                         "approximate_number_of_messages": attributes.get("ApproximateNumberOfMessages"),
                         "created_timestamp": attributes.get("CreatedTimestamp"),
-                        "kms_master_key_id": kms_master_key_id
+                        "kms_master_key_id": kms_master_key_id,
+                        "sqs_managed_sse_enabled": attributes.get("SqsManagedSseEnabled"),
                     }
                 })
-            except ClientError as e:
-                logging.warning(f"Error describing SQS queue {url}: {e}")
+            except ClientError:
+                raise
     except ClientError as e:
-        logging.warning(f"Error listing SQS queues: {e}")
+        raise ScannerError(str(e), resources) from e
     return resources
