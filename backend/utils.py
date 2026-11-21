@@ -15,26 +15,51 @@ DEFAULT_EXTERNAL_ID = "aws-clarity-scan"
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 SCAN_BOTO_CONFIG = Config(
-    connect_timeout=3,
-    read_timeout=8,
-    max_pool_connections=32,
-    retries={"max_attempts": 2, "mode": "standard"},
+    connect_timeout=1.5,
+    read_timeout=5,
+    max_pool_connections=64,
+    retries={"max_attempts": 1, "mode": "standard"},
 )
+
+_STS_CLIENT = None
+_STS_LOCK = threading.Lock()
+
+
+def _get_sts_client():
+    global _STS_CLIENT
+    if _STS_CLIENT is None:
+        with _STS_LOCK:
+            if _STS_CLIENT is None:
+                _STS_CLIENT = boto3.client("sts", region_name="us-east-1", config=SCAN_BOTO_CONFIG)
+    return _STS_CLIENT
 
 
 class CachedSession:
     """Thread-safe boto3.Session wrapper that caches clients by (service, region)
     and enforces fast connect/read timeouts on every scanner call.
 
-    Prevents constructing duplicate heavy botocore clients (e.g. EC2 built 8x per
-    region across 30+ regions) and avoids non-thread-safe client initialization.
+    Uses per-service locks (instead of one global lock) so regional clients for
+    ec2, lambda, rds, dynamodb, cloudwatch, logs, and cloudtrail construct
+    concurrently without contending on a single mutex.
     """
 
     def __init__(self, session: boto3.Session, config: Config = SCAN_BOTO_CONFIG):
         self._session = session
         self._config = config
-        self._lock = threading.Lock()
+        self._locks_guard = threading.Lock()
+        self._service_locks: dict[str, threading.Lock] = {}
         self._clients: dict[tuple[str, str | None], object] = {}
+
+    def _get_service_lock(self, service_name: str) -> threading.Lock:
+        lock = self._service_locks.get(service_name)
+        if lock is not None:
+            return lock
+        with self._locks_guard:
+            lock = self._service_locks.get(service_name)
+            if lock is None:
+                lock = threading.Lock()
+                self._service_locks[service_name] = lock
+            return lock
 
     def client(self, service_name: str, region_name: str | None = None, config: Config | None = None, **kwargs):
         if kwargs:
@@ -48,7 +73,7 @@ class CachedSession:
         cached = self._clients.get(key)
         if cached is not None:
             return cached
-        with self._lock:
+        with self._get_service_lock(service_name):
             cached = self._clients.get(key)
             if cached is None:
                 cached = self._session.client(
@@ -109,7 +134,7 @@ def sanitize_metadata_text(value: str | None, max_length: int = 256) -> str:
 def assume_role(role_arn: str, external_id: str | None = None) -> boto3.Session:
     resolved_arn = validate_role_arn(role_arn)
     resolved_external_id = validate_external_id(external_id)
-    sts_client = boto3.client("sts", config=SCAN_BOTO_CONFIG)
+    sts_client = _get_sts_client()
     try:
         response = sts_client.assume_role(
             RoleArn=resolved_arn,
@@ -118,11 +143,15 @@ def assume_role(role_arn: str, external_id: str | None = None) -> boto3.Session:
             DurationSeconds=3600,
         )
         credentials = response["Credentials"]
-        return boto3.Session(
+        session = boto3.Session(
             aws_access_key_id=credentials["AccessKeyId"],
             aws_secret_access_key=credentials["SecretAccessKey"],
             aws_session_token=credentials["SessionToken"],
             region_name="us-east-1",
         )
+        # Attach verified identity directly so callers avoid a redundant sts:GetCallerIdentity RTT
+        session._aws_clarity_account_id = resolved_arn.split(":")[4]
+        session._aws_clarity_caller_arn = (response.get("AssumedRoleUser") or {}).get("Arn", "")
+        return session
     except ClientError as e:
         raise AssumeRoleError(f"AssumeRole failed: {str(e)}") from e

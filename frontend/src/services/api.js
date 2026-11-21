@@ -11,8 +11,10 @@ export const ERROR_MESSAGES = {
   TIMEOUT: "The scan took longer than expected to respond. Please try again.",
 };
 
-const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 55; // 55 * 2s = 110s ceiling for multi-region scans
+const FAST_POLL_INTERVAL_MS = 400;
+const MEDIUM_POLL_INTERVAL_MS = 800;
+const SLOW_POLL_INTERVAL_MS = 1500;
+const MAX_POLL_ATTEMPTS = 85; // ~90s total ceiling with fast 400ms initial polling
 
 async function parseJsonSafe(response) {
   try {
@@ -76,7 +78,7 @@ export async function pollScanStatus(scanId, scanToken, onProgress) {
 
     const state = data.scan_state || data.status;
     if (typeof onProgress === "function") {
-      onProgress(state);
+      onProgress(state, data.progress || null);
     }
 
     if (state === "COMPLETE" || state === "INCOMPLETE") {
@@ -91,7 +93,13 @@ export async function pollScanStatus(scanId, scanToken, onProgress) {
       throw error;
     }
 
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    const delayMs =
+      attempt < 20
+        ? FAST_POLL_INTERVAL_MS
+        : attempt < 40
+        ? MEDIUM_POLL_INTERVAL_MS
+        : SLOW_POLL_INTERVAL_MS;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
 
   throw new Error(ERROR_MESSAGES.TIMEOUT);

@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import ResourceTable from "../components/ResourceTable";
@@ -73,7 +73,10 @@ function ChevronIcon({ open }) {
 
 const SCAN_STAGE_LABELS = {
   STARTING: "Verifying AWS identity via STS AssumeRole…",
-  PENDING: "Starting multi-region read-only collector worker…",
+  PENDING: "Starting parallel read-only scan worker…",
+  DISCOVERING: "Discovering enabled AWS regions & global services…",
+  SCANNING: "Scanning all 10 AWS services across enabled regions…",
+  EVALUATING: "Running deterministic security & cost rules…",
   RUNNING: "Discovering enabled regions & scanning all 10 AWS services…",
 };
 
@@ -84,6 +87,7 @@ export default function DashboardScreen({
   onDisconnect,
   isLoading,
   scanStatus,
+  scanProgress,
   scanError,
 }) {
   const [selectedResource, setSelectedResource] = useState(null);
@@ -94,6 +98,32 @@ export default function DashboardScreen({
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState("resolved");
   const [tableStatusFilter, setTableStatusFilter] = useState("ALL");
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!isLoading) return undefined;
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      setElapsedMs(Date.now() - startedAt);
+    }, 100);
+    return () => {
+      clearInterval(timer);
+      setElapsedMs(0);
+    };
+  }, [isLoading]);
+
+  const progressRegionsTotal = scanProgress?.regions_total || 0;
+  const progressRegionsDone = scanProgress?.regions_done || 0;
+  const progressResourcesFound = scanProgress?.resources_found || 0;
+  const progressStage = scanProgress?.stage || scanStatus;
+  const progressPct =
+    progressStage === "EVALUATING"
+      ? 96
+      : progressRegionsTotal > 0
+      ? Math.min(92, Math.max(12, Math.round((progressRegionsDone / progressRegionsTotal) * 90)))
+      : scanStatus === "RUNNING"
+      ? 14
+      : 6;
 
   const inventorySectionRef = useRef(null);
 
@@ -283,28 +313,44 @@ export default function DashboardScreen({
         <main className="mt-7 sm:mt-10">
           {/* Active Scan Progress */}
           {isLoading && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-8 flex flex-col items-center text-center gap-4">
-              <svg className="animate-spin w-8 h-8 text-teal-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-              </svg>
-              <div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-8 flex flex-col items-center text-center gap-5">
+              <div className="flex items-center gap-3">
+                <svg className="animate-spin w-6 h-6 text-teal-400 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                </svg>
                 <p className="text-base font-semibold text-slate-100">
-                  {SCAN_STAGE_LABELS[scanStatus] || "Running multi-region read-only AWS scan…"}
-                </p>
-                <p className="text-xs text-slate-400 mt-1">
-                  EC2 · VPC · S3 · IAM · Lambda · RDS · DynamoDB · EBS · CloudWatch · CloudTrail
+                  {SCAN_STAGE_LABELS[progressStage] || "Running parallel multi-region read-only AWS scan…"}
                 </p>
               </div>
-              <div className="w-full max-w-md space-y-2 pt-2">
-                {[...Array(3)].map((_, i) => (
+
+              <div className="w-full max-w-md space-y-2.5">
+                <div
+                  role="progressbar"
+                  aria-label="AWS account scan progress"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progressPct}
+                  className="w-full h-2 rounded-full bg-slate-800 overflow-hidden"
+                >
                   <div
-                    key={i}
-                    className="animate-pulse bg-slate-800/70 h-8 rounded-lg"
-                    style={{ opacity: 1 - i * 0.2 }}
+                    className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-[width] duration-300 ease-out"
+                    style={{ width: `${progressPct}%` }}
                   />
-                ))}
+                </div>
+                <div className="flex items-center justify-between text-xs font-mono text-slate-400 tabular-nums">
+                  <span>
+                    {progressRegionsTotal > 0
+                      ? `${progressRegionsDone} / ${progressRegionsTotal} regions · ${progressResourcesFound} resources`
+                      : "Connecting to AWS STS & discovering regions…"}
+                  </span>
+                  <span className="text-teal-400">{(elapsedMs / 1000).toFixed(1)}s</span>
+                </div>
               </div>
+
+              <p className="text-xs text-slate-500">
+                EC2 · VPC · S3 · IAM · Lambda · RDS · DynamoDB · EBS · CloudWatch · CloudTrail
+              </p>
             </div>
           )}
 
@@ -364,6 +410,14 @@ export default function DashboardScreen({
                   <span className="font-mono text-slate-300">
                     {regionsScanned.length} enabled region{regionsScanned.length === 1 ? "" : "s"}
                   </span>
+                  {typeof scanResults?.scan_duration_ms === "number" && (
+                    <>
+                      <span className="text-slate-600">·</span>
+                      <span className="font-mono text-teal-400">
+                        {(scanResults.scan_duration_ms / 1000).toFixed(1)}s
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 <button

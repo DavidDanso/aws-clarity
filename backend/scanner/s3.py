@@ -1,5 +1,86 @@
+import concurrent.futures
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+
+
+def _inspect_bucket(session, s3, bucket, selected_regions):
+    bucket_name = bucket.get("Name")
+    creation_date = bucket.get("CreationDate")
+    assessment_errors = {}
+
+    # Determine true bucket region
+    try:
+        location_resp = s3.get_bucket_location(Bucket=bucket_name)
+        raw_location = location_resp.get("LocationConstraint")
+        if raw_location is None:
+            bucket_region = "us-east-1"
+        elif raw_location == "EU":
+            bucket_region = "eu-west-1"
+        else:
+            bucket_region = raw_location
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "AWS error")
+        raw_location = None
+        bucket_region = "global"
+        assessment_errors["S3-001"] = f"Could not determine bucket region: {code}"
+
+    if selected_regions is not None and bucket_region != "global" and bucket_region not in selected_regions:
+        return None
+
+    # Use regional S3 client when bucket region is known to avoid PermanentRedirect errors
+    regional_s3 = (
+        session.client("s3", region_name=bucket_region)
+        if bucket_region != "global"
+        else s3
+    )
+
+    is_empty = None
+    versioning_status = None
+
+    def fetch_empty():
+        objs_resp = regional_s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
+        return objs_resp.get("KeyCount", 0) == 0
+
+    def fetch_versioning():
+        ver_resp = regional_s3.get_bucket_versioning(Bucket=bucket_name)
+        return ver_resp.get("Status", "Disabled")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
+        f_empty = ex.submit(fetch_empty) if "S3-001" not in assessment_errors else None
+        f_ver = ex.submit(fetch_versioning)
+
+        if f_empty is not None:
+            try:
+                is_empty = f_empty.result()
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "AWS error")
+                assessment_errors["S3-001"] = f"Could not inspect bucket objects: {code}"
+
+        try:
+            versioning_status = f_ver.result()
+        except ClientError:
+            versioning_status = None
+
+    item = {
+        "id": bucket_name,
+        "name": bucket_name,
+        "type": "s3_bucket",
+        "service": "S3",
+        "status": "INCOMPLETE",
+        "issues": [],
+        "region": bucket_region,
+        "raw": {
+            "arn": f"arn:aws:s3:::{bucket_name}",
+            "name": bucket_name,
+            "creation_date": creation_date,
+            "is_empty": is_empty,
+            "location": raw_location,
+            "versioning": versioning_status,
+        },
+    }
+    if assessment_errors:
+        item["assessment_errors"] = assessment_errors
+    return item
 
 
 def scan(session, selected_regions=None):
@@ -23,72 +104,14 @@ def scan(session, selected_regions=None):
     except ClientError as e:
         raise ScannerError(str(e), resources) from e
 
-    for bucket in buckets:
-        bucket_name = bucket.get("Name")
-        creation_date = bucket.get("CreationDate")
-        assessment_errors = {}
+    if not buckets:
+        return resources
 
-        # Determine true bucket region
-        try:
-            location_resp = s3.get_bucket_location(Bucket=bucket_name)
-            raw_location = location_resp.get("LocationConstraint")
-            if raw_location is None:
-                bucket_region = "us-east-1"
-            elif raw_location == "EU":
-                bucket_region = "eu-west-1"
-            else:
-                bucket_region = raw_location
-        except ClientError as e:
-            code = e.response.get("Error", {}).get("Code", "AWS error")
-            raw_location = None
-            bucket_region = "global"
-            assessment_errors["S3-001"] = f"Could not determine bucket region: {code}"
+    workers = min(16, len(buckets))
+    if workers == 1:
+        item = _inspect_bucket(session, s3, buckets[0], selected_regions)
+        return [item] if item is not None else []
 
-        if selected_regions is not None and bucket_region != "global" and bucket_region not in selected_regions:
-            continue
-
-        # Use regional S3 client when bucket region is known to avoid PermanentRedirect errors
-        regional_s3 = (
-            session.client("s3", region_name=bucket_region)
-            if bucket_region != "global"
-            else s3
-        )
-
-        is_empty = None
-        if "S3-001" not in assessment_errors:
-            try:
-                objs_resp = regional_s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
-                is_empty = objs_resp.get("KeyCount", 0) == 0
-            except ClientError as e:
-                code = e.response.get("Error", {}).get("Code", "AWS error")
-                assessment_errors["S3-001"] = f"Could not inspect bucket objects: {code}"
-
-        versioning_status = None
-        try:
-            ver_resp = regional_s3.get_bucket_versioning(Bucket=bucket_name)
-            versioning_status = ver_resp.get("Status", "Disabled")
-        except ClientError:
-            versioning_status = None
-
-        item = {
-            "id": bucket_name,
-            "name": bucket_name,
-            "type": "s3_bucket",
-            "service": "S3",
-            "status": "INCOMPLETE",
-            "issues": [],
-            "region": bucket_region,
-            "raw": {
-                "arn": f"arn:aws:s3:::{bucket_name}",
-                "name": bucket_name,
-                "creation_date": creation_date,
-                "is_empty": is_empty,
-                "location": raw_location,
-                "versioning": versioning_status,
-            },
-        }
-        if assessment_errors:
-            item["assessment_errors"] = assessment_errors
-        resources.append(item)
-
-    return resources
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+        results = list(ex.map(lambda b: _inspect_bucket(session, s3, b, selected_regions), buckets))
+    return [item for item in results if item is not None]

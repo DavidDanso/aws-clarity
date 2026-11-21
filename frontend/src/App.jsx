@@ -55,6 +55,7 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
+  const [scanProgress, setScanProgress] = useState(null);
   const [storedRoleArn, setStoredRoleArn] = useState(() => initialSession?.storedRoleArn || "");
   const [storedExternalId, setStoredExternalId] = useState(
     () => initialSession?.storedExternalId || getOrCreateSessionExternalId()
@@ -98,6 +99,7 @@ function App() {
 
     setIsLoading(true);
     setScanStatus("STARTING");
+    setScanProgress(null);
     setScanError("");
     setScanResults(null);
     setStoredRoleArn(roleArn);
@@ -109,7 +111,10 @@ function App() {
       const results = await scanAccount(
         roleArn,
         "all",
-        (status) => setScanStatus(status),
+        (status, progress) => {
+          setScanStatus(status);
+          if (progress) setScanProgress(progress);
+        },
         resolvedExternalId
       );
       setScanResults(results);
@@ -125,6 +130,7 @@ function App() {
     setPreviousScanResults(null);
     setScanError("");
     setScanStatus("");
+    setScanProgress(null);
     sessionStorage.removeItem(SESSION_KEY);
     setView("setup");
   };
@@ -157,6 +163,7 @@ function App() {
           onDisconnect={handleDisconnect}
           isLoading={isLoading}
           scanStatus={scanStatus}
+          scanProgress={scanProgress}
           scanError={scanError}
         />
       )}

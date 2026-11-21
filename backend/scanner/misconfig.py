@@ -1,3 +1,4 @@
+import concurrent.futures
 import datetime
 import re
 from botocore.exceptions import ClientError
@@ -846,6 +847,48 @@ def evaluate(
             s3_clients[key] = session.client("s3", region_name=key)
         return s3_clients[key]
 
+    # Parallelize all S3 bucket security API checks (policy status, ACL, encryption, PAB)
+    # across all buckets at once so S3 evaluation runs in ~1 RTT instead of 4 * N sequential calls.
+    s3_prefetched: dict[str, dict] = {}
+    s3_items = resources.get("s3_buckets") or []
+    if session is not None and s3_items:
+        # Pre-create needed regional S3 clients on the main thread
+        bucket_clients = {
+            r["id"]: get_s3_client(r.get("region"))
+            for r in s3_items
+            if isinstance(r, dict) and r.get("id")
+        }
+
+        def _fetch_s3_check(bucket_name: str, check_name: str):
+            client = bucket_clients.get(bucket_name)
+            if client is None:
+                return (bucket_name, check_name, None, "S3 client unavailable")
+            try:
+                if check_name == "policy_status":
+                    return (bucket_name, check_name, client.get_bucket_policy_status(Bucket=bucket_name), None)
+                if check_name == "acl":
+                    return (bucket_name, check_name, client.get_bucket_acl(Bucket=bucket_name), None)
+                if check_name == "encryption":
+                    return (bucket_name, check_name, client.get_bucket_encryption(Bucket=bucket_name), None)
+                if check_name == "pab":
+                    return (bucket_name, check_name, client.get_public_access_block(Bucket=bucket_name), None)
+            except ClientError as e:
+                return (bucket_name, check_name, None, e)
+            except Exception as e:
+                return (bucket_name, check_name, None, e)
+            return (bucket_name, check_name, None, None)
+
+        tasks = [
+            (bname, chk)
+            for bname in bucket_clients
+            for chk in ("policy_status", "acl", "encryption", "pab")
+        ]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(24, len(tasks))) as ex:
+            futs = [ex.submit(_fetch_s3_check, bname, chk) for bname, chk in tasks]
+            for fut in concurrent.futures.as_completed(futs):
+                bname, chk, resp, err = fut.result()
+                s3_prefetched.setdefault(bname, {})[chk] = (resp, err)
+
     # Precompute cross-resource context
     failed_ebs_regions = {
         s.get("region")
@@ -904,26 +947,36 @@ def evaluate(
                     for rid in ("S3-002", "S3-003", "S3-004", "S3-005"):
                         rule_errors.setdefault(rid, "S3 client unavailable during evaluation")
                 else:
-                    try:
-                        pol_resp = s3_client.get_bucket_policy_status(Bucket=bucket_name)
-                        if pol_resp.get("PolicyStatus", {}).get("IsPublic", False):
-                            issues.append(_issue(
-                                rule_id="S3-002",
-                                severity="CRITICAL",
-                                title="S3 bucket is publicly accessible via bucket policy",
-                                why="Anyone on the internet can read or write objects depending on the policy statement.",
-                                evidence={"Bucket": bucket_name, "AccessSource": "Bucket Policy", "IsPublic": "True"},
-                                fix="Open S3 → Bucket → Permissions → Bucket policy, remove Principal: '*' statements (or restrict via CloudFront OAC / VPC conditions), and enable Block Public Access.",
-                                verify="Confirm 'Publicly accessible' badge disappears in S3 Console, then click Re-scan in AWS Clarity to verify S3-002 resolves.",
-                                resource=r,
-                            ))
-                    except ClientError as e:
-                        code = e.response.get("Error", {}).get("Code", "AWS error")
-                        if code != "NoSuchBucketPolicy":
-                            rule_errors["S3-002"] = f"Could not read bucket policy status: {code}"
+                    prefetched = s3_prefetched.get(bucket_name, {})
 
-                    try:
-                        acl_resp = s3_client.get_bucket_acl(Bucket=bucket_name)
+                    pol_resp, pol_err = prefetched.get("policy_status", (None, None))
+                    if pol_err is not None:
+                        if isinstance(pol_err, ClientError):
+                            code = pol_err.response.get("Error", {}).get("Code", "AWS error")
+                            if code != "NoSuchBucketPolicy":
+                                rule_errors["S3-002"] = f"Could not read bucket policy status: {code}"
+                        else:
+                            rule_errors["S3-002"] = f"Could not read bucket policy status: {pol_err}"
+                    elif pol_resp and pol_resp.get("PolicyStatus", {}).get("IsPublic", False):
+                        issues.append(_issue(
+                            rule_id="S3-002",
+                            severity="CRITICAL",
+                            title="S3 bucket is publicly accessible via bucket policy",
+                            why="Anyone on the internet can read or write objects depending on the policy statement.",
+                            evidence={"Bucket": bucket_name, "AccessSource": "Bucket Policy", "IsPublic": "True"},
+                            fix="Open S3 → Bucket → Permissions → Bucket policy, remove Principal: '*' statements (or restrict via CloudFront OAC / VPC conditions), and enable Block Public Access.",
+                            verify="Confirm 'Publicly accessible' badge disappears in S3 Console, then click Re-scan in AWS Clarity to verify S3-002 resolves.",
+                            resource=r,
+                        ))
+
+                    acl_resp, acl_err = prefetched.get("acl", (None, None))
+                    if acl_err is not None:
+                        if isinstance(acl_err, ClientError):
+                            code = acl_err.response.get("Error", {}).get("Code", "AWS error")
+                            rule_errors["S3-003"] = f"Could not read bucket ACL: {code}"
+                        else:
+                            rule_errors["S3-003"] = f"Could not read bucket ACL: {acl_err}"
+                    elif acl_resp:
                         public_grantees = {
                             "http://acs.amazonaws.com/groups/global/AllUsers",
                             "http://acs.amazonaws.com/groups/global/AuthenticatedUsers",
@@ -944,19 +997,36 @@ def evaluate(
                                 verify="Run a new AWS Clarity scan and verify S3-003 moves to Resolved.",
                                 resource=r,
                             ))
-                    except ClientError as e:
-                        code = e.response.get("Error", {}).get("Code", "AWS error")
-                        rule_errors["S3-003"] = f"Could not read bucket ACL: {code}"
 
-                    try:
-                        s3_client.get_bucket_encryption(Bucket=bucket_name)
-                    except ClientError as e:
-                        code = e.response.get("Error", {}).get("Code", "AWS error")
-                        if code != "ServerSideEncryptionConfigurationNotFoundError":
-                            rule_errors["S3-004"] = f"Could not read bucket encryption configuration: {code}"
+                    _, enc_err = prefetched.get("encryption", (None, None))
+                    if enc_err is not None:
+                        if isinstance(enc_err, ClientError):
+                            code = enc_err.response.get("Error", {}).get("Code", "AWS error")
+                            if code != "ServerSideEncryptionConfigurationNotFoundError":
+                                rule_errors["S3-004"] = f"Could not read bucket encryption configuration: {code}"
+                        else:
+                            rule_errors["S3-004"] = f"Could not read bucket encryption configuration: {enc_err}"
 
-                    try:
-                        pab_resp = s3_client.get_public_access_block(Bucket=bucket_name)
+                    pab_resp, pab_err = prefetched.get("pab", (None, None))
+                    if pab_err is not None:
+                        if isinstance(pab_err, ClientError):
+                            code = pab_err.response.get("Error", {}).get("Code", "AWS error")
+                            if code == "NoSuchPublicAccessBlockConfiguration":
+                                issues.append(_issue(
+                                    rule_id="S3-005",
+                                    severity="WARNING",
+                                    title="S3 Block Public Access is not configured",
+                                    why="Without Block Public Access enabled, a future policy or ACL change can expose bucket contents publicly.",
+                                    evidence={"Bucket": bucket_name, "DisabledSettings": "All four settings not configured"},
+                                    fix="Open S3 → Bucket → Permissions → Block public access → Edit and enable all four settings.",
+                                    verify="Re-scan in AWS Clarity and confirm S3-005 passes.",
+                                    resource=r,
+                                ))
+                            else:
+                                rule_errors["S3-005"] = f"Could not read Block Public Access settings: {code}"
+                        else:
+                            rule_errors["S3-005"] = f"Could not read Block Public Access settings: {pab_err}"
+                    elif pab_resp:
                         config = pab_resp.get("PublicAccessBlockConfiguration", {})
                         missing_pab = [
                             k
@@ -974,21 +1044,6 @@ def evaluate(
                                 verify="Re-scan in AWS Clarity and confirm S3-005 passes on this bucket.",
                                 resource=r,
                             ))
-                    except ClientError as e:
-                        code = e.response.get("Error", {}).get("Code", "AWS error")
-                        if code == "NoSuchPublicAccessBlockConfiguration":
-                            issues.append(_issue(
-                                rule_id="S3-005",
-                                severity="WARNING",
-                                title="S3 Block Public Access is not configured",
-                                why="Without Block Public Access enabled, a future policy or ACL change can expose bucket contents publicly.",
-                                evidence={"Bucket": bucket_name, "DisabledSettings": "All four settings not configured"},
-                                fix="Open S3 → Bucket → Permissions → Block public access → Edit and enable all four settings.",
-                                verify="Re-scan in AWS Clarity and confirm S3-005 passes.",
-                                resource=r,
-                            ))
-                        else:
-                            rule_errors["S3-005"] = f"Could not read Block Public Access settings: {code}"
 
             # ------------------------------------------------------------------
             # Security Groups (EC2)

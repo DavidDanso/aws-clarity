@@ -231,7 +231,9 @@ class TestCollectorsAndPagination(unittest.TestCase):
             {"Buckets": [{"Name": "b1"}], "ContinuationToken": "tok-2"},
             {"Buckets": [{"Name": "b2"}]},
         ]
-        client.get_bucket_location.side_effect = [{"LocationConstraint": None}, {"LocationConstraint": "eu-west-1"}]
+        client.get_bucket_location.side_effect = (
+            lambda Bucket: {"LocationConstraint": None if Bucket == "b1" else "eu-west-1"}
+        )
         client.list_objects_v2.return_value = {"KeyCount": 1}
         client.get_bucket_versioning.return_value = {"Status": "Enabled"}
 
@@ -431,6 +433,71 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
         self.assertEqual(result["account_advisories"][0]["rule_id"], "CT-000")
         # Ensure NOT_ASSESSED never appears anywhere in the serialized payload
         self.assertNotIn("NOT_ASSESSED", json.dumps(result, default=str))
+        self.assertIsInstance(result.get("scan_duration_ms"), int)
+
+    def test_unreachable_region_fast_fails_without_stalling_scan(self):
+        from decimal import Decimal
+        import boto3
+
+        real_like_session = boto3.Session(
+            aws_access_key_id="testing",
+            aws_secret_access_key="testing",
+            region_name="us-east-1",
+        )
+        real_like_session._aws_clarity_account_id = "123456789012"
+        real_like_session._aws_clarity_caller_arn = "arn:aws:sts::123456789012:assumed-role/ReadOnly/AWSClarityScan"
+
+        regional_patches = [
+            ("ec2", "scan"), ("elastic_ip", "scan"), ("security_group", "scan"),
+            ("vpcs", "scan"), ("internet_gateways", "scan"), ("nat_gateways", "scan"),
+            ("lambda_functions", "scan"), ("rds", "scan"), ("dynamodb_tables", "scan"),
+            ("ebs", "scan"), ("snapshots", "scan"),
+            ("cloudwatch", "scan_alarms"), ("cloudwatch", "scan_log_groups"),
+            ("cloudtrail", "scan"),
+        ]
+
+        progress_events = []
+        called_regions = []
+
+        with ExitStack() as stack:
+            stack.enter_context(patch("lambda_handler.assume_role", return_value=real_like_session))
+            stack.enter_context(
+                patch(
+                    "lambda_handler.discover_enabled_regions",
+                    return_value=(["me-south-1", "us-east-1"], {"mode": "auto_discovered", "status": "COMPLETE", "count": 2}),
+                )
+            )
+            stack.enter_context(
+                patch(
+                    "lambda_handler._probe_region_endpoint",
+                    side_effect=lambda reg, timeout=1.2: (False, "connect timed out") if reg == "me-south-1" else (True, None),
+                )
+            )
+            for mod_name, fn_name in regional_patches:
+                mod = getattr(lambda_handler, mod_name)
+                m = stack.enter_context(patch.object(mod, fn_name, return_value=[]))
+                if mod_name == "ec2":
+                    m.side_effect = lambda sess, reg: (called_regions.append(reg) or [])
+            stack.enter_context(patch.object(lambda_handler.iam, "scan_roles", return_value=[]))
+            stack.enter_context(patch.object(lambda_handler.iam, "scan_users", return_value=[]))
+            stack.enter_context(patch.object(lambda_handler.s3, "scan", return_value=[]))
+
+            result = lambda_handler.run_scan(
+                "arn:aws:iam::123456789012:role/ReadOnly",
+                regions="all",
+                progress_callback=progress_events.append,
+            )
+
+        # Dead region was never passed to ec2.scan, yet all 14 regional collectors reported honest FAILED coverage
+        self.assertEqual(called_regions, ["us-east-1"])
+        me_failures = [f for f in result["coverage"]["failures"] if f["region"] == "me-south-1"]
+        self.assertEqual(len(me_failures), 14)
+        self.assertEqual(result["status"], "INCOMPLETE")
+        self.assertTrue(len(progress_events) >= 2)
+
+        # Verify Decimal progress normalization for handle_status JSON responses
+        norm = lambda_handler._normalize_progress({"stage": "SCANNING", "regions_done": Decimal("12"), "regions_total": Decimal("32")})
+        self.assertEqual(norm, {"stage": "SCANNING", "regions_done": 12, "regions_total": 32})
 
 
 if __name__ == "__main__":
