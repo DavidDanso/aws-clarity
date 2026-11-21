@@ -27,7 +27,8 @@ def scan(session, region="us-east-1"):
                     "id": db_id,
                     "name": db_id,
                     "type": "rds_instance",
-                    "status": "NOT_ASSESSED",
+                    "service": "RDS",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

@@ -61,7 +61,7 @@ resource "aws_api_gateway_integration_response" "options_scan_mock_200" {
   http_method = aws_api_gateway_method.options_scan.http_method
   status_code = aws_api_gateway_method_response.options_scan_200.status_code
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Scan-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'POST,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }
@@ -137,7 +137,7 @@ resource "aws_api_gateway_integration_response" "options_scan_status_mock_200" {
   http_method = aws_api_gateway_method.options_scan_status.http_method
   status_code = aws_api_gateway_method_response.options_scan_status_200.status_code
   response_parameters = {
-    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type'"
+    "method.response.header.Access-Control-Allow-Headers" = "'Content-Type,X-Scan-Token'"
     "method.response.header.Access-Control-Allow-Methods" = "'GET,OPTIONS'"
     "method.response.header.Access-Control-Allow-Origin"  = "'*'"
   }

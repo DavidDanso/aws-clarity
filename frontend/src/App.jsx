@@ -2,9 +2,10 @@ import { useState, useEffect, useRef } from "react";
 import SetupScreen from "./pages/SetupScreen";
 import DashboardScreen from "./pages/DashboardScreen";
 import { scanAccount } from "./services/api";
-import { DEFAULT_EXTERNAL_ID } from "./utils/constants";
+import { generateExternalId } from "./utils/formatters";
 
-const SESSION_KEY = "aws_clarity_session";
+const SESSION_KEY = "aws_clarity_session_v2";
+const EXTERNAL_ID_KEY = "aws_clarity_external_id";
 
 function loadSession() {
   try {
@@ -15,9 +16,21 @@ function loadSession() {
       return parsed;
     }
   } catch {
-    // Ignore parse errors and fall back
+    // Ignore parse errors
   }
   return null;
+}
+
+function getOrCreateSessionExternalId() {
+  try {
+    const existing = sessionStorage.getItem(EXTERNAL_ID_KEY);
+    if (existing && existing.trim()) return existing.trim();
+    const fresh = generateExternalId();
+    sessionStorage.setItem(EXTERNAL_ID_KEY, fresh);
+    return fresh;
+  } catch {
+    return generateExternalId();
+  }
 }
 
 function saveSession(data) {
@@ -28,14 +41,15 @@ function saveSession(data) {
       sessionStorage.removeItem(SESSION_KEY);
     }
   } catch {
-    // Ignore storage quota or security errors
+    // Ignore storage quota errors
   }
 }
 
 function App() {
   const initialSession = loadSession();
 
-  const [view, setView] = useState(() => (initialSession ? "dashboard" : "setup"));
+  // Always start on the landing & account connection screen (never bypass straight to dashboard)
+  const [view, setView] = useState("setup");
   const [scanResults, setScanResults] = useState(() => initialSession?.scanResults || null);
   const [previousScanResults, setPreviousScanResults] = useState(() => initialSession?.previousScanResults || null);
   const [isLoading, setIsLoading] = useState(false);
@@ -43,9 +57,8 @@ function App() {
   const [scanStatus, setScanStatus] = useState("");
   const [storedRoleArn, setStoredRoleArn] = useState(() => initialSession?.storedRoleArn || "");
   const [storedExternalId, setStoredExternalId] = useState(
-    () => initialSession?.storedExternalId || DEFAULT_EXTERNAL_ID
+    () => initialSession?.storedExternalId || getOrCreateSessionExternalId()
   );
-  const [storedRegions, setStoredRegions] = useState(() => initialSession?.storedRegions || ["us-east-1"]);
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedbackRef = useRef(null);
@@ -57,10 +70,9 @@ function App() {
         previousScanResults,
         storedRoleArn,
         storedExternalId,
-        storedRegions,
       });
     }
-  }, [scanResults, previousScanResults, storedRoleArn, storedExternalId, storedRegions]);
+  }, [scanResults, previousScanResults, storedRoleArn, storedExternalId]);
 
   useEffect(() => {
     if (!feedbackOpen) return;
@@ -73,24 +85,30 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [feedbackOpen]);
 
-  const handleScanStart = async (roleArn, regions, externalId = DEFAULT_EXTERNAL_ID) => {
+  const handleScanStart = async (roleArn, externalId) => {
     if (scanResults && scanResults.resources) {
       setPreviousScanResults(scanResults);
     }
-    const resolvedExternalId = externalId?.trim() || DEFAULT_EXTERNAL_ID;
+    const resolvedExternalId = externalId?.trim() || storedExternalId;
+    try {
+      sessionStorage.setItem(EXTERNAL_ID_KEY, resolvedExternalId);
+    } catch {
+      // Ignore storage errors
+    }
+
     setIsLoading(true);
     setScanStatus("STARTING");
     setScanError("");
     setScanResults(null);
     setStoredRoleArn(roleArn);
     setStoredExternalId(resolvedExternalId);
-    setStoredRegions(regions);
     setView("dashboard");
 
     try {
+      // Always scan ALL enabled AWS regions for complete account inventory
       const results = await scanAccount(
         roleArn,
-        regions,
+        "all",
         (status) => setScanStatus(status),
         resolvedExternalId
       );
@@ -113,7 +131,7 @@ function App() {
 
   const handleRescan = () => {
     if (storedRoleArn) {
-      handleScanStart(storedRoleArn, storedRegions, storedExternalId);
+      handleScanStart(storedRoleArn, storedExternalId);
     } else {
       handleDisconnect();
     }
@@ -124,9 +142,10 @@ function App() {
       {view === "setup" ? (
         <SetupScreen
           onScanStart={handleScanStart}
+          onResumeSession={scanResults ? () => setView("dashboard") : null}
+          resumableAccountId={scanResults?.account_id || ""}
           initialRoleArn={storedRoleArn}
           initialExternalId={storedExternalId}
-          initialRegion={storedRegions[0] || "us-east-1"}
           scanError={scanError}
           setScanError={setScanError}
         />
@@ -139,16 +158,6 @@ function App() {
           isLoading={isLoading}
           scanStatus={scanStatus}
           scanError={scanError}
-          storedRoleArn={storedRoleArn}
-          storedExternalId={storedExternalId}
-          storedRegions={storedRegions}
-          onStoredRegionsChange={setStoredRegions}
-          onResultsChange={(newResults) => {
-            if (scanResults && scanResults.resources) {
-              setPreviousScanResults(scanResults);
-            }
-            setScanResults(newResults);
-          }}
         />
       )}
 

@@ -17,7 +17,8 @@ def scan(session, region="us-east-1"):
                     "id": igw_id,
                     "name": name,
                     "type": "internet_gateway",
-                    "status": "NOT_ASSESSED",
+                    "service": "VPC",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

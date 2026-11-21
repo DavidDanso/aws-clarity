@@ -19,7 +19,8 @@ def scan(session, region="us-east-1"):
                     "id": fn_name,
                     "name": fn_name,
                     "type": "lambda_function",
-                    "status": "NOT_ASSESSED",
+                    "service": "Lambda",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

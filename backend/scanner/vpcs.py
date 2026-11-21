@@ -17,7 +17,8 @@ def scan(session, region="us-east-1"):
                     "id": vpc_id,
                     "name": name,
                     "type": "vpc",
-                    "status": "NOT_ASSESSED",
+                    "service": "VPC",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

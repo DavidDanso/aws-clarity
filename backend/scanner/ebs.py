@@ -16,7 +16,8 @@ def scan(session, region="us-east-1"):
                     "id": vol_id,
                     "name": name,
                     "type": "ebs_volume",
-                    "status": "NOT_ASSESSED",
+                    "service": "EBS",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

@@ -14,7 +14,9 @@ class TestMisconfigEvalSmoke(unittest.TestCase):
                     "id": "sg-012345",
                     "name": "web-sg",
                     "type": "security_group",
-                    "status": "NOT_ASSESSED",
+                    "service": "EC2",
+                    "region": "us-east-1",
+                    "status": "INCOMPLETE",
                     "raw": {
                         "ip_permissions": [
                             {
@@ -37,6 +39,7 @@ class TestMisconfigEvalSmoke(unittest.TestCase):
         self.assertIn("port 22", issue["what_checked"])
         self.assertEqual(issue["evidence"]["Port"], "22")
         self.assertEqual(issue["evidence"]["Source"], "0.0.0.0/0")
+        self.assertTrue(issue.get("verify"))
 
 
 if __name__ == "__main__":

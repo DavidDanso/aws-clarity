@@ -4,15 +4,15 @@ export const ERROR_MESSAGES = {
   INVALID_ROLE_ARN: "The Role ARN format is invalid. Expected: arn:aws:iam::123456789012:role/RoleName",
   ASSUME_ROLE_FAILED: "Could not assume the provided role. Verify the trust policy, App Account ID, and External ID.",
   PERMISSION_DENIED: "The role was assumed but lacks required read permissions.",
+  UNAUTHORIZED_SCAN_ACCESS: "Scan access token was rejected. Please start a fresh scan.",
   INTERNAL_ERROR: "An unexpected error occurred on the server. Please try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your internet connection and try again.",
-  NO_REGIONS_SELECTED: "Please select at least one region to scan.",
-  INVALID_REGION: "One or more selected regions are not supported.",
-  TIMEOUT: "The scan took longer than expected to respond. Try scanning a single region or re-running the scan.",
+  NO_REGIONS_SELECTED: "Please choose 'all' enabled regions or select at least one AWS region.",
+  TIMEOUT: "The scan took longer than expected to respond. Please try again.",
 };
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 50; // 50 * 2s = 100s ceiling
+const MAX_POLL_ATTEMPTS = 55; // 55 * 2s = 110s ceiling for multi-region scans
 
 async function parseJsonSafe(response) {
   try {
@@ -22,7 +22,7 @@ async function parseJsonSafe(response) {
   }
 }
 
-export async function startScan(roleArn, regions = ["us-east-1"], externalId = "") {
+export async function startScan(roleArn, regions = "all", externalId = "") {
   let response;
   try {
     response = await fetch(`${API_URL}/scan`, {
@@ -49,14 +49,16 @@ export async function startScan(roleArn, regions = ["us-east-1"], externalId = "
     throw error;
   }
 
-  return data.scan_id;
+  return { scanId: data.scan_id, scanToken: data.scan_token };
 }
 
-export async function pollScanStatus(scanId, onProgress) {
+export async function pollScanStatus(scanId, scanToken, onProgress) {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
     let response;
     try {
-      response = await fetch(`${API_URL}/scan/${encodeURIComponent(scanId)}/status`);
+      response = await fetch(`${API_URL}/scan/${encodeURIComponent(scanId)}/status`, {
+        headers: scanToken ? { "X-Scan-Token": scanToken } : {},
+      });
     } catch {
       const err = new Error(ERROR_MESSAGES.NETWORK_ERROR);
       err.code = "NETWORK_ERROR";
@@ -65,18 +67,23 @@ export async function pollScanStatus(scanId, onProgress) {
 
     const data = await parseJsonSafe(response);
     if (!response.ok) {
-      throw new Error(data.message || "Failed to fetch scan status.");
+      const error = new Error(
+        data.message || ERROR_MESSAGES[data.error_code] || "Failed to fetch scan status."
+      );
+      error.code = data.error_code || "STATUS_ERROR";
+      throw error;
     }
 
+    const state = data.scan_state || data.status;
     if (typeof onProgress === "function") {
-      onProgress(data.status);
+      onProgress(state);
     }
 
-    if (data.status === "COMPLETE") {
+    if (state === "COMPLETE" || state === "INCOMPLETE") {
       return data;
     }
 
-    if (data.status === "FAILED") {
+    if (state === "FAILED") {
       const error = new Error(
         data.message || ERROR_MESSAGES[data.error_code] || ERROR_MESSAGES.INTERNAL_ERROR
       );
@@ -90,9 +97,9 @@ export async function pollScanStatus(scanId, onProgress) {
   throw new Error(ERROR_MESSAGES.TIMEOUT);
 }
 
-export async function scanAccount(roleArn, regions = ["us-east-1"], onProgress, externalId = "") {
-  const scanId = await startScan(roleArn, regions, externalId);
-  return await pollScanStatus(scanId, onProgress);
+export async function scanAccount(roleArn, regions = "all", onProgress, externalId = "") {
+  const { scanId, scanToken } = await startScan(roleArn, regions, externalId);
+  return await pollScanStatus(scanId, scanToken, onProgress);
 }
 
 export async function checkPermissions(roleArn, externalId = "") {
@@ -116,7 +123,7 @@ export async function checkPermissions(roleArn, externalId = "") {
   const data = await parseJsonSafe(response);
   if (!response.ok || data.status === "error") {
     const error = new Error(
-      data.message || ERROR_MESSAGES[data.error_code] || "Permission pre-check failed."
+      data.message || ERROR_MESSAGES[data.error_code] || "Account verification failed."
     );
     error.code = data.error_code || "UNKNOWN_ERROR";
     throw error;

@@ -28,7 +28,8 @@ def scan(session, region="us-east-1"):
                         "id": instance_id,
                         "name": name,
                         "type": "ec2_instance",
-                        "status": "NOT_ASSESSED",
+                        "service": "EC2",
+                        "status": "INCOMPLETE",
                         "issues": [],
                         "region": region,
                         "raw": {

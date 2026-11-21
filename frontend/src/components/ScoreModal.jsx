@@ -39,21 +39,19 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
         </div>
 
         <div className="p-5 overflow-y-auto space-y-5 text-xs">
-          {/* Formula Card */}
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Scoring Formula
             </p>
             <div className="font-mono text-xs sm:text-sm text-teal-300 bg-slate-900/90 p-3 rounded-lg border border-slate-800">
-              Score = max(0, 100 − [10 × Critical + 4 × Warnings + 1 × Unused/Orphaned])
+              Score = max(0, 100 − [10 × Critical + 4 × Warnings + 1 × Unused])
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Scoring starts at 100 points and subtracts deterministic weights per detected finding.
-              Resources marked <code className="text-slate-300">NOT_ASSESSED</code> are treated neutrally—never penalized and never falsely credited as healthy.
+              Scoring starts at 100 points and subtracts deterministic weights per verified finding.
+              Resources with <code className="text-orange-300">INCOMPLETE</code> checks are reported separately in Scan Coverage and never credited as Healthy.
             </p>
           </div>
 
-          {/* Live Calculation */}
           <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
             <div className="flex items-center justify-between">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
@@ -78,8 +76,8 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
                 <span>−{scoreData.warning * 4} pts</span>
               </div>
               <div className="py-1.5 flex justify-between text-sky-300">
-                <span>Unused / Orphaned ({scoreData.orphaned} × −1 pt):</span>
-                <span>−{scoreData.orphaned * 1} pts</span>
+                <span>Unused / Idle Resources ({scoreData.unused} × −1 pt):</span>
+                <span>−{scoreData.unused * 1} pts</span>
               </div>
               <div className="py-2 flex justify-between font-bold text-xs border-t border-slate-700">
                 <span className="text-white font-sans">Calculated Score:</span>
@@ -88,7 +86,6 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
             </div>
           </div>
 
-          {/* Supporting Counts */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
               <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Scanned</span>
@@ -108,22 +105,9 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
             </div>
           </div>
 
-          {/* Score Tiers */}
-          <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] text-slate-400 space-y-1">
-            <p className="font-semibold text-slate-300">Score Range Interpretations:</p>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 font-mono pt-1 text-center text-[10px]">
-              <span className="p-1 rounded bg-emerald-950/40 text-emerald-300 border border-emerald-500/20">90–100: Excellent</span>
-              <span className="p-1 rounded bg-teal-950/40 text-teal-300 border border-teal-500/20">75–89: Good</span>
-              <span className="p-1 rounded bg-amber-950/40 text-amber-300 border border-amber-500/20">50–74: Fair</span>
-              <span className="p-1 rounded bg-orange-950/40 text-orange-300 border border-orange-500/20">25–49: Poor</span>
-              <span className="p-1 rounded bg-red-950/40 text-red-300 border border-red-500/20">0–24: Critical</span>
-            </div>
-          </div>
-
-          {/* Non-certification Disclaimer */}
           <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
             <p className="font-semibold text-slate-300 mb-0.5">Important Clarification</p>
-            This score is an operational visibility signal based strictly on the deterministic checks performed across supported services. It is not a formal compliance certification (SOC 2, ISO 27001, PCI-DSS, HIPAA, or CIS).
+            This score is an operational visibility indicator derived strictly from deterministic checks across the 10 supported v1 services. It is not a formal compliance certification.
           </div>
         </div>
 

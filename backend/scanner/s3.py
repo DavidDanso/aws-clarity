@@ -3,24 +3,35 @@ from exceptions import ScannerError
 
 
 def scan(session, selected_regions=None):
-    if selected_regions is None:
-        selected_regions = ["us-east-1"]
+    """Discover all S3 buckets in the account (globally) with pagination support.
+
+    If `selected_regions` is None (default when scanning all enabled regions),
+    every bucket in the account is returned with its actual AWS region.
+    """
     resources = []
+    buckets = []
     try:
         s3 = session.client("s3")
-        response = s3.list_buckets()
+        kwargs = {}
+        while True:
+            response = s3.list_buckets(**kwargs)
+            buckets.extend(response.get("Buckets", []))
+            token = response.get("ContinuationToken")
+            if not token:
+                break
+            kwargs["ContinuationToken"] = token
     except ClientError as e:
         raise ScannerError(str(e), resources) from e
 
-    for bucket in response.get("Buckets", []):
+    for bucket in buckets:
         bucket_name = bucket.get("Name")
         creation_date = bucket.get("CreationDate")
         assessment_errors = {}
 
+        # Determine true bucket region
         try:
             location_resp = s3.get_bucket_location(Bucket=bucket_name)
             raw_location = location_resp.get("LocationConstraint")
-            # AWS returns None for us-east-1 and "EU" for legacy eu-west-1 buckets
             if raw_location is None:
                 bucket_region = "us-east-1"
             elif raw_location == "EU":
@@ -29,36 +40,51 @@ def scan(session, selected_regions=None):
                 bucket_region = raw_location
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "AWS error")
-            # If we cannot determine bucket location, skip filtering only if we cannot match region;
-            # disclose as assessment error and associate with the primary requested region so it stays visible.
             raw_location = None
-            bucket_region = selected_regions[0]
+            bucket_region = "global"
             assessment_errors["S3-001"] = f"Could not determine bucket region: {code}"
 
-        if bucket_region not in selected_regions:
+        if selected_regions is not None and bucket_region != "global" and bucket_region not in selected_regions:
             continue
+
+        # Use regional S3 client when bucket region is known to avoid PermanentRedirect errors
+        regional_s3 = (
+            session.client("s3", region_name=bucket_region)
+            if bucket_region != "global"
+            else s3
+        )
 
         is_empty = None
         if "S3-001" not in assessment_errors:
             try:
-                objs_resp = s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
+                objs_resp = regional_s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
                 is_empty = objs_resp.get("KeyCount", 0) == 0
             except ClientError as e:
                 code = e.response.get("Error", {}).get("Code", "AWS error")
                 assessment_errors["S3-001"] = f"Could not inspect bucket objects: {code}"
 
+        versioning_status = None
+        try:
+            ver_resp = regional_s3.get_bucket_versioning(Bucket=bucket_name)
+            versioning_status = ver_resp.get("Status", "Disabled")
+        except ClientError:
+            versioning_status = None
+
         item = {
             "id": bucket_name,
             "name": bucket_name,
             "type": "s3_bucket",
-            "status": "NOT_ASSESSED",
+            "service": "S3",
+            "status": "INCOMPLETE",
             "issues": [],
             "region": bucket_region,
             "raw": {
+                "arn": f"arn:aws:s3:::{bucket_name}",
                 "name": bucket_name,
                 "creation_date": creation_date,
                 "is_empty": is_empty,
                 "location": raw_location,
+                "versioning": versioning_status,
             },
         }
         if assessment_errors:

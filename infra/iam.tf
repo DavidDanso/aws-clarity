@@ -58,7 +58,8 @@ resource "aws_iam_role" "clarity_read_only" {
   })
 }
 
-# Strictly least-privilege, read-only permissions for the 14 supported AWS Clarity resource types.
+# Strictly least-privilege, read-only permissions for the 10 supported AWS Clarity v1 services:
+# EC2, VPC, S3, IAM, Lambda, RDS, DynamoDB, EBS, CloudWatch, CloudTrail.
 resource "aws_iam_role_policy" "clarity_read_only_policy" {
   name = "AWSClarityReadOnlyPolicy"
   role = aws_iam_role.clarity_read_only.id
@@ -70,15 +71,15 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
         Effect = "Allow"
         Action = [
           "sts:GetCallerIdentity",
+          "ec2:DescribeRegions",
           "ec2:DescribeInstances",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeSnapshots",
           "ec2:DescribeAddresses",
           "ec2:DescribeSecurityGroups",
           "ec2:DescribeVpcs",
-          "ec2:DescribeNatGateways",
           "ec2:DescribeInternetGateways",
-          "elasticloadbalancing:DescribeLoadBalancers",
+          "ec2:DescribeNatGateways",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeSnapshots",
           "s3:ListAllMyBuckets",
           "s3:GetBucketLocation",
           "s3:ListBucket",
@@ -86,14 +87,25 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "s3:GetBucketAcl",
           "s3:GetEncryptionConfiguration",
           "s3:GetBucketPublicAccessBlock",
-          "rds:DescribeDBInstances",
-          "dynamodb:ListTables",
-          "dynamodb:DescribeTable",
-          "lambda:ListFunctions",
+          "s3:GetBucketVersioning",
           "iam:ListRoles",
           "iam:ListRolePolicies",
           "iam:GetRolePolicy",
-          "iam:ListAttachedRolePolicies"
+          "iam:ListAttachedRolePolicies",
+          "iam:ListUsers",
+          "iam:ListMFADevices",
+          "iam:ListAccessKeys",
+          "iam:ListAttachedUserPolicies",
+          "iam:ListUserPolicies",
+          "iam:GetUserPolicy",
+          "lambda:ListFunctions",
+          "rds:DescribeDBInstances",
+          "dynamodb:ListTables",
+          "dynamodb:DescribeTable",
+          "cloudwatch:DescribeAlarms",
+          "logs:DescribeLogGroups",
+          "cloudtrail:DescribeTrails",
+          "cloudtrail:GetTrailStatus"
         ]
         Resource = "*"
       }

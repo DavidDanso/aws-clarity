@@ -16,7 +16,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
     total: evaluatedChecks.length,
     violated: evaluatedChecks.filter((c) => c.eval.status === "VIOLATED").length,
     passed: evaluatedChecks.filter((c) => c.eval.status === "PASSED").length,
-    unassessed: evaluatedChecks.filter((c) => c.eval.status === "NOT_ASSESSED").length,
+    failed: evaluatedChecks.filter((c) => c.eval.status === "CHECK_FAILED").length,
     na: evaluatedChecks.filter((c) => c.eval.status === "NOT_APPLICABLE").length,
   }), [evaluatedChecks]);
 
@@ -24,7 +24,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
     let list = evaluatedChecks;
     if (catalogFilter === "violated") list = list.filter((c) => c.eval.status === "VIOLATED");
     else if (catalogFilter === "passed") list = list.filter((c) => c.eval.status === "PASSED");
-    else if (catalogFilter === "unassessed") list = list.filter((c) => c.eval.status === "NOT_ASSESSED");
+    else if (catalogFilter === "failed") list = list.filter((c) => c.eval.status === "CHECK_FAILED");
     else if (catalogFilter === "na") list = list.filter((c) => c.eval.status === "NOT_APPLICABLE");
 
     if (catalogSearch.trim()) {
@@ -58,7 +58,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
               Security & Cost Checks Catalog
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
-              {evaluatedChecks.length} deterministic rules executed by AWS Clarity across 14 resource types
+              {evaluatedChecks.length} deterministic rules across all 10 supported AWS services
             </p>
           </div>
           <button
@@ -71,7 +71,6 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           </button>
         </div>
 
-        {/* Filter bar */}
         <div className="px-5 pt-4 pb-3 border-b border-slate-800 space-y-3 bg-slate-950/40">
           <input
             type="text"
@@ -86,8 +85,8 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
               { key: "all", label: "All Checks", count: checkCounts.total },
               { key: "violated", label: "Violated", count: checkCounts.violated, activeClass: "text-red-400 bg-red-500/10 border-red-500/20" },
               { key: "passed", label: "Passed", count: checkCounts.passed, activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-              ...(checkCounts.unassessed > 0
-                ? [{ key: "unassessed", label: "Unassessed", count: checkCounts.unassessed, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" }]
+              ...(checkCounts.failed > 0
+                ? [{ key: "failed", label: "Check Failed", count: checkCounts.failed, activeClass: "text-orange-300 bg-orange-500/10 border-orange-500/20" }]
                 : []),
               { key: "na", label: "No Resources", count: checkCounts.na, activeClass: "text-slate-300 bg-slate-500/10 border-slate-500/20" },
             ].map((tab) => (
@@ -110,18 +109,15 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           </div>
         </div>
 
-        {/* Checks list */}
         <div className="p-5 overflow-y-auto space-y-3 text-xs flex-1">
           {filteredChecks.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">
-              No checks match the current filter.
-            </div>
+            <div className="text-center py-8 text-slate-500">No checks match the current filter.</div>
           ) : (
             filteredChecks.map((check) => {
               const status = check.eval.status;
               const isViolated = status === "VIOLATED";
               const isPassed = status === "PASSED";
-              const isUnassessed = status === "NOT_ASSESSED";
+              const isFailed = status === "CHECK_FAILED";
 
               return (
                 <div
@@ -176,14 +172,14 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                           <span className="font-mono text-[10px] text-emerald-500">({check.eval.label})</span>
                         </span>
                       )}
-                      {isUnassessed && (
-                        <span className="font-medium text-amber-400 flex items-center gap-1">
-                          <span>? Unassessed</span>
-                          <span className="font-mono text-[10px] text-amber-300">({check.eval.label})</span>
+                      {isFailed && (
+                        <span className="font-medium text-orange-300 flex items-center gap-1">
+                          <span>! Check Failed</span>
+                          <span className="font-mono text-[10px] text-orange-200">({check.eval.label})</span>
                         </span>
                       )}
-                      {!isViolated && !isPassed && !isUnassessed && (
-                        <span className="text-slate-500 font-mono text-[10px]">— No resources in scan</span>
+                      {!isViolated && !isPassed && !isFailed && (
+                        <span className="text-slate-500 font-mono text-[10px]">— No resources in account</span>
                       )}
                     </div>
                   </div>
@@ -195,7 +191,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
 
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
           <span className="text-[11px] text-slate-500">
-            Derived directly from the deterministic backend rule engine
+            Deterministic rules backed by real AWS API evidence
           </span>
           <button
             type="button"

@@ -15,7 +15,8 @@ def scan(session, region="us-east-1"):
                 "id": alloc_id,
                 "name": name,
                 "type": "elastic_ip",
-                "status": "NOT_ASSESSED",
+                "service": "EC2",
+                "status": "INCOMPLETE",
                 "issues": [],
                 "region": region,
                 "raw": {

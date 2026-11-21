@@ -1,6 +1,4 @@
-import { useState, useEffect, useRef } from "react";
 import { maskAccountId } from "../utils/formatters";
-import { SUPPORTED_REGIONS } from "../utils/constants";
 
 function getRelativeTime(isoString) {
   if (!isoString) return "unknown";
@@ -22,39 +20,16 @@ function getRelativeTime(isoString) {
 
 export default function TopBar({
   accountId,
+  regionsCount = 0,
   scannedAt,
   onRescan,
   onDisconnect,
   isLoading,
-  selectedRegions = ["us-east-1"],
-  onRegionChange,
-  isRescanning = false,
   onOpenTrust,
 }) {
-  const [popoverOpen, setPopoverOpen] = useState(false);
-  const [draftRegion, setDraftRegion] = useState(selectedRegions?.[0] ?? "us-east-1");
-  const popoverRef = useRef(null);
-
-  useEffect(() => {
-    if (!popoverOpen) {
-      setDraftRegion(selectedRegions?.[0] ?? "us-east-1");
-    }
-  }, [selectedRegions, popoverOpen]);
-
-  useEffect(() => {
-    if (!popoverOpen) return;
-    const handleClickOutside = (e) => {
-      if (popoverRef.current && !popoverRef.current.contains(e.target)) {
-        setPopoverOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [popoverOpen]);
-
   return (
     <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 py-3 w-full border-b border-slate-800/70">
-      {/* Left: Brand */}
+      {/* Brand */}
       <div className="flex items-center gap-2">
         <div className="w-6 h-6 rounded-md bg-teal-500/10 border border-teal-500/20 flex items-center justify-center">
           <svg className="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -64,83 +39,21 @@ export default function TopBar({
         <span className="text-[14px] font-semibold text-slate-100 tracking-tight">AWS Clarity</span>
       </div>
 
-      {/* Center: Account, Region Switcher, Timestamp */}
+      {/* Connected Account Metadata */}
       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-400">
         {isLoading ? (
-          <div className="animate-pulse bg-slate-800 h-3.5 w-52 rounded" />
+          <div className="animate-pulse bg-slate-800 h-3.5 w-56 rounded" />
         ) : (
           <>
-            <span className="font-mono text-slate-300">Account {maskAccountId(accountId)}</span>
-            <span className="text-slate-700">·</span>
-            <div className="relative inline-block" ref={popoverRef}>
-              <button
-                type="button"
-                onClick={() => !isRescanning && setPopoverOpen((prev) => !prev)}
-                disabled={isRescanning}
-                className={`flex items-center gap-1 text-xs text-slate-300 font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-800 transition-colors ${
-                  isRescanning ? "opacity-40 cursor-not-allowed" : "hover:border-slate-600 cursor-pointer"
-                }`}
-              >
-                <span>{selectedRegions?.[0] ?? "us-east-1"}</span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="11"
-                  height="11"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  className={`transition-transform duration-200 ${popoverOpen ? "rotate-180" : ""}`}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-
-              {popoverOpen && (
-                <div className="absolute top-full mt-2 left-0 sm:right-0 sm:left-auto z-50 w-64 rounded-xl border border-slate-700 bg-slate-900 shadow-2xl p-3">
-                  <p className="text-[11px] text-slate-400 mb-2 font-semibold uppercase tracking-wide">
-                    Switch Region
-                  </p>
-                  <div className="grid grid-cols-1 gap-0.5 max-h-56 overflow-y-auto mb-3 pr-1">
-                    {SUPPORTED_REGIONS.map((r) => (
-                      <label
-                        key={r.id}
-                        className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer hover:text-white py-1.5 select-none"
-                      >
-                        <input
-                          type="radio"
-                          name="dashboard-region"
-                          value={r.id}
-                          checked={draftRegion === r.id}
-                          onChange={() => setDraftRegion(r.id)}
-                          className="shrink-0 accent-teal-500"
-                        />
-                        <span>{r.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <div className="flex gap-2 border-t border-slate-800 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setPopoverOpen(false)}
-                      className="flex-1 text-xs py-1.5 rounded text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPopoverOpen(false);
-                        onRegionChange([draftRegion]);
-                      }}
-                      className="flex-1 text-xs py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white font-medium transition-colors cursor-pointer"
-                    >
-                      Scan Region
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
+            <span className="font-mono text-slate-200">Account {maskAccountId(accountId)}</span>
+            {regionsCount > 0 && (
+              <>
+                <span className="text-slate-700">·</span>
+                <span className="font-mono text-slate-300 px-2 py-0.5 rounded bg-slate-900 border border-slate-800">
+                  {regionsCount} enabled region{regionsCount === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
             {scannedAt && (
               <>
                 <span className="text-slate-700">·</span>
@@ -151,7 +64,7 @@ export default function TopBar({
         )}
       </div>
 
-      {/* Right: Actions */}
+      {/* Actions */}
       <div className="flex items-center gap-2 flex-wrap">
         {onOpenTrust && (
           <button
@@ -167,7 +80,7 @@ export default function TopBar({
           <button
             type="button"
             onClick={onDisconnect}
-            disabled={isLoading || isRescanning}
+            disabled={isLoading}
             className="px-2.5 py-1 text-xs border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded-md bg-transparent transition-colors cursor-pointer disabled:opacity-40"
           >
             Switch Account
@@ -177,10 +90,10 @@ export default function TopBar({
           id="rescan-button"
           type="button"
           onClick={onRescan}
-          disabled={isLoading || isRescanning}
+          disabled={isLoading}
           className="px-3 py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          Re-scan
+          Re-scan Account
         </button>
       </div>
     </header>

@@ -23,7 +23,8 @@ def scan(session, region="us-east-1"):
                     "id": nat_id,
                     "name": name,
                     "type": "nat_gateway",
-                    "status": "NOT_ASSESSED",
+                    "service": "VPC",
+                    "status": "INCOMPLETE",
                     "issues": [],
                     "region": region,
                     "raw": {

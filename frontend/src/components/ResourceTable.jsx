@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 import {
+  CATEGORY_BADGE,
   RESOURCE_SERVICE_MAP,
   RESOURCE_TYPE_LABELS,
   STATUS_BADGE,
-  CATEGORY_BADGE,
+  SUPPORTED_SERVICES,
 } from "../utils/constants";
 
 const PAGE_SIZE = 15;
@@ -11,22 +12,22 @@ const PAGE_SIZE = 15;
 const SEVERITY_RANK = {
   CRITICAL: 1,
   WARNING: 2,
-  ORPHANED: 3,
-  NOT_ASSESSED: 4,
+  UNUSED: 3,
+  INCOMPLETE: 4,
   HEALTHY: 5,
 };
 
 function getDisplayedStatus(resource) {
-  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "ASSESSED") {
-    return "NOT_ASSESSED";
+  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "COMPLETE") {
+    return "INCOMPLETE";
   }
-  return resource?.status || "NOT_ASSESSED";
+  return resource?.status || "INCOMPLETE";
 }
 
 function hasCostOrUnusedFinding(resource) {
-  if (resource?.status === "ORPHANED") return true;
+  if (resource?.status === "UNUSED") return true;
   return (resource?.issues || []).some(
-    (i) => i?.category === "Cost Risk" || i?.category === "Unused" || i?.severity === "ORPHANED"
+    (i) => i?.category === "Cost Risk" || i?.category === "Unused" || i?.severity === "UNUSED"
   );
 }
 
@@ -41,9 +42,11 @@ export default function ResourceTable({
   resources = [],
   onInspect,
   initialStatusFilter = "ALL",
+  initialServiceFilter = "ALL",
 }) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [serviceFilter, setServiceFilter] = useState("ALL");
+  const [serviceFilter, setServiceFilter] = useState(initialServiceFilter);
+  const [regionFilter, setRegionFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
   const [sortBy, setSortBy] = useState("severity");
   const [currentPage, setCurrentPage] = useState(1);
@@ -52,29 +55,42 @@ export default function ResourceTable({
     setStatusFilter(initialStatusFilter);
   }, [initialStatusFilter]);
 
-  // Compute service distribution from discovered resources
+  useEffect(() => {
+    setServiceFilter(initialServiceFilter);
+  }, [initialServiceFilter]);
+
+  // Live resource counts across all 10 supported services
   const serviceCounts = useMemo(() => {
-    const counts = new Map();
+    const counts = Object.fromEntries(SUPPORTED_SERVICES.map((s) => [s, 0]));
     for (const r of resources) {
-      const svc = RESOURCE_SERVICE_MAP[r.type] || "Other";
-      counts.set(svc, (counts.get(svc) || 0) + 1);
+      const svc = r.service || RESOURCE_SERVICE_MAP[r.type] || "Other";
+      counts[svc] = (counts[svc] || 0) + 1;
     }
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+    return SUPPORTED_SERVICES.map((svc) => [svc, counts[svc] || 0]);
   }, [resources]);
 
-  // Compute status filter counts
+  // Distinct regions present in the discovered inventory
+  const discoveredRegions = useMemo(() => {
+    const set = new Set();
+    for (const r of resources) {
+      if (r.region) set.add(r.region);
+    }
+    return Array.from(set).sort();
+  }, [resources]);
+
+  // Status filter counts
   const statusCounts = useMemo(() => {
     let critical = 0;
     let warning = 0;
     let costUnused = 0;
     let healthy = 0;
-    let notAssessed = 0;
+    let incomplete = 0;
     for (const r of resources) {
       const st = getDisplayedStatus(r);
       if (st === "CRITICAL") critical++;
       else if (st === "WARNING") warning++;
       else if (st === "HEALTHY") healthy++;
-      else if (st === "NOT_ASSESSED") notAssessed++;
+      else if (st === "INCOMPLETE") incomplete++;
       if (hasCostOrUnusedFinding(r)) costUnused++;
     }
     return {
@@ -83,30 +99,28 @@ export default function ResourceTable({
       warning,
       costUnused,
       healthy,
-      notAssessed,
+      incomplete,
     };
   }, [resources]);
 
-  // 1. Filter by search, service, and status
+  // 1. Filter by service, region, status, and multi-field search
   const filtered = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     return resources.filter((r) => {
-      if (serviceFilter !== "ALL") {
-        const svc = RESOURCE_SERVICE_MAP[r.type] || "Other";
-        if (svc !== serviceFilter) return false;
-      }
+      const svc = r.service || RESOURCE_SERVICE_MAP[r.type] || "Other";
+      if (serviceFilter !== "ALL" && svc !== serviceFilter) return false;
+      if (regionFilter !== "ALL" && (r.region || "global") !== regionFilter) return false;
 
       const st = getDisplayedStatus(r);
       if (statusFilter === "CRITICAL" && st !== "CRITICAL") return false;
       if (statusFilter === "WARNING" && st !== "WARNING") return false;
       if (statusFilter === "COST_UNUSED" && !hasCostOrUnusedFinding(r)) return false;
       if (statusFilter === "HEALTHY" && st !== "HEALTHY") return false;
-      if (statusFilter === "NOT_ASSESSED" && st !== "NOT_ASSESSED") return false;
+      if (statusFilter === "INCOMPLETE" && st !== "INCOMPLETE") return false;
 
       if (!query) return true;
 
       const label = (RESOURCE_TYPE_LABELS[r.type] || r.type || "").toLowerCase();
-      const service = (RESOURCE_SERVICE_MAP[r.type] || "").toLowerCase();
       const region = (r.region || "").toLowerCase();
       const issueText = (r.issues || [])
         .map((i) => `${i.rule_id || ""} ${i.title || ""} ${i.category || ""}`)
@@ -117,12 +131,12 @@ export default function ResourceTable({
         (r.name || "").toLowerCase().includes(query) ||
         (r.id || "").toLowerCase().includes(query) ||
         label.includes(query) ||
-        service.includes(query) ||
+        svc.toLowerCase().includes(query) ||
         region.includes(query) ||
         issueText.includes(query)
       );
     });
-  }, [resources, searchQuery, serviceFilter, statusFilter]);
+  }, [resources, searchQuery, serviceFilter, regionFilter, statusFilter]);
 
   // 2. Sort
   const sortedResources = useMemo(() => {
@@ -141,17 +155,19 @@ export default function ResourceTable({
       copy.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
     } else if (sortBy === "service") {
       copy.sort((a, b) => {
-        const svcA = RESOURCE_SERVICE_MAP[a.type] || "";
-        const svcB = RESOURCE_SERVICE_MAP[b.type] || "";
+        const svcA = a.service || RESOURCE_SERVICE_MAP[a.type] || "";
+        const svcB = b.service || RESOURCE_SERVICE_MAP[b.type] || "";
         return svcA.localeCompare(svcB) || (a.name || "").localeCompare(b.name || "");
       });
+    } else if (sortBy === "region") {
+      copy.sort((a, b) => (a.region || "").localeCompare(b.region || "") || (a.name || "").localeCompare(b.name || ""));
     }
     return copy;
   }, [filtered, sortBy]);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, serviceFilter, statusFilter, sortBy, resources]);
+  }, [searchQuery, serviceFilter, regionFilter, statusFilter, sortBy, resources]);
 
   const totalResources = sortedResources.length;
   const totalPages = Math.max(1, Math.ceil(totalResources / PAGE_SIZE));
@@ -168,42 +184,46 @@ export default function ResourceTable({
       : `Showing ${startIndex + 1}–${endIndex} of ${totalResources} resources`;
 
   const pageNumbers = getPageNumbers(safePage, totalPages);
-  const hasActiveFilters = searchQuery.trim() !== "" || serviceFilter !== "ALL" || statusFilter !== "ALL";
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    serviceFilter !== "ALL" ||
+    regionFilter !== "ALL" ||
+    statusFilter !== "ALL";
 
   return (
     <div className="flex flex-col gap-4">
-      {/* Service Inventory Filter Strip */}
-      {serviceCounts.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
+      {/* 10 Supported Services Navigation Bar */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <button
+          type="button"
+          onClick={() => setServiceFilter("ALL")}
+          className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+            serviceFilter === "ALL"
+              ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
+              : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+          }`}
+        >
+          All 10 Services <span className="font-mono ml-1 opacity-75">{resources.length}</span>
+        </button>
+        {serviceCounts.map(([svc, count]) => (
           <button
             type="button"
-            onClick={() => setServiceFilter("ALL")}
+            key={svc}
+            onClick={() => setServiceFilter((prev) => (prev === svc ? "ALL" : svc))}
             className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-              serviceFilter === "ALL"
+              serviceFilter === svc
                 ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
-                : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
+                : count === 0
+                ? "bg-slate-950/40 border-slate-800/60 text-slate-600 hover:text-slate-400"
+                : "bg-slate-900/60 border-slate-800 text-slate-300 hover:text-white hover:border-slate-700"
             }`}
           >
-            All Services <span className="font-mono ml-1 opacity-75">{resources.length}</span>
+            {svc} <span className="font-mono ml-1 opacity-75">{count}</span>
           </button>
-          {serviceCounts.map(([svc, count]) => (
-            <button
-              type="button"
-              key={svc}
-              onClick={() => setServiceFilter((prev) => (prev === svc ? "ALL" : svc))}
-              className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
-                serviceFilter === svc
-                  ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
-                  : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
-              }`}
-            >
-              {svc} <span className="font-mono ml-1 opacity-75">{count}</span>
-            </button>
-          ))}
-        </div>
-      )}
+        ))}
+      </div>
 
-      {/* Search + Sort Row */}
+      {/* Search + Region Filter + Sort Row */}
       <div className="flex flex-col sm:flex-row gap-2.5">
         <div className="relative flex-1">
           <svg
@@ -218,7 +238,7 @@ export default function ResourceTable({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, ID, service, rule (e.g. ssh, nat, unencrypted, s3)…"
+            placeholder="Search by name, AWS ID, service, region, or finding (e.g. ssh, mfa, retention, nat)…"
             className="w-full bg-slate-900/60 border border-slate-800 rounded-lg pl-9 pr-8 py-2 text-[13px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500/50 transition-colors"
           />
           {searchQuery.length > 0 && (
@@ -234,18 +254,31 @@ export default function ResourceTable({
         </div>
 
         <select
+          aria-label="Filter by region"
+          value={regionFilter}
+          onChange={(e) => setRegionFilter(e.target.value)}
+          className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
+        >
+          <option value="ALL">All Regions ({discoveredRegions.length})</option>
+          {discoveredRegions.map((reg) => (
+            <option key={reg} value={reg}>{reg}</option>
+          ))}
+        </select>
+
+        <select
           aria-label="Sort resources"
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
           className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
         >
           <option value="severity">Sort: Highest Risk First</option>
-          <option value="name">Sort: Name (A–Z)</option>
           <option value="service">Sort: AWS Service</option>
+          <option value="region">Sort: Region</option>
+          <option value="name">Sort: Name (A–Z)</option>
         </select>
       </div>
 
-      {/* Status & Focus Filter Pills */}
+      {/* Status & Cost Focus Pills */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 flex-wrap">
           {[
@@ -254,8 +287,8 @@ export default function ResourceTable({
             { key: "WARNING", label: "Warning", count: statusCounts.warning, active: "bg-amber-500/15 border-amber-500/30 text-amber-400" },
             { key: "COST_UNUSED", label: "Unused & Cost Risk", count: statusCounts.costUnused, active: "bg-sky-500/15 border-sky-500/30 text-sky-300" },
             { key: "HEALTHY", label: "Healthy", count: statusCounts.healthy, active: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" },
-            ...(statusCounts.notAssessed > 0
-              ? [{ key: "NOT_ASSESSED", label: "Not Assessed", count: statusCounts.notAssessed, active: "bg-slate-700/40 border-slate-600 text-slate-300" }]
+            ...(statusCounts.incomplete > 0
+              ? [{ key: "INCOMPLETE", label: "Check Incomplete", count: statusCounts.incomplete, active: "bg-orange-500/15 border-orange-500/30 text-orange-300" }]
               : []),
           ].map((pill) => (
             <button
@@ -279,6 +312,7 @@ export default function ResourceTable({
             onClick={() => {
               setSearchQuery("");
               setServiceFilter("ALL");
+              setRegionFilter("ALL");
               setStatusFilter("ALL");
             }}
             className="text-[11px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
@@ -288,14 +322,15 @@ export default function ResourceTable({
         )}
       </div>
 
-      {/* Table */}
+      {/* Resource Table */}
       <div className="overflow-x-auto w-full rounded-xl border border-slate-800/80 bg-slate-900/30">
-        <table className="min-w-[640px] w-full text-sm text-left">
+        <table className="min-w-[680px] w-full text-sm text-left">
           <thead>
             <tr className="border-b border-slate-800/80 bg-slate-900/60">
               <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Resource</th>
-              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Type</th>
-              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Status</th>
+              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Service / Type</th>
+              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Region</th>
+              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Health</th>
               <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hidden md:table-cell">Key Finding</th>
               <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500"></th>
             </tr>
@@ -303,13 +338,13 @@ export default function ResourceTable({
           <tbody>
             {resources.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-slate-500 text-sm">
-                  No resources discovered in this scan.
+                <td colSpan={6} className="py-12 text-center text-slate-500 text-sm">
+                  No resources discovered across the 10 supported AWS services.
                 </td>
               </tr>
             ) : sortedResources.length === 0 ? (
               <tr>
-                <td colSpan={5} className="py-12 text-center text-slate-500 text-sm">
+                <td colSpan={6} className="py-12 text-center text-slate-500 text-sm">
                   No resources match the current search or filter.
                 </td>
               </tr>
@@ -318,6 +353,7 @@ export default function ResourceTable({
                 const status = getDisplayedStatus(resource);
                 const issues = resource.issues || [];
                 const topIssue = issues[0];
+                const svc = resource.service || RESOURCE_SERVICE_MAP[resource.type] || "";
 
                 return (
                   <tr
@@ -327,24 +363,27 @@ export default function ResourceTable({
                   >
                     <td className="px-4 py-3 max-w-[220px]">
                       <p className="font-medium text-slate-200 truncate text-[13px]">{resource.name}</p>
-                      <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">
-                        {resource.id}
-                        {resource.region ? ` · ${resource.region}` : ""}
+                      <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{resource.id}</p>
+                    </td>
+                    <td className="px-3 py-3 whitespace-nowrap">
+                      <p className="text-xs font-medium text-slate-300">{svc}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
                       </p>
                     </td>
-                    <td className="px-3 py-3 text-slate-400 text-[12px] whitespace-nowrap">
-                      {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
+                    <td className="px-3 py-3 text-[11px] font-mono text-slate-400 whitespace-nowrap">
+                      {resource.region || "global"}
                     </td>
                     <td className="px-3 py-3 whitespace-nowrap">
                       <span
                         className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${
-                          STATUS_BADGE[status] || STATUS_BADGE.NOT_ASSESSED
+                          STATUS_BADGE[status] || STATUS_BADGE.INCOMPLETE
                         }`}
                       >
                         {status}
                       </span>
                     </td>
-                    <td className="px-3 py-3 hidden md:table-cell max-w-[260px]">
+                    <td className="px-3 py-3 hidden md:table-cell max-w-[250px]">
                       {topIssue ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {topIssue.category && (
@@ -361,10 +400,10 @@ export default function ResourceTable({
                             </span>
                           )}
                         </div>
-                      ) : status === "NOT_ASSESSED" ? (
-                        <span className="text-xs text-slate-500">Incomplete check evidence</span>
+                      ) : status === "INCOMPLETE" ? (
+                        <span className="text-xs text-orange-300/80">Check blocked by API / IAM error</span>
                       ) : (
-                        <span className="text-xs text-emerald-500/80">All checks passed</span>
+                        <span className="text-xs text-emerald-500/80">All applicable checks passed</span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right whitespace-nowrap">
@@ -387,35 +426,29 @@ export default function ResourceTable({
         </table>
       </div>
 
-      {/* Pagination Footer */}
+      {/* Pagination */}
       {totalResources > 0 && (
         <nav aria-label="Resource table pagination" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
           <p className="text-[12px] text-slate-500">{rangeText}</p>
-
           {totalPages > 1 && (
             <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safePage === 1}
-                aria-label="Go to previous page"
-                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
               >
                 ‹ Previous
               </button>
-
               <div className="flex items-center gap-1">
                 {pageNumbers.map((p, idx) =>
                   p === "..." ? (
-                    <span key={`ellipsis-${idx}`} className="px-1.5 py-0.5 text-[12px] text-slate-600 select-none">
-                      …
-                    </span>
+                    <span key={`ellipsis-${idx}`} className="px-1.5 py-0.5 text-[12px] text-slate-600 select-none">…</span>
                   ) : (
                     <button
                       type="button"
                       key={p}
                       onClick={() => setCurrentPage(p)}
-                      aria-label={`Go to page ${p}`}
                       aria-current={safePage === p ? "page" : undefined}
                       className={`min-w-[28px] h-7 px-2 text-[12px] rounded border transition-colors cursor-pointer ${
                         safePage === p
@@ -428,13 +461,11 @@ export default function ResourceTable({
                   )
                 )}
               </div>
-
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={safePage === totalPages}
-                aria-label="Go to next page"
-                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
               >
                 Next ›
               </button>

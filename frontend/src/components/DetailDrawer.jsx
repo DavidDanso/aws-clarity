@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef } from "react";
-import { CATEGORY_BADGE, RESOURCE_TYPE_LABELS, STATUS_COLOR } from "../utils/constants";
+import {
+  CATEGORY_BADGE,
+  RESOURCE_SERVICE_MAP,
+  RESOURCE_TYPE_LABELS,
+  STATUS_COLOR,
+} from "../utils/constants";
 
 const SEVERITY_STYLE = {
   CRITICAL: {
@@ -12,7 +17,7 @@ const SEVERITY_STYLE = {
     border: "border-amber-500/30",
     left:   "border-l-amber-500",
   },
-  ORPHANED: {
+  UNUSED: {
     badge:  "text-sky-300 bg-sky-500/10 border border-sky-500/20",
     border: "border-sky-500/30",
     left:   "border-l-sky-500",
@@ -44,41 +49,10 @@ function formatLastChecked(ts) {
 }
 
 function getDisplayedStatus(resource) {
-  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "ASSESSED") {
-    return "NOT_ASSESSED";
+  if (resource?.status === "HEALTHY" && resource?.assessment?.status !== "COMPLETE") {
+    return "INCOMPLETE";
   }
-  return resource?.status || "NOT_ASSESSED";
-}
-
-function normalizeIssue(issue) {
-  if (typeof issue === "string") {
-    return {
-      rule_id: null,
-      severity: "WARNING",
-      title: issue,
-      what_found: issue,
-      why: "Unused or misconfigured cloud resources increase security exposure or ongoing costs.",
-      what_checked: "Inspected AWS resource configuration.",
-      evidence: null,
-      fix: "Review whether this resource is still needed and align its configuration with least-privilege best practices.",
-      category: "Security",
-      source: "AWS API configuration",
-    };
-  }
-
-  return {
-    rule_id: issue.rule_id || null,
-    severity: issue.severity || "WARNING",
-    title: issue.title || issue.message || "Finding detected",
-    what_found: issue.what_found || issue.title || issue.message,
-    why: issue.why || null,
-    what_checked: issue.what_checked || (issue.rule_id ? `Evaluated deterministic rule ${issue.rule_id}.` : "Inspected AWS configuration."),
-    evidence: issue.evidence && typeof issue.evidence === "object" && Object.keys(issue.evidence).length > 0 ? issue.evidence : null,
-    fix: issue.fix || "Review the observed configuration and update it to match your security and cost requirements.",
-    category: issue.category || "Security",
-    source: issue.source || "AWS API configuration",
-    scanned_at: issue.scanned_at || null,
-  };
+  return resource?.status || "INCOMPLETE";
 }
 
 export default function DetailDrawer({ resource, onClose, scannedAt, history, previousScannedAt }) {
@@ -92,7 +66,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 1800);
     } catch {
-      // Ignore clipboard permission errors
+      // Ignore clipboard failures
     }
   };
 
@@ -110,12 +84,11 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
-  if (!resource || typeof resource !== "object") {
-    return null;
-  }
+  if (!resource || typeof resource !== "object") return null;
 
   const raw = resource.raw || {};
   const rawEntries = Object.entries(raw).filter(([key]) => !RAW_SKIP_KEYS.includes(key));
+  const serviceName = resource.service || RESOURCE_SERVICE_MAP[resource.type] || "";
 
   const relatedItems = [];
   if (raw.vpc_id) relatedItems.push({ label: "VPC", value: raw.vpc_id });
@@ -136,15 +109,15 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
   if (raw.role) relatedItems.push({ label: "Execution IAM Role", value: raw.role });
   if (raw.elastic_ip) relatedItems.push({ label: "Elastic IP", value: raw.elastic_ip });
   if (raw.db_subnet_group_name) relatedItems.push({ label: "DB Subnet Group", value: raw.db_subnet_group_name });
+  if (raw.s3_bucket_name) relatedItems.push({ label: "Target S3 Bucket", value: raw.s3_bucket_name });
   if (raw.public_ip) relatedItems.push({ label: "Public IP", value: raw.public_ip });
   if (raw.private_ip) relatedItems.push({ label: "Private IP", value: raw.private_ip });
 
   const resolvedScannedAt = resource.scanned_at || scannedAt;
   const displayedStatus = getDisplayedStatus(resource);
-  const assessment = resource.assessment;
-  const checks = Array.isArray(assessment?.checks) ? assessment.checks : [];
+  const checks = Array.isArray(resource.assessment?.checks) ? resource.assessment.checks : [];
   const passedChecks = checks.filter((c) => c?.status === "PASSED");
-  const unassessedChecks = checks.filter((c) => c?.status === "NOT_ASSESSED");
+  const failedChecks = checks.filter((c) => c?.status === "CHECK_FAILED");
 
   return (
     <div
@@ -155,12 +128,16 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     >
       <div
         ref={drawerRef}
-        className="absolute right-0 top-0 h-full w-full sm:w-[480px] md:w-[560px] bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in"
+        className="absolute right-0 top-0 h-full w-full sm:w-[500px] md:w-[580px] bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in"
       >
         {/* Header */}
         <div className="flex items-start justify-between p-4 sm:p-6 border-b border-slate-700/50">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap mb-1">
+              <span className="text-[11px] font-semibold text-teal-400 uppercase tracking-wider">
+                {serviceName}
+              </span>
+              <span className="text-slate-600">·</span>
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
               </span>
@@ -198,20 +175,20 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
           {/* Context Strip */}
           <div className="flex items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-lg p-3">
             <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Region</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">AWS Region</span>
               <span className="font-mono text-slate-200">{resource.region || "global"}</span>
             </div>
             <div className="text-right">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Checked</span>
+              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Inspected</span>
               <span className="font-mono text-slate-200">{formatLastChecked(resolvedScannedAt)}</span>
             </div>
           </div>
 
-          {/* Resource History & Recent Changes (only shown when previous scan exists) */}
+          {/* Comparative Scan History */}
           {history && history.hasHistory && (
             <div>
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">
-                Changes Since Previous Scan
+                Verification Since Previous Scan
               </h3>
               <div className="bg-slate-950/60 rounded-xl border border-slate-800/80 p-3.5 space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-800/60">
@@ -245,7 +222,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 {history.resolvedIssues?.length > 0 && (
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold uppercase text-emerald-400 tracking-wider block">
-                      Resolved ({history.resolvedIssues.length})
+                      Verified Resolved ({history.resolvedIssues.length})
                     </span>
                     {history.resolvedIssues.map((item, idx) => (
                       <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-emerald-950/30 text-emerald-300">
@@ -272,11 +249,9 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                   </div>
                 )}
 
-                {!history.isNew &&
-                  !history.resolvedIssues?.length &&
-                  !history.newIssues?.length && (
-                    <p className="text-slate-500 italic">No finding changes since the previous scan.</p>
-                  )}
+                {!history.isNew && !history.resolvedIssues?.length && !history.newIssues?.length && (
+                  <p className="text-slate-500 italic">No finding changes since the previous scan.</p>
+                )}
               </div>
             </div>
           )}
@@ -290,54 +265,45 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
               <span className="text-[11px] text-slate-500">Deterministic rule evaluation</span>
             </div>
 
-            {(displayedStatus === "NOT_ASSESSED" || unassessedChecks.length > 0 || !assessment) && (
-              <div className="mb-3 rounded-lg border border-slate-700/70 bg-slate-950/50 px-3 py-2.5 text-xs text-slate-400">
-                <p className="font-medium text-slate-300">
-                  {displayedStatus === "NOT_ASSESSED"
-                    ? "This resource could not be fully assessed."
-                    : "Some checks could not be completed."}
+            {failedChecks.length > 0 && (
+              <div className="mb-3 rounded-lg border border-orange-500/30 bg-orange-950/20 px-3 py-2.5 text-xs text-orange-200">
+                <p className="font-semibold text-orange-300">
+                  Incomplete Assessment ({failedChecks.length} check{failedChecks.length === 1 ? "" : "s"} blocked)
                 </p>
-                {assessment?.reason && <p className="mt-1">{assessment.reason}</p>}
-                {unassessedChecks.length > 0 && (
-                  <ul className="mt-1 list-disc pl-4 space-y-0.5">
-                    {unassessedChecks.map((check, idx) => (
-                      <li key={`${check.rule_id || "check"}-${idx}`}>
-                        {check.rule_id ? `${check.rule_id}: ` : ""}
-                        {check.reason || "Required configuration evidence was unavailable."}
-                      </li>
-                    ))}
-                  </ul>
-                )}
+                <p className="text-[11px] text-orange-200/80 mt-0.5">
+                  This resource cannot be marked Healthy until all applicable checks run cleanly:
+                </p>
+                <ul className="mt-1.5 list-disc pl-4 space-y-0.5 text-[11px]">
+                  {failedChecks.map((chk, idx) => (
+                    <li key={`${chk.rule_id}-${idx}`}>
+                      <span className="font-mono font-semibold">{chk.rule_id}:</span> {chk.reason}
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
             {!resource.issues || resource.issues.length === 0 ? (
-              displayedStatus === "NOT_ASSESSED" ? (
-                <div className="rounded-xl border border-slate-600/30 bg-slate-800/20 p-4 flex items-center gap-3 text-sm text-slate-400">
-                  <div>
-                    <p className="font-medium text-slate-300">Not fully assessed</p>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      AWS Clarity discovered this resource, but missing permissions or attributes prevented completing all checks.
-                    </p>
-                  </div>
-                </div>
-              ) : (
+              displayedStatus === "HEALTHY" ? (
                 <div className="rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4 flex items-center gap-3 text-sm text-emerald-400">
                   <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                   <div>
-                    <p className="font-medium text-emerald-300">No issues detected</p>
+                    <p className="font-medium text-emerald-300">Verified Healthy</p>
                     <p className="text-xs text-emerald-500 mt-0.5">
-                      All {passedChecks.length} applicable check{passedChecks.length === 1 ? "" : "s"} ran and passed.
+                      All {passedChecks.length} applicable check{passedChecks.length === 1 ? "" : "s"} executed and passed.
                     </p>
                   </div>
+                </div>
+              ) : (
+                <div className="rounded-xl border border-orange-500/25 bg-orange-950/10 p-4 text-xs text-orange-200">
+                  No findings were triggered by the checks that ran, but one or more checks failed due to missing permissions or API errors (listed above).
                 </div>
               )
             ) : (
               <div className="space-y-4">
-                {resource.issues.map((rawIssue, idx) => {
-                  const issue = normalizeIssue(rawIssue);
+                {resource.issues.map((issue, idx) => {
                   const style = SEVERITY_STYLE[issue.severity] || SEVERITY_STYLE.WARNING;
                   const evidenceEntries = issue.evidence ? Object.entries(issue.evidence) : [];
                   const copyId = `fix-${idx}`;
@@ -366,12 +332,18 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                       </div>
 
                       <div className="p-4 space-y-3 text-xs">
+                        {/* Actual Problem */}
                         <h4 className="text-sm font-semibold text-slate-100 leading-snug">{issue.title}</h4>
+
+                        {/* Affected Resource */}
+                        <div className="text-[11px] font-mono text-slate-400 bg-slate-950/50 px-2.5 py-1.5 rounded border border-slate-800/60">
+                          Affected: <span className="text-slate-200">{resource.name}</span> ({resource.id} · {resource.region || "global"})
+                        </div>
 
                         {issue.what_found && (
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                              What We Found
+                              Problem Details
                             </span>
                             <p className="text-slate-200 leading-relaxed bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/70">
                               {issue.what_found}
@@ -391,7 +363,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                         {evidenceEntries.length > 0 && (
                           <div>
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                              Observed Evidence
+                              Supporting AWS Evidence
                             </span>
                             <div className="rounded-lg bg-slate-950 border border-slate-800/80 divide-y divide-slate-800/60 overflow-hidden font-mono text-[11px]">
                               {evidenceEntries.map(([k, v]) => (
@@ -410,14 +382,14 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                           <div className="pt-1">
                             <div className="flex items-center justify-between mb-1">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400">
-                                Recommended Fix
+                                How to Resolve (Manual in AWS)
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleCopy(copyId, issue.fix)}
                                 className="text-[10px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
                               >
-                                {copiedKey === copyId ? "Copied ✓" : "Copy guidance"}
+                                {copiedKey === copyId ? "Copied ✓" : "Copy steps"}
                               </button>
                             </div>
                             <div className="p-3 rounded-lg bg-teal-950/20 border border-teal-500/20 text-teal-200 leading-relaxed text-[12px]">
@@ -426,9 +398,18 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                           </div>
                         )}
 
-                        <p className="text-[10px] text-slate-500">
-                          Checked: {issue.what_checked}
-                        </p>
+                        {issue.verify && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">
+                              How to Verify the Fix
+                            </span>
+                            <div className="p-2.5 rounded-lg bg-emerald-950/15 border border-emerald-500/20 text-emerald-200/90 leading-relaxed text-[11px]">
+                              {issue.verify}
+                            </div>
+                          </div>
+                        )}
+
+                        <p className="text-[10px] text-slate-500">Checked: {issue.what_checked}</p>
                       </div>
                     </div>
                   );
@@ -436,11 +417,10 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
               </div>
             )}
 
-            {/* Verified Passed Checks */}
             {passedChecks.length > 0 && (
               <div className="mt-4 pt-3 border-t border-slate-800/60">
                 <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
-                  Verified Passing Rules ({passedChecks.length})
+                  Verified Passing Checks ({passedChecks.length})
                 </p>
                 <div className="flex flex-wrap gap-1.5">
                   {passedChecks.map((c) => (
@@ -456,7 +436,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
             )}
           </div>
 
-          {/* Related Resources */}
+          {/* Related Infrastructure */}
           {relatedItems.length > 0 && (
             <div>
               <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
@@ -481,7 +461,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 onClick={() => setRawExpanded((prev) => !prev)}
                 className="flex items-center justify-between w-full text-left text-xs font-semibold text-slate-400 hover:text-slate-300 py-1 cursor-pointer bg-transparent border-none"
               >
-                <span>Raw Configuration Attributes ({rawEntries.length})</span>
+                <span>Raw AWS Configuration Attributes ({rawEntries.length})</span>
                 <span className="font-mono text-slate-500">{rawExpanded ? "▲ Hide" : "▼ Show"}</span>
               </button>
 
