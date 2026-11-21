@@ -73,7 +73,7 @@ jobs:
       - name: Rebuilding Lambda Package
         run: |
           echo "🔨 Rebuilding Lambda package..."
-          rm -rf backend/lambda_package
+          rm -rf backend/lambda_package infra/lambda.zip
           mkdir backend/lambda_package
           pip install -r backend/requirements.txt -t backend/lambda_package/
           cp backend/lambda_handler.py backend/lambda_package/

@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import re
 import secrets
+import threading
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -14,11 +15,49 @@ DEFAULT_EXTERNAL_ID = "aws-clarity-scan"
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 SCAN_BOTO_CONFIG = Config(
-    connect_timeout=5,
-    read_timeout=15,
-    max_pool_connections=25,
+    connect_timeout=3,
+    read_timeout=8,
+    max_pool_connections=32,
     retries={"max_attempts": 2, "mode": "standard"},
 )
+
+
+class CachedSession:
+    """Thread-safe boto3.Session wrapper that caches clients by (service, region)
+    and enforces fast connect/read timeouts on every scanner call.
+
+    Prevents constructing duplicate heavy botocore clients (e.g. EC2 built 8x per
+    region across 30+ regions) and avoids non-thread-safe client initialization.
+    """
+
+    def __init__(self, session: boto3.Session, config: Config = SCAN_BOTO_CONFIG):
+        self._session = session
+        self._config = config
+        self._lock = threading.Lock()
+        self._clients: dict[tuple[str, str | None], object] = {}
+
+    def client(self, service_name: str, region_name: str | None = None, config: Config | None = None, **kwargs):
+        if kwargs:
+            return self._session.client(
+                service_name,
+                region_name=region_name,
+                config=config or self._config,
+                **kwargs,
+            )
+        key = (service_name, region_name)
+        cached = self._clients.get(key)
+        if cached is not None:
+            return cached
+        with self._lock:
+            cached = self._clients.get(key)
+            if cached is None:
+                cached = self._session.client(
+                    service_name,
+                    region_name=region_name,
+                    config=config or self._config,
+                )
+                self._clients[key] = cached
+            return cached
 
 
 def validate_role_arn(role_arn: str) -> str:
@@ -58,11 +97,7 @@ def verify_scan_token(provided_token: str | None, expected_hash: str | None) -> 
 
 
 def sanitize_metadata_text(value: str | None, max_length: int = 256) -> str:
-    """Strip control characters and bound length for untrusted AWS resource metadata.
-
-    Protects downstream UI rendering and any future explanation pipelines from
-    malformed strings or prompt-injection payloads embedded in AWS tags/names.
-    """
+    """Strip control characters and bound length for untrusted AWS resource metadata."""
     if value is None:
         return ""
     cleaned = CONTROL_CHARS_RE.sub("", str(value)).strip()

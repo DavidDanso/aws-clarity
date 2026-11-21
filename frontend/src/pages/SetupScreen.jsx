@@ -242,6 +242,16 @@ export default function SetupScreen({
                 <button
                   type="button"
                   onClick={() => {
+                    setExternalId("aws-clarity-scan");
+                    setVerifyData(null);
+                  }}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 font-medium cursor-pointer bg-transparent border-none p-0"
+                >
+                  Use default
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
                     setExternalId(generateExternalId());
                     setVerifyData(null);
                   }}

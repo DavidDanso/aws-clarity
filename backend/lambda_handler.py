@@ -10,6 +10,7 @@ import boto3
 from botocore.exceptions import ClientError
 
 from utils import (
+    CachedSession,
     SCAN_BOTO_CONFIG,
     assume_role,
     generate_scan_token,
@@ -303,15 +304,17 @@ def _collect_assessment_errors(result: list[dict]) -> list[tuple[str, str]]:
 
 
 def run_scan(role_arn: str, regions=None, external_id: str | None = None) -> dict:
+    scan_started = time.monotonic()
+    collection_deadline = scan_started + 85.0  # Leave generous margin inside 120s Lambda timeout
+
     validated_arn = validate_role_arn(role_arn)
     validated_ext_id = validate_external_id(external_id)
-    session = assume_role(validated_arn, external_id=validated_ext_id)
+    raw_session = assume_role(validated_arn, external_id=validated_ext_id)
+    session = CachedSession(raw_session)
 
-    identity = session.client("sts", config=SCAN_BOTO_CONFIG).get_caller_identity()
+    identity = session.client("sts", region_name="us-east-1").get_caller_identity()
     account_id = identity["Account"]
     caller_arn = identity.get("Arn", "")
-
-    permission_checks = validate_permissions(session)
 
     # Discover ALL enabled AWS regions unless caller explicitly passed a custom region list
     scan_all_regions = regions is None or regions == "all" or regions == ["all"]
@@ -355,22 +358,36 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None) -> dic
             "required_permission": "ec2:DescribeRegions",
         })
 
-    tasks = [
-        (key, fn, region)
-        for key, fn in regional_scanners.items()
-        for region in target_regions
-    ]
+    # Pre-warm one client per regional service once so botocore service JSON models
+    # are loaded on the main thread before fanning out across worker threads.
+    for svc_name in ("ec2", "lambda", "rds", "dynamodb", "cloudwatch", "logs", "cloudtrail", "s3", "iam"):
+        try:
+            session.client(svc_name, region_name="us-east-1" if svc_name not in ("s3", "iam") else None)
+        except Exception:
+            pass
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
-        future_to_task = {
-            executor.submit(fn, session, region): (key, region)
-            for key, fn, region in tasks
-        }
-        for future in concurrent.futures.as_completed(future_to_task):
+    # Submit ALL regional + global collectors together in one thread pool with a hard deadline
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=64)
+    future_to_task = {}
+    for region in target_regions:
+        for key, fn in regional_scanners.items():
+            future_to_task[executor.submit(fn, session, region)] = (key, region)
+
+    future_to_task[executor.submit(iam.scan_roles, session)] = ("iam_roles", "global")
+    future_to_task[executor.submit(iam.scan_users, session)] = ("iam_users", "global")
+    future_to_task[
+        executor.submit(s3.scan, session, None if scan_all_regions else target_regions)
+    ] = ("s3_buckets", "global")
+
+    try:
+        remaining = max(1.0, collection_deadline - time.monotonic())
+        done, not_done = concurrent.futures.wait(future_to_task.keys(), timeout=remaining)
+
+        for future in done:
             key, region = future_to_task[future]
             meta = SCANNER_METADATA[key]
             try:
-                result = future.result(timeout=25)
+                result = future.result()
                 resources[key].extend(result)
                 assessment_errors = _collect_assessment_errors(result)
                 if assessment_errors:
@@ -385,16 +402,6 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None) -> dic
                     })
                 else:
                     scanner_statuses.append(_scanner_status_entry(key, region, "COMPLETED", len(result)))
-            except concurrent.futures.TimeoutError:
-                reason = "Collector timed out after 25s"
-                scanner_statuses.append(_scanner_status_entry(key, region, "TIMED_OUT", 0, reason))
-                coverage_failures.append({
-                    "service": meta["service"],
-                    "label": meta["label"],
-                    "region": region,
-                    "reason": reason,
-                    "required_permission": meta["permission"],
-                })
             except ScannerError as e:
                 resources[key].extend(e.resources)
                 state = "INCOMPLETE" if e.resources else "FAILED"
@@ -416,50 +423,34 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None) -> dic
                     "required_permission": meta["permission"],
                 })
 
-    # Global collectors: IAM Roles, IAM Users, S3 Buckets
-    global_tasks = [
-        ("iam_roles", lambda: iam.scan_roles(session)),
-        ("iam_users", lambda: iam.scan_users(session)),
-        ("s3_buckets", lambda: s3.scan(session, selected_regions=None if scan_all_regions else target_regions)),
-    ]
-    for key, fn in global_tasks:
-        meta = SCANNER_METADATA[key]
-        try:
-            result = fn()
-            resources[key] = result
-            errors = _collect_assessment_errors(result)
-            if errors:
-                reason = "; ".join(f"{name}: {msg}" for name, msg in errors[:5])
-                scanner_statuses.append(_scanner_status_entry(key, "global", "INCOMPLETE", len(result), reason))
-                coverage_failures.append({
-                    "service": meta["service"],
-                    "label": meta["label"],
-                    "region": "global",
-                    "reason": reason,
-                    "required_permission": meta["permission"],
-                })
-            else:
-                scanner_statuses.append(_scanner_status_entry(key, "global", "COMPLETED", len(result)))
-        except ScannerError as e:
-            resources[key] = e.resources
-            state = "INCOMPLETE" if e.resources else "FAILED"
-            scanner_statuses.append(_scanner_status_entry(key, "global", state, len(e.resources), str(e)))
+        for future in not_done:
+            future.cancel()
+            key, region = future_to_task[future]
+            meta = SCANNER_METADATA[key]
+            reason = "Collector exceeded scan time budget"
+            scanner_statuses.append(_scanner_status_entry(key, region, "TIMED_OUT", 0, reason))
             coverage_failures.append({
                 "service": meta["service"],
                 "label": meta["label"],
-                "region": "global",
-                "reason": str(e),
+                "region": region,
+                "reason": reason,
                 "required_permission": meta["permission"],
             })
-        except Exception as e:
-            scanner_statuses.append(_scanner_status_entry(key, "global", "FAILED", 0, str(e)))
-            coverage_failures.append({
-                "service": meta["service"],
-                "label": meta["label"],
-                "region": "global",
-                "reason": str(e),
-                "required_permission": meta["permission"],
-            })
+    finally:
+        # Don't block Lambda exit waiting for any hung socket thread past deadline
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    # Derive permission_checks summary from actual collector outcomes (avoids 10 extra sequential API calls)
+    permission_checks = {}
+    for svc_name, spec in CORE_PERMISSIONS.items():
+        svc_failures = [f for f in coverage_failures if f.get("service") == svc_name]
+        permission_checks[svc_name] = {
+            "service": svc_name,
+            "status": "MISSING" if svc_failures else "PASSED",
+            "required_permission": spec["action"],
+            "capability": spec["capability"],
+            **({"message": svc_failures[0]["reason"]} if svc_failures else {}),
+        }
 
     # Deduplicate every resource group by canonical AWS identifier
     for key in list(resources.keys()):
