@@ -2,27 +2,49 @@ const API_URL = import.meta.env.VITE_API_URL;
 
 export const ERROR_MESSAGES = {
   INVALID_ROLE_ARN: "The Role ARN format is invalid. Expected: arn:aws:iam::123456789012:role/RoleName",
-  ASSUME_ROLE_FAILED: "Could not assume the provided role. Verify the trust policy is correctly configured.",
+  ASSUME_ROLE_FAILED: "Could not assume the provided role. Verify the trust policy, App Account ID, and External ID.",
   PERMISSION_DENIED: "The role was assumed but lacks required read permissions.",
   INTERNAL_ERROR: "An unexpected error occurred on the server. Please try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your internet connection and try again.",
   NO_REGIONS_SELECTED: "Please select at least one region to scan.",
   INVALID_REGION: "One or more selected regions are not supported.",
+  TIMEOUT: "The scan took longer than expected to respond. Try scanning a single region or re-running the scan.",
 };
 
 const POLL_INTERVAL_MS = 2000;
-const MAX_POLL_ATTEMPTS = 45; // 45 * 2s = 90s ceiling, well past typical scan time
+const MAX_POLL_ATTEMPTS = 50; // 50 * 2s = 100s ceiling
 
-export async function startScan(roleArn, regions = ["us-east-1"]) {
-  const response = await fetch(`${API_URL}/scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role_arn: roleArn, regions }),
-  });
+async function parseJsonSafe(response) {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
 
-  const data = await response.json();
+export async function startScan(roleArn, regions = ["us-east-1"], externalId = "") {
+  let response;
+  try {
+    response = await fetch(`${API_URL}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role_arn: roleArn,
+        regions,
+        ...(externalId ? { external_id: externalId } : {}),
+      }),
+    });
+  } catch {
+    const err = new Error(ERROR_MESSAGES.NETWORK_ERROR);
+    err.code = "NETWORK_ERROR";
+    throw err;
+  }
+
+  const data = await parseJsonSafe(response);
   if (!response.ok || data.status === "error") {
-    const error = new Error(data.message || ERROR_MESSAGES.UNKNOWN || "Unknown error");
+    const error = new Error(
+      data.message || ERROR_MESSAGES[data.error_code] || ERROR_MESSAGES.INTERNAL_ERROR
+    );
     error.code = data.error_code || "UNKNOWN_ERROR";
     throw error;
   }
@@ -32,51 +54,70 @@ export async function startScan(roleArn, regions = ["us-east-1"]) {
 
 export async function pollScanStatus(scanId, onProgress) {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    const response = await fetch(`${API_URL}/scan/${scanId}/status`);
-    const data = await response.json();
+    let response;
+    try {
+      response = await fetch(`${API_URL}/scan/${encodeURIComponent(scanId)}/status`);
+    } catch {
+      const err = new Error(ERROR_MESSAGES.NETWORK_ERROR);
+      err.code = "NETWORK_ERROR";
+      throw err;
+    }
 
+    const data = await parseJsonSafe(response);
     if (!response.ok) {
-      throw new Error("Failed to fetch scan status");
+      throw new Error(data.message || "Failed to fetch scan status.");
     }
 
     if (typeof onProgress === "function") {
-      onProgress(data.status); // Inform the UI
+      onProgress(data.status);
     }
 
     if (data.status === "COMPLETE") {
-      return data; // The full payload is already flat — no nested "result" key
+      return data;
     }
 
     if (data.status === "FAILED") {
-      const error = new Error(data.message || "Unknown error");
+      const error = new Error(
+        data.message || ERROR_MESSAGES[data.error_code] || ERROR_MESSAGES.INTERNAL_ERROR
+      );
       error.code = data.error_code || "UNKNOWN_ERROR";
       throw error;
     }
 
-    // If PENDING or RUNNING, wait and try again
-    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
 
-  throw new Error(ERROR_MESSAGES.TIMEOUT || "The scan timed out");
+  throw new Error(ERROR_MESSAGES.TIMEOUT);
 }
 
-// Keep this wrapper signature the same so the UI doesn't break,
-// but add the new onProgress callback
-export async function scanAccount(roleArn, regions = ["us-east-1"], onProgress) {
-  const scanId = await startScan(roleArn, regions);
+export async function scanAccount(roleArn, regions = ["us-east-1"], onProgress, externalId = "") {
+  const scanId = await startScan(roleArn, regions, externalId);
   return await pollScanStatus(scanId, onProgress);
 }
 
-export async function checkPermissions(roleArn) {
-  const response = await fetch(`${API_URL}/scan`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ role_arn: roleArn, action: "precheck" }),
-  });
+export async function checkPermissions(roleArn, externalId = "") {
+  let response;
+  try {
+    response = await fetch(`${API_URL}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role_arn: roleArn,
+        action: "precheck",
+        ...(externalId ? { external_id: externalId } : {}),
+      }),
+    });
+  } catch {
+    const err = new Error(ERROR_MESSAGES.NETWORK_ERROR);
+    err.code = "NETWORK_ERROR";
+    throw err;
+  }
 
-  const data = await response.json();
+  const data = await parseJsonSafe(response);
   if (!response.ok || data.status === "error") {
-    const error = new Error(data.message || ERROR_MESSAGES.UNKNOWN || "Precheck failed");
+    const error = new Error(
+      data.message || ERROR_MESSAGES[data.error_code] || "Permission pre-check failed."
+    );
     error.code = data.error_code || "UNKNOWN_ERROR";
     throw error;
   }

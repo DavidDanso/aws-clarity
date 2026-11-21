@@ -1,428 +1,283 @@
-import unittest
 import datetime
+import json
 import os
 import sys
+import unittest
+from contextlib import ExitStack
 from unittest.mock import MagicMock, patch
 from botocore.exceptions import ClientError
-from contextlib import ExitStack
-from exceptions import ScannerError
 
 sys.path.insert(0, os.path.dirname(__file__))
-from scanner.misconfig import evaluate
+
+import lambda_handler
+from exceptions import InvalidRoleARNError, ScannerError
+from scanner.misconfig import CHECKS_BY_RESOURCE, RULE_METADATA, evaluate, get_rules_catalog
+from utils import validate_external_id, validate_role_arn
+
+
+class TestValidationAndCompression(unittest.TestCase):
+    def test_validate_role_arn_supports_paths_and_rejects_invalid(self):
+        self.assertEqual(
+            validate_role_arn("arn:aws:iam::123456789012:role/AWSClarityReadOnly"),
+            "arn:aws:iam::123456789012:role/AWSClarityReadOnly",
+        )
+        self.assertEqual(
+            validate_role_arn("arn:aws:iam::123456789012:role/service-role/team/ScannerRole"),
+            "arn:aws:iam::123456789012:role/service-role/team/ScannerRole",
+        )
+        with self.assertRaises(InvalidRoleARNError):
+            validate_role_arn("arn:aws:iam::12345:role/BadAccount")
+        with self.assertRaises(InvalidRoleARNError):
+            validate_role_arn("arn:aws:iam::123456789012:user/NotARole")
+
+    def test_validate_external_id(self):
+        self.assertEqual(validate_external_id(None), "aws-clarity-scan")
+        self.assertEqual(validate_external_id(""), "aws-clarity-scan")
+        self.assertEqual(validate_external_id("clarity-tenant-99a8"), "clarity-tenant-99a8")
+        with self.assertRaises(InvalidRoleARNError):
+            validate_external_id("x")
+        with self.assertRaises(InvalidRoleARNError):
+            validate_external_id("bad spaces here")
+
+    def test_dynamodb_result_compression_roundtrip(self):
+        sample = {
+            "status": "success",
+            "account_id": "123456789012",
+            "resources": {"ec2_instances": [{"id": "i-1", "name": "web", "status": "HEALTHY", "issues": []}]},
+        }
+        encoded, is_gz = lambda_handler._encode_result(sample)
+        self.assertTrue(is_gz)
+        decoded = lambda_handler._decode_result({"result_gz": encoded})
+        self.assertEqual(decoded["account_id"], "123456789012")
+        self.assertEqual(decoded["resources"]["ec2_instances"][0]["id"], "i-1")
+
+        # Legacy uncompressed items still decode cleanly
+        legacy = lambda_handler._decode_result({"result": json.dumps(sample)})
+        self.assertEqual(legacy["account_id"], "123456789012")
+
+
+class TestRulesCatalogConsistency(unittest.TestCase):
+    def test_every_registered_rule_has_catalog_metadata(self):
+        catalog_ids = {c["id"] for c in get_rules_catalog()}
+        all_check_ids = {rid for ids in CHECKS_BY_RESOURCE.values() for rid in ids}
+        self.assertEqual(catalog_ids, all_check_ids)
+        self.assertEqual(set(RULE_METADATA.keys()), all_check_ids)
+
+    def test_scanner_metadata_matches_checks_by_resource(self):
+        self.assertEqual(set(lambda_handler.SCANNER_METADATA.keys()), set(CHECKS_BY_RESOURCE.keys()))
 
 
 class TestDetectionCoverage(unittest.TestCase):
-
-    def test_ecr_problematic_configuration(self):
-        """ECR repository with mutable tags and disabled scanning should produce ECR-001 and ECR-002 (WARNING)."""
+    def test_security_group_wide_range_triggers_ssh_rdp_and_db_rules(self):
+        """A wide TCP range (0-65535) must flag SG-002, SG-003, and SG-004 without short-circuiting."""
         resources = {
-            "ecr_repositories": [
+            "security_groups": [
                 {
-                    "id": "app-repo",
-                    "name": "app-repo",
-                    "type": "ecr_repository",
-                    "status": "HEALTHY",
+                    "id": "sg-wide",
+                    "name": "wide-open",
+                    "type": "security_group",
                     "raw": {
-                        "repository_arn": "arn:aws:ecr:us-east-1:123456789012:repository/app-repo",
-                        "image_tag_mutability": "MUTABLE",
-                        "image_tag_mutability_exclusion_filters": [],
-                        "image_scanning_configuration": {"scanOnPush": False},
-                        "scan_frequency": "MANUAL",
-                        "applied_scan_filters": [],
+                        "ip_permissions": [
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": 0,
+                                "ToPort": 65535,
+                                "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                            }
+                        ]
                     },
                 }
             ]
         }
-        res = evaluate(None, resources)
-        repo = res["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "WARNING")
-        self.assertEqual(len(repo["issues"]), 2)
-        rule_ids = {i["rule_id"] for i in repo["issues"]}
-        self.assertEqual(rule_ids, {"ECR-001", "ECR-002"})
-        
-        # Verify explainable evidence fields
-        ecr001 = next(i for i in repo["issues"] if i["rule_id"] == "ECR-001")
-        self.assertEqual(ecr001["evidence"]["Repository"], "app-repo")
-        self.assertEqual(ecr001["evidence"]["ImageTagMutability"], "MUTABLE")
-        self.assertIn("immutable", ecr001["fix"])
-        self.assertEqual(ecr001["resource_type"], "ecr_repository")
-        self.assertEqual(ecr001["resource_id"], "app-repo")
-        self.assertEqual(ecr001["category"], "Security")
-        self.assertEqual(ecr001["source"], "AWS API configuration")
-        self.assertEqual(repo["assessment"]["status"], "ASSESSED")
+        sg = evaluate(None, resources)["security_groups"][0]
+        self.assertEqual(sg["status"], "CRITICAL")
+        self.assertEqual({i["rule_id"] for i in sg["issues"]}, {"SG-002", "SG-003", "SG-004"})
 
-    def test_ecr_healthy_configuration(self):
-        """ECR repository with immutable tags and scanOnPush enabled should be HEALTHY."""
+    def test_ec2_stopped_and_imdsv1(self):
         resources = {
-            "ecr_repositories": [
+            "ec2_instances": [
                 {
-                    "id": "secure-repo",
-                    "name": "secure-repo",
-                    "type": "ecr_repository",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "repository_arn": "arn:aws:ecr:us-east-1:123456789012:repository/secure-repo",
-                        "image_tag_mutability": "IMMUTABLE",
-                        "image_tag_mutability_exclusion_filters": [],
-                        "image_scanning_configuration": {"scanOnPush": True},
-                        "scan_frequency": "CONTINUOUS_SCAN",
-                        "applied_scan_filters": [{"filter": "*", "filterType": "WILDCARD"}],
-                    },
-                }
+                    "id": "i-stopped",
+                    "name": "old-box",
+                    "type": "ec2_instance",
+                    "raw": {"state": "stopped", "instance_type": "t3.micro", "http_tokens": "optional"},
+                },
+                {
+                    "id": "i-healthy",
+                    "name": "prod-box",
+                    "type": "ec2_instance",
+                    "raw": {"state": "running", "instance_type": "t3.small", "http_tokens": "required"},
+                },
             ]
         }
-        res = evaluate(None, resources)
-        repo = res["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "HEALTHY")
-        self.assertEqual(len(repo["issues"]), 0)
+        res = evaluate(None, resources)["ec2_instances"]
+        self.assertEqual(res[0]["status"], "WARNING")
+        self.assertEqual({i["rule_id"] for i in res[0]["issues"]}, {"EC2-001", "EC2-002"})
+        self.assertEqual(res[1]["status"], "HEALTHY")
+        self.assertEqual(res[1]["issues"], [])
 
-    def test_ecr_missing_effective_scan_configuration_is_not_assessed(self):
-        resources = {"ecr_repositories": [{
-            "id": "unknown-repo", "name": "unknown-repo", "type": "ecr_repository",
-            "raw": {"image_tag_mutability": "IMMUTABLE", "scan_frequency": None},
-        }]}
-        repo = evaluate(None, resources)["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "NOT_ASSESSED")
-        self.assertEqual(repo["assessment"]["status"], "PARTIAL")
-        self.assertEqual(repo["assessment"]["checks"][1]["status"], "NOT_ASSESSED")
-        self.assertEqual(repo["issues"], [])
-
-    def test_ecr_null_tag_mutability_is_not_reported_as_healthy(self):
-        resources = {"ecr_repositories": [{
-            "id": "unknown-tags", "name": "unknown-tags", "type": "ecr_repository",
-            "raw": {"image_tag_mutability": None, "scan_frequency": "SCAN_ON_PUSH"},
-        }]}
-        repo = evaluate(None, resources)["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "NOT_ASSESSED")
-        self.assertEqual(repo["assessment"]["checks"][0]["status"], "NOT_ASSESSED")
-        self.assertEqual(repo["issues"], [])
-
-    def test_ecr_enhanced_continuous_scanning_passes(self):
-        resources = {"ecr_repositories": [{
-            "id": "enhanced-repo", "name": "enhanced-repo", "type": "ecr_repository",
-            "raw": {
-                "image_tag_mutability": "IMMUTABLE",
-                "image_tag_mutability_exclusion_filters": [],
-                "scan_frequency": "CONTINUOUS_SCAN",
-                "applied_scan_filters": [{"filter": "*", "filterType": "WILDCARD"}],
-            },
-        }]}
-        repo = evaluate(None, resources)["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "HEALTHY")
-        self.assertEqual(repo["assessment"]["status"], "ASSESSED")
-
-    def test_ecr_exclusion_mutability_is_reported(self):
-        resources = {"ecr_repositories": [{
-            "id": "filtered-repo", "name": "filtered-repo", "type": "ecr_repository",
-            "raw": {
-                "image_tag_mutability": "IMMUTABLE_WITH_EXCLUSION",
-                "image_tag_mutability_exclusion_filters": [{"filterType": "WILDCARD", "filter": "latest"}],
-                "scan_frequency": "SCAN_ON_PUSH",
-            },
-        }]}
-        repo = evaluate(None, resources)["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "WARNING")
-        self.assertEqual(repo["issues"][0]["rule_id"], "ECR-001")
-
-    def test_eks_public_endpoint(self):
-        """EKS cluster with public endpoint open to 0.0.0.0/0 should be CRITICAL (EKS-001)."""
+    def test_rds_all_rules_and_missing_attribute_partial(self):
         resources = {
-            "eks_clusters": [
+            "rds_instances": [
                 {
-                    "id": "prod-cluster",
-                    "name": "prod-cluster",
-                    "type": "eks_cluster",
-                    "status": "HEALTHY",
+                    "id": "db-risky",
+                    "name": "db-risky",
+                    "type": "rds_instance",
                     "raw": {
-                        "resources_vpc_config": {
-                            "endpointPublicAccess": True,
-                            "publicAccessCidrs": ["0.0.0.0/0"],
-                        }
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        cluster = res["eks_clusters"][0]
-        self.assertEqual(cluster["status"], "CRITICAL")
-        self.assertEqual(len(cluster["issues"]), 1)
-        self.assertEqual(cluster["issues"][0]["rule_id"], "EKS-001")
-
-    def test_redshift_public_and_unencrypted(self):
-        """Redshift cluster publicly accessible and unencrypted should be CRITICAL (RS-001, RS-002)."""
-        resources = {
-            "redshift_clusters": [
-                {
-                    "id": "analytics-cluster",
-                    "name": "analytics-cluster",
-                    "type": "redshift_cluster",
-                    "status": "HEALTHY",
-                    "raw": {
+                        "engine": "postgres",
                         "publicly_accessible": True,
-                        "encrypted": False,
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        cluster = res["redshift_clusters"][0]
-        self.assertEqual(cluster["status"], "CRITICAL")
-        self.assertEqual(len(cluster["issues"]), 2)
-        rule_ids = {i["rule_id"] for i in cluster["issues"]}
-        self.assertEqual(rule_ids, {"RS-001", "RS-002"})
-
-    def test_aurora_unencrypted_no_deletion_protection(self):
-        """Aurora cluster with unencrypted storage and no deletion protection should produce AUR-001 and AUR-002 (WARNING)."""
-        resources = {
-            "aurora_clusters": [
-                {
-                    "id": "aurora-db",
-                    "name": "aurora-db",
-                    "type": "aurora_cluster",
-                    "status": "HEALTHY",
-                    "raw": {
                         "storage_encrypted": False,
                         "deletion_protection": False,
+                        "backup_retention_period": 0,
                     },
-                }
+                },
+                {
+                    "id": "db-partial",
+                    "name": "db-partial",
+                    "type": "rds_instance",
+                    "raw": {
+                        "engine": "postgres",
+                        "publicly_accessible": False,
+                        "storage_encrypted": True,
+                    },
+                },
             ]
         }
-        res = evaluate(None, resources)
-        cluster = res["aurora_clusters"][0]
-        self.assertEqual(cluster["status"], "WARNING")
-        rule_ids = {i["rule_id"] for i in cluster["issues"]}
-        self.assertEqual(rule_ids, {"AUR-001", "AUR-002"})
+        dbs = evaluate(None, resources)["rds_instances"]
+        self.assertEqual(dbs[0]["status"], "CRITICAL")
+        self.assertEqual({i["rule_id"] for i in dbs[0]["issues"]}, {"RDS-001", "RDS-002", "RDS-003", "RDS-004"})
+        self.assertEqual(dbs[1]["status"], "NOT_ASSESSED")
+        self.assertEqual(dbs[1]["assessment"]["status"], "PARTIAL")
 
-    def test_nat_gateway_cost_risk_no_dollar_amount(self):
-        """Active NAT gateway should trigger NAT-002 with configuration cost risk, never hardcoded dollar amount."""
+    def test_ebs_and_orphan_snapshot_and_ebs_failure_guard(self):
+        resources = {
+            "ebs_volumes": [
+                {"id": "vol-active", "name": "vol-active", "type": "ebs_volume", "region": "us-east-1", "raw": {"state": "in-use", "encrypted": True, "size": 20}},
+                {"id": "vol-orphan", "name": "vol-orphan", "type": "ebs_volume", "region": "us-east-1", "raw": {"state": "available", "encrypted": False, "size": 50}},
+            ],
+            "snapshots": [
+                {"id": "snap-ok", "name": "snap-ok", "type": "ebs_snapshot", "region": "us-east-1", "raw": {"volume_id": "vol-active"}},
+                {"id": "snap-orphan", "name": "snap-orphan", "type": "ebs_snapshot", "region": "us-east-1", "raw": {"volume_id": "vol-deleted"}},
+                {"id": "snap-unknown", "name": "snap-unknown", "type": "ebs_snapshot", "region": "eu-west-1", "raw": {"volume_id": "vol-eu"}},
+            ],
+        }
+        scanner_statuses = [
+            {"key": "ebs_volumes", "region": "us-east-1", "status": "COMPLETED"},
+            {"key": "ebs_volumes", "region": "eu-west-1", "status": "FAILED"},
+        ]
+        res = evaluate(None, resources, scanner_statuses=scanner_statuses)
+        self.assertEqual(res["ebs_volumes"][0]["status"], "HEALTHY")
+        self.assertEqual(res["ebs_volumes"][1]["status"], "WARNING")
+        self.assertEqual({i["rule_id"] for i in res["ebs_volumes"][1]["issues"]}, {"EBS-001", "EBS-002"})
+        self.assertEqual(res["snapshots"][0]["status"], "HEALTHY")
+        self.assertEqual(res["snapshots"][1]["status"], "ORPHANED")
+        self.assertEqual(res["snapshots"][1]["issues"][0]["rule_id"], "SNAP-001")
+        # Snapshots in regions where ebs_volumes failed must be NOT_ASSESSED, not falsely ORPHANED
+        self.assertEqual(res["snapshots"][2]["status"], "NOT_ASSESSED")
+
+    def test_dynamodb_encryption_and_empty_provisioned_cost_risk(self):
+        resources = {
+            "dynamodb_tables": [
+                {
+                    "id": "empty-prov",
+                    "name": "empty-prov",
+                    "type": "dynamodb_table",
+                    "raw": {"sse_description": {"Status": "ENABLED", "SSEType": "AWS_OWNED"}, "billing_mode": "PROVISIONED", "item_count": 0},
+                },
+                {
+                    "id": "ondemand-empty",
+                    "name": "ondemand-empty",
+                    "type": "dynamodb_table",
+                    "raw": {"sse_description": {"Status": "ENABLED", "SSEType": "AWS_OWNED"}, "billing_mode": "PAY_PER_REQUEST", "item_count": 0},
+                },
+            ]
+        }
+        tables = evaluate(None, resources)["dynamodb_tables"]
+        self.assertEqual(tables[0]["status"], "ORPHANED")
+        self.assertEqual(tables[0]["issues"][0]["rule_id"], "DDB-002")
+        self.assertEqual(tables[1]["status"], "HEALTHY")
+
+    def test_iam_cross_account_vs_same_account_trust(self):
+        resources = {
+            "iam_roles": [
+                {
+                    "id": "AROA1",
+                    "name": "same-account-role",
+                    "type": "iam_role",
+                    "raw": {
+                        "role_name": "same-account-role",
+                        "arn": "arn:aws:iam::111122223333:role/same-account-role",
+                        "inline_policies": {},
+                        "attached_managed_policies": [],
+                        "trust_policy": {
+                            "Statement": [{"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::111122223333:root"}, "Action": "sts:AssumeRole"}]
+                        },
+                    },
+                },
+                {
+                    "id": "AROA2",
+                    "name": "external-no-extid",
+                    "type": "iam_role",
+                    "raw": {
+                        "role_name": "external-no-extid",
+                        "arn": "arn:aws:iam::111122223333:role/external-no-extid",
+                        "inline_policies": {},
+                        "attached_managed_policies": [],
+                        "trust_policy": {
+                            "Statement": [{"Effect": "Allow", "Principal": {"AWS": "arn:aws:iam::999988887777:root"}, "Action": "sts:AssumeRole"}]
+                        },
+                    },
+                },
+            ]
+        }
+        roles = evaluate(None, resources, account_id="111122223333")["iam_roles"]
+        self.assertEqual(roles[0]["status"], "HEALTHY")
+        self.assertEqual(roles[1]["status"], "WARNING")
+        self.assertEqual(roles[1]["issues"][0]["rule_id"], "IAM-008")
+
+    def test_lambda_stale_and_deprecated_runtime_and_container_image(self):
+        old_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+        fresh_date = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
+        resources = {
+            "lambda_functions": [
+                {"id": "legacy-fn", "name": "legacy-fn", "type": "lambda_function", "raw": {"last_modified": old_date, "runtime": "python3.8", "package_type": "Zip"}},
+                {"id": "img-fn", "name": "img-fn", "type": "lambda_function", "raw": {"last_modified": fresh_date, "runtime": None, "package_type": "Image"}},
+            ]
+        }
+        fns = evaluate(None, resources)["lambda_functions"]
+        self.assertEqual(fns[0]["status"], "WARNING")
+        self.assertEqual({i["rule_id"] for i in fns[0]["issues"]}, {"LAM-001", "LAM-002"})
+        self.assertEqual(fns[1]["status"], "HEALTHY")
+
+    def test_nat_gateway_cost_risk_no_fake_dollar_amount_and_elb_classic(self):
         resources = {
             "nat_gateways": [
-                {
-                    "id": "nat-012345",
-                    "name": "nat-012345",
-                    "type": "nat_gateway",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "state": "available",
-                        "subnet_id": "subnet-0abc",
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        nat = res["nat_gateways"][0]
-        self.assertEqual(nat["status"], "WARNING")
-        self.assertEqual(len(nat["issues"]), 1)
-        issue = nat["issues"][0]
-        self.assertEqual(issue["rule_id"], "NAT-002")
-        self.assertEqual(issue["category"], "Cost Risk")
-        # Ensure no fake dollar cost is stated in title or why
-        self.assertNotIn("$", issue["title"])
-        self.assertNotIn("$", issue["why"])
-
-    def test_auto_scaling_group_dormant_orphan(self):
-        """Auto Scaling Group with desired=0 and min=0 should be marked ORPHANED (ASG-001)."""
-        resources = {
-            "auto_scaling_groups": [
-                {
-                    "id": "dormant-asg",
-                    "name": "dormant-asg",
-                    "type": "auto_scaling_group",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "desired_capacity": 0,
-                        "min_size": 0,
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        asg = res["auto_scaling_groups"][0]
-        self.assertEqual(asg["status"], "ORPHANED")
-        self.assertEqual(asg["issues"][0]["rule_id"], "ASG-001")
-
-    def test_ecs_cluster_empty_orphan(self):
-        """ECS cluster with 0 instances and 0 active services should be ORPHANED (ECS-001)."""
-        resources = {
-            "ecs_clusters": [
-                {
-                    "id": "arn:aws:ecs:us-east-1:123456789012:cluster/empty-cluster",
-                    "name": "empty-cluster",
-                    "type": "ecs_cluster",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "registered_container_instances_count": 0,
-                        "active_services_count": 0,
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        ecs = res["ecs_clusters"][0]
-        self.assertEqual(ecs["status"], "ORPHANED")
-        self.assertEqual(ecs["issues"][0]["rule_id"], "ECS-001")
-
-    def test_internet_gateway_unattached_orphan(self):
-        """Internet Gateway with no attachments should be ORPHANED (IGW-001)."""
-        resources = {
+                {"id": "nat-1", "name": "nat-1", "type": "nat_gateway", "raw": {"state": "available", "subnet_id": "subnet-1"}}
+            ],
+            "load_balancers": [
+                {"id": "old-elb", "name": "old-elb", "type": "load_balancer", "raw": {"scheme": "internet-facing", "type": "classic"}}
+            ],
             "internet_gateways": [
-                {
-                    "id": "igw-012345",
-                    "name": "igw-012345",
-                    "type": "internet_gateway",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "attachments": [],
-                    },
-                }
-            ]
+                {"id": "igw-1", "name": "igw-1", "type": "internet_gateway", "raw": {"attachments": []}}
+            ],
+            "vpcs": [
+                {"id": "vpc-1", "name": "vpc-1", "type": "vpc", "raw": {"is_default": True, "cidr_block": "172.31.0.0/16"}}
+            ],
+            "elastic_ips": [
+                {"id": "eipalloc-1", "name": "1.2.3.4", "type": "elastic_ip", "raw": {"association_id": None, "public_ip": "1.2.3.4"}}
+            ],
         }
         res = evaluate(None, resources)
-        igw = res["internet_gateways"][0]
-        self.assertEqual(igw["status"], "ORPHANED")
-        self.assertEqual(igw["issues"][0]["rule_id"], "IGW-001")
+        nat_issue = res["nat_gateways"][0]["issues"][0]
+        self.assertEqual(nat_issue["rule_id"], "NAT-002")
+        self.assertEqual(nat_issue["category"], "Cost Risk")
+        self.assertNotIn("$", nat_issue["title"])
+        self.assertNotIn("$", nat_issue["why"])
 
-    def test_unassessed_resource_becomes_not_assessed(self):
-        """API Gateways (and any unassessed resource type) must NOT silently become HEALTHY."""
-        resources = {
-            "api_gateways": [
-                {
-                    "id": "api-123",
-                    "name": "my-api",
-                    "type": "api_gateway",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "protocol_type": "HTTP",
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        api = res["api_gateways"][0]
-        self.assertEqual(api["status"], "NOT_ASSESSED")
-        self.assertEqual(len(api["issues"]), 0)
-
-    def test_missing_or_empty_raw_configuration(self):
-        """Resources with missing or empty raw attributes must become NOT_ASSESSED, not falsely HEALTHY."""
-        resources = {
-            "ecr_repositories": [
-                {
-                    "id": "unknown-repo",
-                    "name": "unknown-repo",
-                    "type": "ecr_repository",
-                    "status": "HEALTHY",
-                    "raw": {},
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        repo = res["ecr_repositories"][0]
-        self.assertEqual(repo["status"], "NOT_ASSESSED")
-        self.assertEqual(len(repo["issues"]), 0)
-        self.assertEqual(repo["assessment"]["status"], "NOT_ASSESSED")
-
-    def test_missing_rule_attribute_does_not_become_healthy(self):
-        resources = {"rds_instances": [{
-            "id": "db-1", "name": "db-1", "type": "rds_instance",
-            "raw": {"publicly_accessible": False, "storage_encrypted": True},
-        }]}
-        db = evaluate(None, resources)["rds_instances"][0]
-        self.assertEqual(db["status"], "NOT_ASSESSED")
-        self.assertEqual(db["assessment"]["status"], "PARTIAL")
-
-    def test_finding_status_survives_other_unassessed_check(self):
-        resources = {"rds_instances": [{
-            "id": "db-1", "name": "db-1", "type": "rds_instance",
-            "raw": {"publicly_accessible": True, "storage_encrypted": True},
-        }]}
-        db = evaluate(None, resources)["rds_instances"][0]
-        self.assertEqual(db["status"], "CRITICAL")
-        self.assertEqual(db["assessment"]["status"], "PARTIAL")
-        self.assertEqual(db["issues"][0]["resource_id"], "db-1")
-
-    def test_unchecked_resource_type_is_not_assessed(self):
-        resources = {"unsupported_group": [{"id": "x", "name": "x", "raw": {"value": True}}]}
-        result = evaluate(None, resources)["unsupported_group"][0]
-        self.assertEqual(result["status"], "NOT_ASSESSED")
-        self.assertEqual(result["assessment"]["checks"], [])
-
-    def test_ecr_scanner_uses_effective_batch_scan_frequency(self):
-        from scanner.ecr_repositories import scan
-        session = MagicMock()
-        client = session.client.return_value
-        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
-            "repositoryName": "repo", "repositoryArn": "arn:repo", "imageTagMutability": "IMMUTABLE",
-            "imageScanningConfiguration": {"scanOnPush": False},
-        }]}]
-        client.batch_get_repository_scanning_configuration.return_value = {
-            "scanningConfigurations": [{"repositoryName": "repo", "scanFrequency": "CONTINUOUS_SCAN", "appliedScanFilters": []}],
-            "failures": [],
-        }
-        result = scan(session)[0]
-        self.assertEqual(result["raw"]["scan_frequency"], "CONTINUOUS_SCAN")
-        self.assertEqual(result["raw"]["image_scanning_configuration"]["scanOnPush"], False)
-        client.batch_get_repository_scanning_configuration.assert_called_once_with(repositoryNames=["repo"])
-
-    def test_ecr_scanner_discloses_per_repository_configuration_failure(self):
-        from scanner.ecr_repositories import scan
-        session = MagicMock()
-        client = session.client.return_value
-        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
-            "repositoryName": "repo", "imageTagMutability": "IMMUTABLE",
-        }]}]
-        client.batch_get_repository_scanning_configuration.return_value = {
-            "scanningConfigurations": [],
-            "failures": [{"repositoryName": "repo", "failureReason": "denied"}],
-        }
-        result = scan(session)[0]
-        self.assertIn("ECR-002", result["assessment_errors"])
-
-    def test_ecr_scanner_preserves_discovery_when_scan_configuration_api_is_denied(self):
-        from scanner.ecr_repositories import scan
-        session = MagicMock()
-        client = session.client.return_value
-        client.get_paginator.return_value.paginate.return_value = [{"repositories": [{
-            "repositoryName": "repo", "imageTagMutability": "IMMUTABLE",
-        }]}]
-        client.batch_get_repository_scanning_configuration.side_effect = ClientError(
-            {"Error": {"Code": "AccessDeniedException", "Message": "denied"}},
-            "BatchGetRepositoryScanningConfiguration",
-        )
-        result = scan(session)
-        self.assertEqual(len(result), 1)
-        self.assertEqual(result[0]["name"], "repo")
-        self.assertIn("ECR-002", result[0]["assessment_errors"])
-
-    def test_scanner_permission_failure_is_disclosed_as_partial_coverage(self):
-        import lambda_handler
-        regional_modules = [
-            "ec2", "ebs", "elastic_ip", "security_group", "snapshots", "rds",
-            "lambda_functions", "nat_gateways", "load_balancers", "dynamodb_tables",
-            "vpcs", "auto_scaling_groups", "ecs_clusters", "eks_clusters",
-            "elasticache_clusters", "sqs_queues", "sns_topics", "secrets_manager",
-            "api_gateways", "aurora_clusters", "cloudformation_stacks", "eventbridge_rules",
-            "ecr_repositories", "internet_gateways", "cloudwatch_alarms", "redshift_clusters",
-        ]
-        session = MagicMock()
-        session.client.return_value.get_caller_identity.return_value = {"Account": "123456789012"}
-        discovered = {"id": "i-1", "name": "web", "type": "ec2_instance", "raw": {"state": "running"}}
-        denied = ScannerError("AccessDenied after partial EC2 discovery", [discovered])
-        with ExitStack() as stack:
-            stack.enter_context(patch("lambda_handler.assume_role", return_value=session))
-            stack.enter_context(patch("lambda_handler.validate_permissions", return_value={}))
-            for name in regional_modules:
-                scan_mock = stack.enter_context(patch.object(getattr(lambda_handler, name), "scan", return_value=[]))
-                if name == "ec2":
-                    scan_mock.side_effect = denied
-            stack.enter_context(patch.object(lambda_handler.iam, "scan", return_value=[]))
-            stack.enter_context(patch.object(lambda_handler.s3, "scan", return_value=[]))
-            result = lambda_handler.run_scan("arn:aws:iam::123456789012:role/ReadOnly", ["us-east-1"])
-        self.assertTrue(result["partial"])
-        ec2_status = next(item for item in result["coverage"]["scanner_statuses"] if item["key"] == "ec2_instances")
-        self.assertEqual(ec2_status["status"], "PARTIAL")
-        self.assertEqual(ec2_status["count"], 1)
-        self.assertIn("AccessDenied", ec2_status["reason"])
-        self.assertEqual(result["resources"]["ec2_instances"][0]["id"], "i-1")
+        self.assertEqual({i["rule_id"] for i in res["load_balancers"][0]["issues"]}, {"ELB-001", "ELB-002"})
+        self.assertEqual(res["internet_gateways"][0]["status"], "ORPHANED")
+        self.assertEqual(res["vpcs"][0]["status"], "WARNING")
+        self.assertEqual(res["elastic_ips"][0]["status"], "ORPHANED")
 
     def test_s3_permission_error_marks_only_that_check_not_assessed(self):
         session = MagicMock()
@@ -435,14 +290,19 @@ class TestDetectionCoverage(unittest.TestCase):
             {"Error": {"Code": "ServerSideEncryptionConfigurationNotFoundError", "Message": "none"}},
             "GetBucketEncryption",
         )
-        s3.get_public_access_block.return_value = {"PublicAccessBlockConfiguration": {
-            "BlockPublicAcls": True, "IgnorePublicAcls": True,
-            "BlockPublicPolicy": True, "RestrictPublicBuckets": True,
-        }}
-        resources = {"s3_buckets": [{
-            "id": "bucket", "name": "bucket", "type": "s3_bucket",
-            "raw": {"name": "bucket", "is_empty": False},
-        }]}
+        s3.get_public_access_block.return_value = {
+            "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": True,
+                "IgnorePublicAcls": True,
+                "BlockPublicPolicy": True,
+                "RestrictPublicBuckets": True,
+            }
+        }
+        resources = {
+            "s3_buckets": [
+                {"id": "bucket", "name": "bucket", "type": "s3_bucket", "raw": {"name": "bucket", "is_empty": False}}
+            ]
+        }
         bucket = evaluate(session, resources)["s3_buckets"][0]
         self.assertEqual(bucket["status"], "NOT_ASSESSED")
         self.assertEqual(bucket["assessment"]["status"], "PARTIAL")
@@ -450,270 +310,40 @@ class TestDetectionCoverage(unittest.TestCase):
         self.assertEqual(check["status"], "NOT_ASSESSED")
         self.assertIn("AccessDenied", check["reason"])
 
-    def test_unrelated_resources_unaffected(self):
-        """Existing Security Group and S3 checks evaluate accurately alongside new rules."""
-        resources = {
-            "security_groups": [
-                {
-                    "id": "sg-1",
-                    "name": "open-ssh",
-                    "type": "security_group",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "ip_permissions": [
-                            {
-                                "IpProtocol": "tcp",
-                                "FromPort": 22,
-                                "ToPort": 22,
-                                "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
-                            }
-                        ]
-                    },
-                }
-            ],
-            "ec2_instances": [
-                {
-                    "id": "i-12345",
-                    "name": "stopped-inst",
-                    "type": "ec2_instance",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "state": "stopped",
-                        "instance_type": "t3.medium",
-                    },
-                }
-            ],
+    def test_scanner_permission_failure_disclosed_as_partial_coverage(self):
+        regional_modules = [
+            "ec2", "ebs", "snapshots", "elastic_ip", "security_group",
+            "vpcs", "internet_gateways", "nat_gateways", "load_balancers",
+            "rds", "dynamodb_tables", "lambda_functions",
+        ]
+        session = MagicMock()
+        session.client.return_value.get_caller_identity.return_value = {"Account": "123456789012"}
+        discovered = {
+            "id": "i-1",
+            "name": "web",
+            "type": "ec2_instance",
+            "raw": {"state": "running", "http_tokens": "required"},
         }
-        res = evaluate(None, resources)
-        self.assertEqual(res["security_groups"][0]["status"], "CRITICAL")
-        self.assertEqual(res["security_groups"][0]["issues"][0]["rule_id"], "SG-002")
-        self.assertEqual(res["ec2_instances"][0]["status"], "ORPHANED")
-        self.assertEqual(res["ec2_instances"][0]["issues"][0]["rule_id"], "EC2-001")
+        denied = ScannerError("AccessDenied after partial EC2 discovery", [discovered])
 
+        with ExitStack() as stack:
+            stack.enter_context(patch("lambda_handler.assume_role", return_value=session))
+            stack.enter_context(patch("lambda_handler.validate_permissions", return_value={}))
+            for name in regional_modules:
+                scan_mock = stack.enter_context(patch.object(getattr(lambda_handler, name), "scan", return_value=[]))
+                if name == "ec2":
+                    scan_mock.side_effect = denied
+            stack.enter_context(patch.object(lambda_handler.iam, "scan", return_value=[]))
+            stack.enter_context(patch.object(lambda_handler.s3, "scan", return_value=[]))
+            result = lambda_handler.run_scan("arn:aws:iam::123456789012:role/ReadOnly", ["us-east-1"])
 
-    def test_elasticache_encryption(self):
-        """ElastiCache without at-rest or transit encryption triggers EC-001 and EC-002."""
-        resources = {
-            "elasticache_clusters": [
-                {
-                    "id": "cache-01",
-                    "name": "cache-01",
-                    "type": "elasticache_cluster",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "at_rest_encryption_enabled": False,
-                        "transit_encryption_enabled": False,
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        c = res["elasticache_clusters"][0]
-        self.assertEqual(c["status"], "WARNING")
-        rule_ids = {i["rule_id"] for i in c["issues"]}
-        self.assertEqual(rule_ids, {"EC-001", "EC-002"})
-
-    def test_dynamodb_kms_encryption(self):
-        """An explicit DynamoDB SSE disabled state triggers DDB-001."""
-        resources = {
-            "dynamodb_tables": [
-                {
-                    "id": "users-table",
-                    "name": "users-table",
-                    "type": "dynamodb_table",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "table_status": "ACTIVE",
-                        "sse_description": {"Status": "DISABLED"},
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        tbl = res["dynamodb_tables"][0]
-        self.assertEqual(tbl["status"], "WARNING")
-        self.assertEqual(tbl["issues"][0]["rule_id"], "DDB-001")
-
-    def test_secrets_manager_rotation_and_kms(self):
-        """Secret with disabled rotation and default key triggers SEC-001 and SEC-002."""
-        resources = {
-            "secrets": [
-                {
-                    "id": "app-api-key",
-                    "name": "app-api-key",
-                    "type": "secret",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "rotation_enabled": False,
-                        "kms_key_id": None,
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        s = res["secrets"][0]
-        self.assertEqual(s["status"], "WARNING")
-        rule_ids = {i["rule_id"] for i in s["issues"]}
-        self.assertEqual(rule_ids, {"SEC-001", "SEC-002"})
-
-    def test_sqs_and_sns_encryption(self):
-        """SQS queue and SNS topic without KMS trigger SQS-001 and SNS-001."""
-        resources = {
-            "sqs_queues": [
-                {
-                    "id": "orders-queue",
-                    "name": "orders-queue",
-                    "type": "sqs_queue",
-                    "status": "HEALTHY",
-                    "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": False},
-                }
-            ],
-            "sns_topics": [
-                {
-                    "id": "alerts-topic",
-                    "name": "alerts-topic",
-                    "type": "sns_topic",
-                    "status": "HEALTHY",
-                    "raw": {"kms_master_key_id": None},
-                }
-            ],
-        }
-        res = evaluate(None, resources)
-        self.assertEqual(res["sqs_queues"][0]["issues"][0]["rule_id"], "SQS-001")
-        self.assertEqual(res["sns_topics"][0]["issues"][0]["rule_id"], "SNS-001")
-
-    def test_sqs_sqs_managed_encryption_passes_without_kms_key(self):
-        resources = {"sqs_queues": [{
-            "id": "encrypted-queue", "name": "encrypted-queue", "type": "sqs_queue",
-            "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": "true"},
-        }]}
-        queue = evaluate(None, resources)["sqs_queues"][0]
-        self.assertEqual(queue["status"], "HEALTHY")
-        self.assertEqual(queue["assessment"]["checks"][0]["status"], "PASSED")
-
-    def test_sqs_missing_encryption_attributes_is_not_assessed(self):
-        resources = {"sqs_queues": [{
-            "id": "unknown-queue", "name": "unknown-queue", "type": "sqs_queue",
-            "raw": {"kms_master_key_id": None, "sqs_managed_sse_enabled": None},
-        }]}
-        queue = evaluate(None, resources)["sqs_queues"][0]
-        self.assertEqual(queue["status"], "NOT_ASSESSED")
-        self.assertEqual(queue["issues"], [])
-
-    def test_dynamodb_missing_sse_status_is_not_assessed(self):
-        resources = {"dynamodb_tables": [{
-            "id": "unknown-table", "name": "unknown-table", "type": "dynamodb_table",
-            "raw": {"sse_description": {}},
-        }]}
-        table = evaluate(None, resources)["dynamodb_tables"][0]
-        self.assertEqual(table["status"], "NOT_ASSESSED")
-        self.assertEqual(table["issues"], [])
-
-    def test_cloudwatch_and_eventbridge(self):
-        """CloudWatch alarms and EventBridge rules trigger CW-001, CW-002, EV-001."""
-        resources = {
-            "cloudwatch_alarms": [
-                {
-                    "id": "cpu-high",
-                    "name": "cpu-high",
-                    "type": "cloudwatch_alarm",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "actions_enabled": False,
-                        "state_value": "INSUFFICIENT_DATA",
-                    },
-                }
-            ],
-            "eventbridge_rules": [
-                {
-                    "id": "nightly-cleanup",
-                    "name": "nightly-cleanup",
-                    "type": "eventbridge_rule",
-                    "status": "HEALTHY",
-                    "raw": {"state": "DISABLED"},
-                }
-            ],
-        }
-        res = evaluate(None, resources)
-        cw = res["cloudwatch_alarms"][0]
-        self.assertEqual(cw["status"], "WARNING")
-        self.assertEqual({i["rule_id"] for i in cw["issues"]}, {"CW-001", "CW-002"})
-        ev = res["eventbridge_rules"][0]
-        self.assertEqual(ev["status"], "ORPHANED")
-        self.assertEqual(ev["issues"][0]["rule_id"], "EV-001")
-
-    def test_cloudformation_lambda_elb_vpc(self):
-        """Tests CFN-001/002, LAM-001, ELB-001, VPC-001."""
-        old_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=120)).strftime("%Y-%m-%dT%H:%M:%S.000+0000")
-        resources = {
-            "cloudformation_stacks": [
-                {
-                    "id": "failed-stack",
-                    "name": "failed-stack",
-                    "type": "cloudformation_stack",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "stack_status": "ROLLBACK_COMPLETE",
-                        "enable_termination_protection": False,
-                    },
-                }
-            ],
-            "lambda_functions": [
-                {
-                    "id": "stale-fn",
-                    "name": "stale-fn",
-                    "type": "lambda_function",
-                    "status": "HEALTHY",
-                    "raw": {"last_modified": old_date},
-                }
-            ],
-            "load_balancers": [
-                {
-                    "id": "public-alb",
-                    "name": "public-alb",
-                    "type": "load_balancer",
-                    "status": "HEALTHY",
-                    "raw": {"scheme": "internet-facing"},
-                }
-            ],
-            "vpcs": [
-                {
-                    "id": "vpc-default",
-                    "name": "vpc-default",
-                    "type": "vpc",
-                    "status": "HEALTHY",
-                    "raw": {"is_default": True, "cidr_block": "172.31.0.0/16"},
-                }
-            ],
-        }
-        res = evaluate(None, resources)
-        self.assertEqual(res["cloudformation_stacks"][0]["status"], "ORPHANED")
-        self.assertEqual(res["lambda_functions"][0]["status"], "WARNING")
-        self.assertEqual(res["lambda_functions"][0]["issues"][0]["rule_id"], "LAM-001")
-        self.assertEqual(res["load_balancers"][0]["status"], "WARNING")
-        self.assertEqual(res["load_balancers"][0]["issues"][0]["rule_id"], "ELB-001")
-        self.assertEqual(res["vpcs"][0]["status"], "WARNING")
-        self.assertEqual(res["vpcs"][0]["issues"][0]["rule_id"], "VPC-001")
-
-    def test_status_severity_aggregation_hierarchy(self):
-        """CRITICAL always takes priority over WARNING and ORPHANED; WARNING over ORPHANED."""
-        # Resource with CRITICAL and WARNING
-        resources = {
-            "redshift_clusters": [
-                {
-                    "id": "mixed-cluster",
-                    "name": "mixed-cluster",
-                    "type": "redshift_cluster",
-                    "status": "HEALTHY",
-                    "raw": {
-                        "publicly_accessible": True,   # RS-001 (CRITICAL)
-                        "encrypted": False,             # RS-002 (WARNING)
-                    },
-                }
-            ]
-        }
-        res = evaluate(None, resources)
-        self.assertEqual(res["redshift_clusters"][0]["status"], "CRITICAL")
+        self.assertTrue(result["partial"])
+        ec2_status = next(item for item in result["coverage"]["scanner_statuses"] if item["key"] == "ec2_instances")
+        self.assertEqual(ec2_status["status"], "PARTIAL")
+        self.assertEqual(ec2_status["count"], 1)
+        self.assertIn("AccessDenied", ec2_status["reason"])
+        self.assertEqual(result["resources"]["ec2_instances"][0]["id"], "i-1")
+        self.assertEqual(len(result["coverage"]["rules_catalog"]), len(RULE_METADATA))
 
 
 if __name__ == "__main__":

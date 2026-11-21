@@ -15,5 +15,10 @@ variable "lambda_timeout" {
 
 variable "lambda_memory" {
   type    = number
-  default = 1024
+  default = 512
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 14
 }

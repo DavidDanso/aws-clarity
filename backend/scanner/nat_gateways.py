@@ -1,30 +1,18 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
+
 
 def scan(session, region="us-east-1"):
     resources = []
     try:
         ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_nat_gateways")
-        pages = paginator.paginate()
-        for page in pages:
+        for page in paginator.paginate():
             for nat in page.get("NatGateways", []):
                 nat_id = nat.get("NatGatewayId")
                 tags = nat.get("Tags", [])
                 name = next((t["Value"] for t in tags if t["Key"] == "Name"), nat_id)
-                
-                state = nat.get("State")
-                status = "HEALTHY"
-                issues = []
-                
-                if state == "available":
-                    status = "WARNING"
-                    issues.append("Active NAT Gateway may incur ongoing usage charges. Verify that private subnet internet egress is required.")
-                elif state == "failed":
-                    status = "WARNING"
-                    issues.append("NAT Gateway is in a failed state")
-                
+
                 eip_addrs = [
                     addr.get("PublicIp") or addr.get("AllocationId")
                     for addr in nat.get("NatGatewayAddresses", [])
@@ -35,18 +23,19 @@ def scan(session, region="us-east-1"):
                     "id": nat_id,
                     "name": name,
                     "type": "nat_gateway",
-                    "status": status,
-                    "issues": issues,
+                    "status": "NOT_ASSESSED",
+                    "issues": [],
                     "region": region,
                     "raw": {
-                        "state": state,
+                        "state": nat.get("State"),
+                        "connectivity_type": nat.get("ConnectivityType"),
                         "vpc_id": nat.get("VpcId"),
                         "subnet_id": nat.get("SubnetId"),
                         "elastic_ip": ", ".join(eip_addrs) if eip_addrs else None,
                         "elastic_ips": eip_addrs,
                         "create_time": nat.get("CreateTime"),
-                        "tags": tags
-                    }
+                        "tags": tags,
+                    },
                 })
     except ClientError as e:
         raise ScannerError(str(e), resources) from e

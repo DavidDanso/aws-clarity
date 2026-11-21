@@ -1,14 +1,13 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
+
 
 def scan(session, region="us-east-1"):
     resources = []
     try:
         ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_snapshots")
-        pages = paginator.paginate(OwnerIds=["self"])
-        for page in pages:
+        for page in paginator.paginate(OwnerIds=["self"]):
             for snap in page.get("Snapshots", []):
                 snap_id = snap.get("SnapshotId")
                 tags = snap.get("Tags", [])
@@ -17,16 +16,17 @@ def scan(session, region="us-east-1"):
                     "id": snap_id,
                     "name": name,
                     "type": "ebs_snapshot",
-                    "status": "HEALTHY",
+                    "status": "NOT_ASSESSED",
                     "issues": [],
                     "region": region,
                     "raw": {
                         "volume_id": snap.get("VolumeId"),
                         "start_time": snap.get("StartTime"),
                         "volume_size": snap.get("VolumeSize"),
+                        "encrypted": snap.get("Encrypted"),
                         "description": snap.get("Description"),
-                        "tags": tags
-                    }
+                        "tags": tags,
+                    },
                 })
     except ClientError as e:
         raise ScannerError(str(e), resources) from e

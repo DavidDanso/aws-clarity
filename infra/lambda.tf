@@ -1,3 +1,8 @@
+resource "aws_cloudwatch_log_group" "scanner" {
+  name              = "/aws/lambda/${var.app_name}-backend"
+  retention_in_days = var.log_retention_days
+}
+
 resource "aws_lambda_function" "scanner" {
   function_name = "${var.app_name}-backend"
   role          = aws_iam_role.lambda_exec.arn
@@ -15,6 +20,8 @@ resource "aws_lambda_function" "scanner" {
       SCAN_TABLE_NAME = aws_dynamodb_table.scans.name
     }
   }
+
+  depends_on = [aws_cloudwatch_log_group.scanner]
 }
 
 resource "aws_lambda_permission" "apigw" {

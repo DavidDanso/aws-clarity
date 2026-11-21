@@ -27,7 +27,7 @@ data "aws_iam_policy_document" "lambda_cross_account_sts" {
 
 resource "aws_iam_policy" "lambda_cross_account" {
   name        = "${var.app_name}-assume-roles"
-  description = "Allow Lambda to assume scanning roles in user accounts"
+  description = "Allow Lambda to assume user-provided read-only scanning roles"
   policy      = data.aws_iam_policy_document.lambda_cross_account_sts.json
 }
 
@@ -58,6 +58,7 @@ resource "aws_iam_role" "clarity_read_only" {
   })
 }
 
+# Strictly least-privilege, read-only permissions for the 14 supported AWS Clarity resource types.
 resource "aws_iam_role_policy" "clarity_read_only_policy" {
   name = "AWSClarityReadOnlyPolicy"
   role = aws_iam_role.clarity_read_only.id
@@ -68,68 +69,31 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
       {
         Effect = "Allow"
         Action = [
-          # STS
           "sts:GetCallerIdentity",
-          # IAM
-          "iam:ListUsers",
-          "iam:ListRoles",
-          "iam:ListPolicies",
-          "iam:GetPolicyVersion",
-          "iam:ListUserPolicies",
-          "iam:GetUserPolicy",
-          "iam:ListAttachedUserPolicies",
-          "iam:ListRolePolicies",
-          "iam:GetRolePolicy",
-          "iam:ListAttachedRolePolicies",
-          "iam:ListAccessKeys",
-          "iam:GetAccessKeyLastUsed",
-          "iam:ListMFADevices",
-          # S3
+          "ec2:DescribeInstances",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeSnapshots",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeSecurityGroups",
+          "ec2:DescribeVpcs",
+          "ec2:DescribeNatGateways",
+          "ec2:DescribeInternetGateways",
+          "elasticloadbalancing:DescribeLoadBalancers",
           "s3:ListAllMyBuckets",
           "s3:GetBucketLocation",
-          "s3:GetBucketPublicAccessBlock",
+          "s3:ListBucket",
           "s3:GetBucketPolicyStatus",
           "s3:GetBucketAcl",
           "s3:GetEncryptionConfiguration",
-          "s3:GetBucketVersioning",
-          "s3:ListBucket",
-          # EC2
-          "ec2:DescribeRegions",
-          "ec2:DescribeInstances",
-          "ec2:DescribeSecurityGroups",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeAddresses",
-          "ec2:DescribeSnapshots",
-          # VPC
-          "ec2:DescribeVpcs",
-          "ec2:DescribeSubnets",
-          "ec2:DescribeRouteTables",
-          "ec2:DescribeNatGateways",
-          "ec2:DescribeInternetGateways",
-          # RDS
+          "s3:GetBucketPublicAccessBlock",
           "rds:DescribeDBInstances",
-          # Lambda
-          "lambda:ListFunctions",
-          "lambda:GetFunctionConfiguration",
-          "lambda:GetPolicy",
-          # DynamoDB
           "dynamodb:ListTables",
           "dynamodb:DescribeTable",
-          "dynamodb:DescribeContinuousBackups",
-          # Elastic Load Balancing
-          "elasticloadbalancing:DescribeLoadBalancers",
-          "elasticloadbalancing:DescribeListeners",
-          "elasticloadbalancing:DescribeTargetGroups",
-          "elasticloadbalancing:DescribeTargetHealth",
-          "elasticloadbalancing:DescribeInstanceHealth",
-          # CloudFront
-          "cloudfront:ListDistributions",
-          "cloudfront:GetDistributionConfig",
-          # Route 53
-          "route53:ListHostedZones",
-          "route53:ListResourceRecordSets",
-          # CloudWatch (30-day unused evidence only)
-          "cloudwatch:GetMetricStatistics"
+          "lambda:ListFunctions",
+          "iam:ListRoles",
+          "iam:ListRolePolicies",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies"
         ]
         Resource = "*"
       }

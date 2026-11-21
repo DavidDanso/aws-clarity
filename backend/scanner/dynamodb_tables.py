@@ -1,6 +1,6 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
+
 
 def scan(session, region="us-east-1"):
     resources = []
@@ -14,36 +14,53 @@ def scan(session, region="us-east-1"):
             if "LastEvaluatedTableName" not in response:
                 break
             kwargs["ExclusiveStartTableName"] = response["LastEvaluatedTableName"]
-
-        for name in tables:
-            try:
-                table_info = client.describe_table(TableName=name).get("Table", {})
-                sse_desc = table_info.get("SSEDescription", {})
-                
-                status = "HEALTHY"
-                issues = []
-                
-                if not sse_desc or sse_desc.get("Status") != "ENABLED":
-                    status = "WARNING"
-                    issues.append("Table is not encrypted with a KMS key")
-                
-                resources.append({
-                    "id": name,
-                    "name": name,
-                    "type": "dynamodb_table",
-                    "status": status,
-                    "issues": issues,
-                    "region": region,
-                    "raw": {
-                        "table_status": table_info.get("TableStatus"),
-                        "item_count": table_info.get("ItemCount"),
-                        "table_size_bytes": table_info.get("TableSizeBytes"),
-                        "creation_date_time": table_info.get("CreationDateTime"),
-                        "sse_description": sse_desc
-                    }
-                })
-            except ClientError:
-                raise
     except ClientError as e:
         raise ScannerError(str(e), resources) from e
+
+    for name in tables:
+        assessment_errors = {}
+        try:
+            table_info = client.describe_table(TableName=name).get("Table", {})
+            # AWS encrypts all DynamoDB tables at rest by default using an AWS-owned key.
+            # When AWS-owned encryption is active, AWS omits SSEDescription entirely.
+            raw_sse = table_info.get("SSEDescription")
+            if raw_sse:
+                sse_desc = raw_sse
+            else:
+                sse_desc = {"Status": "ENABLED", "SSEType": "AWS_OWNED"}
+
+            billing_summary = table_info.get("BillingModeSummary") or {}
+            billing_mode = billing_summary.get("BillingMode", "PROVISIONED")
+            provisioned = table_info.get("ProvisionedThroughput") or {}
+
+            raw = {
+                "table_arn": table_info.get("TableArn"),
+                "table_status": table_info.get("TableStatus"),
+                "billing_mode": billing_mode,
+                "read_capacity_units": provisioned.get("ReadCapacityUnits"),
+                "write_capacity_units": provisioned.get("WriteCapacityUnits"),
+                "item_count": table_info.get("ItemCount"),
+                "table_size_bytes": table_info.get("TableSizeBytes"),
+                "creation_date_time": table_info.get("CreationDateTime"),
+                "sse_description": sse_desc,
+            }
+        except ClientError as e:
+            code = e.response.get("Error", {}).get("Code", "AWS error")
+            raw = {}
+            assessment_errors["DDB-001"] = f"Could not describe table: {code}"
+            assessment_errors["DDB-002"] = f"Could not describe table: {code}"
+
+        item = {
+            "id": name,
+            "name": name,
+            "type": "dynamodb_table",
+            "status": "NOT_ASSESSED",
+            "issues": [],
+            "region": region,
+            "raw": raw,
+        }
+        if assessment_errors:
+            item["assessment_errors"] = assessment_errors
+        resources.append(item)
+
     return resources

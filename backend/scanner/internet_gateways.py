@@ -1,38 +1,29 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
+
 
 def scan(session, region="us-east-1"):
     resources = []
     try:
         ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_internet_gateways")
-        pages = paginator.paginate()
-        for page in pages:
+        for page in paginator.paginate():
             for igw in page.get("InternetGateways", []):
                 igw_id = igw.get("InternetGatewayId")
                 tags = igw.get("Tags", [])
                 name = next((t["Value"] for t in tags if t["Key"] == "Name"), igw_id)
-                
-                attachments = igw.get("Attachments", [])
-                status = "HEALTHY"
-                issues = []
-                
-                if len(attachments) == 0:
-                    status = "ORPHANED"
-                    issues.append("Internet Gateway is not attached to any VPC")
-                
+
                 resources.append({
                     "id": igw_id,
                     "name": name,
                     "type": "internet_gateway",
-                    "status": status,
-                    "issues": issues,
+                    "status": "NOT_ASSESSED",
+                    "issues": [],
                     "region": region,
                     "raw": {
-                        "attachments": attachments,
-                        "tags": tags
-                    }
+                        "attachments": igw.get("Attachments", []),
+                        "tags": tags,
+                    },
                 })
     except ClientError as e:
         raise ScannerError(str(e), resources) from e

@@ -1,36 +1,34 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
+
 
 def scan(session, region="us-east-1"):
     resources = []
     try:
         ec2 = session.client("ec2", region_name=region)
         paginator = ec2.get_paginator("describe_instances")
-        pages = paginator.paginate()
-        for page in pages:
+        for page in paginator.paginate():
             for reservation in page.get("Reservations", []):
                 for instance in reservation.get("Instances", []):
                     instance_id = instance.get("InstanceId")
                     tags = instance.get("Tags", [])
                     name = next((t["Value"] for t in tags if t["Key"] == "Name"), instance_id)
-                    
-                    # Extract attached EBS volume IDs
+
                     ebs_volumes = [
                         b["Ebs"]["VolumeId"]
                         for b in instance.get("BlockDeviceMappings", [])
                         if b.get("Ebs") and b["Ebs"].get("VolumeId")
                     ]
-                    
-                    # Extract IAM instance profile
+
                     iam_profile = instance.get("IamInstanceProfile", {})
                     iam_role_arn = iam_profile.get("Arn") or iam_profile.get("Id")
+                    metadata_options = instance.get("MetadataOptions") or {}
 
                     resources.append({
                         "id": instance_id,
                         "name": name,
                         "type": "ec2_instance",
-                        "status": "HEALTHY",
+                        "status": "NOT_ASSESSED",
                         "issues": [],
                         "region": region,
                         "raw": {
@@ -39,13 +37,18 @@ def scan(session, region="us-east-1"):
                             "launch_time": instance.get("LaunchTime"),
                             "vpc_id": instance.get("VpcId"),
                             "subnet_id": instance.get("SubnetId"),
-                            "security_groups": [sg.get("GroupId") for sg in instance.get("SecurityGroups", []) if sg.get("GroupId")],
+                            "security_groups": [
+                                sg.get("GroupId")
+                                for sg in instance.get("SecurityGroups", [])
+                                if sg.get("GroupId")
+                            ],
                             "ebs_volumes": ebs_volumes,
                             "iam_instance_profile": iam_role_arn,
+                            "http_tokens": metadata_options.get("HttpTokens"),
                             "public_ip": instance.get("PublicIpAddress"),
                             "private_ip": instance.get("PrivateIpAddress"),
-                            "tags": tags
-                        }
+                            "tags": tags,
+                        },
                     })
     except ClientError as e:
         raise ScannerError(str(e), resources) from e

@@ -1,6 +1,5 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
-import logging
 import urllib.parse
 import json
 
@@ -10,38 +9,48 @@ def scan(session):
     try:
         iam = session.client("iam")
         paginator = iam.get_paginator("list_roles")
-        pages = paginator.paginate()
-        for page in pages:
+        for page in paginator.paginate():
             for role in page.get("Roles", []):
                 role_name = role.get("RoleName")
-                role_id   = role.get("RoleId")
+                role_id = role.get("RoleId")
+                assessment_errors = {}
 
-                # ---- Inline policies ----
+                # Inline policies
                 inline_policies = {}
                 try:
                     policy_names_resp = iam.list_role_policies(RoleName=role_name)
                     for policy_name in policy_names_resp.get("PolicyNames", []):
-                        policy_doc_resp = iam.get_role_policy(RoleName=role_name, PolicyName=policy_name)
+                        policy_doc_resp = iam.get_role_policy(
+                            RoleName=role_name, PolicyName=policy_name
+                        )
                         raw_doc = policy_doc_resp.get("PolicyDocument", {})
                         if isinstance(raw_doc, str):
                             doc = json.loads(urllib.parse.unquote(raw_doc))
                         else:
                             doc = raw_doc
                         inline_policies[policy_name] = doc
-                except ClientError:
-                    raise
-                # ---- Attached managed policies ----
+                except ClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "AWS error")
+                    inline_policies = None
+                    for rule_id in ("IAM-001", "IAM-002", "IAM-006"):
+                        assessment_errors[rule_id] = f"Could not read inline policies: {code}"
+
+                # Attached managed policies
                 attached_managed_policies = []
                 try:
                     attached_resp = iam.list_attached_role_policies(RoleName=role_name)
                     for p in attached_resp.get("AttachedPolicies", []):
                         attached_managed_policies.append({
                             "PolicyName": p.get("PolicyName"),
-                            "PolicyArn":  p.get("PolicyArn"),
+                            "PolicyArn": p.get("PolicyArn"),
                         })
-                except ClientError:
-                    raise
-                # ---- Trust policy (AssumeRolePolicyDocument) ----
+                except ClientError as e:
+                    code = e.response.get("Error", {}).get("Code", "AWS error")
+                    attached_managed_policies = None
+                    for rule_id in ("IAM-003", "IAM-004", "IAM-007"):
+                        assessment_errors[rule_id] = f"Could not list attached policies: {code}"
+
+                # Trust policy (AssumeRolePolicyDocument)
                 trust_policy_raw = role.get("AssumeRolePolicyDocument", {})
                 if isinstance(trust_policy_raw, str):
                     try:
@@ -51,22 +60,26 @@ def scan(session):
                 else:
                     trust_policy = trust_policy_raw
 
-                resources.append({
-                    "id":     role_id,
-                    "name":   role_name,
-                    "type":   "iam_role",
-                    "status": "HEALTHY",
+                item = {
+                    "id": role_id,
+                    "name": role_name,
+                    "type": "iam_role",
+                    "status": "NOT_ASSESSED",
                     "issues": [],
                     "region": "global",
                     "raw": {
-                        "role_name":                role_name,
-                        "arn":                      role.get("Arn"),
-                        "create_date":              role.get("CreateDate"),
-                        "inline_policies":          inline_policies,
+                        "role_name": role_name,
+                        "arn": role.get("Arn"),
+                        "path": role.get("Path"),
+                        "create_date": role.get("CreateDate"),
+                        "inline_policies": inline_policies,
                         "attached_managed_policies": attached_managed_policies,
-                        "trust_policy":             trust_policy,
+                        "trust_policy": trust_policy,
                     },
-                })
+                }
+                if assessment_errors:
+                    item["assessment_errors"] = assessment_errors
+                resources.append(item)
     except ClientError as e:
         raise ScannerError(str(e), resources) from e
     return resources

@@ -1,17 +1,29 @@
-import React from "react";
+import { useEffect } from "react";
 
 /**
  * TrustModal.jsx
  *
- * Verifiable, factual disclosure of AWS Clarity's security posture and data handling.
- * Strict Rule: Contains ONLY claims that can be verified from the actual implementation.
- * Zero unverified marketing statements or exaggerated claims.
+ * Verifiable, factual disclosure of AWS Clarity's security posture,
+ * read-only guarantees, External ID protection, and data lifecycle.
  */
 export default function TrustModal({ isOpen, onClose }) {
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="trust-modal-title"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-5 border-b border-slate-800">
@@ -22,13 +34,16 @@ export default function TrustModal({ isOpen, onClose }) {
               </svg>
             </div>
             <div>
-              <h3 className="text-base font-bold text-white">Trust & Security Architecture</h3>
+              <h3 id="trust-modal-title" className="text-base font-bold text-white">
+                Trust & Security Architecture
+              </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 Verifiable security facts, authentication model, and data boundaries.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
             aria-label="Close Trust Center"
@@ -39,16 +54,15 @@ export default function TrustModal({ isOpen, onClose }) {
 
         {/* Content Body */}
         <div className="p-5 space-y-5 text-xs">
-
           {/* Core Architecture Principles */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-teal-400 font-bold">🔒</span>
-                <span className="font-semibold text-slate-200">Read-Only Architecture</span>
+                <span className="font-semibold text-slate-200">Strictly Read-Only</span>
               </div>
               <p className="text-slate-400 leading-relaxed">
-                AWS Clarity requests exclusively <code className="text-teal-300">Describe*</code>, <code className="text-teal-300">List*</code>, and <code className="text-teal-300">Get*</code> API permissions. It possesses zero IAM capability to create, update, terminate, or modify customer cloud resources.
+                AWS Clarity requests exactly 25 read-only <code className="text-teal-300">Describe*</code>, <code className="text-teal-300">List*</code>, and <code className="text-teal-300">Get*</code> IAM actions. It has zero ability to create, modify, stop, or delete your resources.
               </p>
             </div>
 
@@ -58,59 +72,58 @@ export default function TrustModal({ isOpen, onClose }) {
                 <span className="font-semibold text-slate-200">Temporary STS Credentials</span>
               </div>
               <p className="text-slate-400 leading-relaxed">
-                Authentication relies on AWS Security Token Service (<code className="text-teal-300">sts:AssumeRole</code>) with a strictly enforced 1-hour session duration (<code className="text-teal-300">DurationSeconds=3600</code>). Credentials automatically expire.
-              </p>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="text-teal-400 font-bold">🔑</span>
-                <span className="font-semibold text-slate-200">Zero Credential Storage</span>
-              </div>
-              <p className="text-slate-400 leading-relaxed">
-                We never request, accept, or store AWS root passwords, IAM user credentials, or permanent secret access keys. Temporary tokens exist in ephemeral memory during the scan only.
+                Uses <code className="text-teal-300">sts:AssumeRole</code> with a 1-hour duration (<code className="text-teal-300">DurationSeconds=3600</code>). Temporary credentials exist only in ephemeral Lambda memory during the scan.
               </p>
             </div>
 
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
               <div className="flex items-center gap-2">
                 <span className="text-teal-400 font-bold">🛡</span>
-                <span className="font-semibold text-slate-200">Confused Deputy Protection</span>
+                <span className="font-semibold text-slate-200">External ID Tenant Isolation</span>
               </div>
               <p className="text-slate-400 leading-relaxed">
-                Role assumption enforces an External ID (<code className="text-teal-300">aws-clarity-scan</code>) in the STS assume call, preventing the cross-customer confused deputy vulnerability per AWS IAM specifications.
+                Supports custom or auto-generated per-account <code className="text-teal-300">sts:ExternalId</code> values to protect against cross-account confused deputy attacks per AWS IAM best practices.
+              </p>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="text-teal-400 font-bold">💸</span>
+                <span className="font-semibold text-slate-200">Zero Paid AWS APIs</span>
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                Makes zero Cost Explorer, GuardDuty, AWS Config, or Security Hub API calls. Unused and cost-risk resources are identified purely from free resource metadata.
               </p>
             </div>
           </div>
 
-          {/* What Clarity Collects vs Does Not Collect */}
+          {/* Data Boundaries */}
           <div className="space-y-3">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Data Boundaries
             </h4>
-
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="p-3 rounded-xl bg-emerald-950/20 border border-emerald-500/20 space-y-2">
                 <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>✓</span> What Clarity Collects
+                  <span>✓</span> What Clarity Inspects
                 </span>
                 <ul className="space-y-1 text-slate-300 list-disc list-inside">
-                  <li>Resource metadata (IDs, ARNs, names, tags)</li>
-                  <li>Security configurations (firewall rules, encryption flags)</li>
-                  <li>Public accessibility flags (ACLs, policies, CIDRs)</li>
-                  <li>Inventory timestamps and region associations</li>
+                  <li>Resource metadata (IDs, ARNs, names, tags, regions)</li>
+                  <li>Security settings (ingress rules, encryption, IMDSv2)</li>
+                  <li>Public access posture (S3 policies/ACLs, RDS flags)</li>
+                  <li>Idle/waste indicators (unattached EBS, idle EIPs, NATs)</li>
                 </ul>
               </div>
 
               <div className="p-3 rounded-xl bg-rose-950/20 border border-rose-500/20 space-y-2">
                 <span className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
-                  <span>✕</span> What Clarity Never Collects
+                  <span>✕</span> What Clarity Never Accesses
                 </span>
                 <ul className="space-y-1 text-slate-300 list-disc list-inside">
-                  <li>Object contents inside S3 buckets</li>
-                  <li>Database records, tables, or customer data</li>
-                  <li>Application source code or server memory</li>
-                  <li>AWS billing data, Cost Explorer, or invoices</li>
+                  <li>S3 object files or contents</li>
+                  <li>RDS / DynamoDB rows or customer records</li>
+                  <li>Lambda source code or EC2 memory/SSH</li>
+                  <li>AWS passwords, permanent keys, or billing invoices</li>
                 </ul>
               </div>
             </div>
@@ -119,14 +132,14 @@ export default function TrustModal({ isOpen, onClose }) {
           {/* Retention & Revocation */}
           <div className="space-y-3">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              Data Retention & Instant Access Revocation
+              Short-Lived Retention & Instant Revocation
             </h4>
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-slate-300 leading-relaxed">
               <p>
-                <strong className="text-slate-100">Scan Results Storage:</strong> Point-in-time scan outputs are retained in an encrypted DynamoDB table (<code className="text-teal-300">aws-clarity-scans</code>) solely to power the user session and comparative history.
+                <strong className="text-slate-100">1-Hour Auto-Expiring Scan Cache:</strong> Scan outputs are stored encrypted and compressed in DynamoDB (<code className="text-teal-300">aws-clarity-scans</code>) keyed by a random 122-bit UUIDv4 <code className="text-teal-300">scan_id</code> and automatically deleted via DynamoDB TTL after 1 hour. Your Role ARN is never stored in DynamoDB.
               </p>
               <p>
-                <strong className="text-slate-100">How to Revoke Access Immediately:</strong> Because access is mediated entirely through the IAM Role you created in your AWS Console, you can permanently revoke access at any second by simply deleting the role or removing the trust relationship policy. AWS immediately rejects all subsequent STS assume requests.
+                <strong className="text-slate-100">Instant Access Revocation:</strong> Delete the IAM role or edit its trust policy in your AWS Console at any moment—AWS immediately blocks all future <code className="text-teal-300">sts:AssumeRole</code> calls.
               </p>
             </div>
           </div>
@@ -136,7 +149,7 @@ export default function TrustModal({ isOpen, onClose }) {
             <div>
               <p className="font-semibold text-slate-200">Security & Privacy Questions</p>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Maintained by David Danso (AWS Cloud Engineer). For vulnerability disclosures or questions:
+                Maintained by David Danso (AWS Cloud Engineer).
               </p>
             </div>
             <a
@@ -148,15 +161,15 @@ export default function TrustModal({ isOpen, onClose }) {
               Open GitHub Issue →
             </a>
           </div>
-
         </div>
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
           <span className="text-[11px] text-slate-500">
-            Verified against actual IAM policies and backend STS implementation
+            Verified against actual IAM policies and backend STS code
           </span>
           <button
+            type="button"
             onClick={onClose}
             className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
           >

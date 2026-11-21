@@ -184,7 +184,6 @@ export function compareScans(prevResources, currResources) {
   for (const r of prevResources) {
     const stableId = getStableResourceId(r);
     for (const issue of (r.issues || [])) {
-      const ruleId = issue.rule_id || issue.title || issue.message || "UNKNOWN";
       const key = getStableFindingKey(stableId, issue);
       prevFindingMap.set(key, {
         key,
@@ -204,7 +203,6 @@ export function compareScans(prevResources, currResources) {
   for (const r of currResources) {
     const stableId = getStableResourceId(r);
     for (const issue of (r.issues || [])) {
-      const ruleId = issue.rule_id || issue.title || issue.message || "UNKNOWN";
       const key = getStableFindingKey(stableId, issue);
       currFindingMap.set(key, {
         key,

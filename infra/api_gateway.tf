@@ -156,7 +156,21 @@ resource "aws_api_gateway_deployment" "prod" {
     aws_api_gateway_integration.options_scan_status_mock
   ]
   triggers = {
-    redeployment = timestamp()
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_resource.scan.id,
+      aws_api_gateway_resource.scan_id.id,
+      aws_api_gateway_resource.scan_id_status.id,
+      aws_api_gateway_method.post_scan.id,
+      aws_api_gateway_method.options_scan.id,
+      aws_api_gateway_method.get_scan_status.id,
+      aws_api_gateway_method.options_scan_status.id,
+      aws_api_gateway_integration.post_scan_lambda.id,
+      aws_api_gateway_integration.options_scan_mock.id,
+      aws_api_gateway_integration.get_scan_status_lambda.id,
+      aws_api_gateway_integration.options_scan_status_mock.id,
+      aws_api_gateway_integration_response.options_scan_mock_200.response_parameters,
+      aws_api_gateway_integration_response.options_scan_status_mock_200.response_parameters,
+    ]))
   }
   lifecycle {
     create_before_destroy = true

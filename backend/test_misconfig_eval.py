@@ -1,37 +1,43 @@
-
+import os
 import sys
-from scanner.misconfig import evaluate, _issue
+import unittest
 
-# Test resource
-resources = {
-    "security_groups": [
-        {
-            "id": "sg-012345",
-            "name": "web-sg",
-            "type": "security_group",
-            "status": "HEALTHY",
-            "raw": {
-                "ip_permissions": [
-                    {
-                        "IpProtocol": "tcp",
-                        "FromPort": 22,
-                        "ToPort": 22,
-                        "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-                    }
-                ]
-            }
+sys.path.insert(0, os.path.dirname(__file__))
+from scanner.misconfig import evaluate
+
+
+class TestMisconfigEvalSmoke(unittest.TestCase):
+    def test_open_ssh_security_group(self):
+        resources = {
+            "security_groups": [
+                {
+                    "id": "sg-012345",
+                    "name": "web-sg",
+                    "type": "security_group",
+                    "status": "NOT_ASSESSED",
+                    "raw": {
+                        "ip_permissions": [
+                            {
+                                "IpProtocol": "tcp",
+                                "FromPort": 22,
+                                "ToPort": 22,
+                                "IpRanges": [{"CidrIp": "0.0.0.0/0"}],
+                            }
+                        ]
+                    },
+                }
+            ]
         }
-    ]
-}
+        sg = evaluate(None, resources)["security_groups"][0]
+        self.assertEqual(sg["status"], "CRITICAL")
+        self.assertEqual(len(sg["issues"]), 1)
+        issue = sg["issues"][0]
+        self.assertEqual(issue["rule_id"], "SG-002")
+        self.assertIn("Inbound SSH", issue["what_found"])
+        self.assertIn("port 22", issue["what_checked"])
+        self.assertEqual(issue["evidence"]["Port"], "22")
+        self.assertEqual(issue["evidence"]["Source"], "0.0.0.0/0")
 
-res = evaluate(None, resources)
-sg = res["security_groups"][0]
-assert sg["status"] == "CRITICAL", "Expected CRITICAL status"
-assert len(sg["issues"]) == 1, "Expected 1 issue"
-issue = sg["issues"][0]
-assert issue["rule_id"] == "SG-002", "Expected SG-002"
-assert "what_found" in issue and "Inbound SSH" in issue["what_found"], "what_found missing or incorrect"
-assert "what_checked" in issue and "port 22" in issue["what_checked"], "what_checked missing or incorrect"
-assert issue["evidence"]["Port"] == "22", "evidence Port missing or incorrect"
-assert issue["evidence"]["Source"] == "0.0.0.0/0", "evidence Source missing or incorrect"
-print("  ✓ Python evaluate() test passed: generated explainable finding with real evidence.")
+
+if __name__ == "__main__":
+    unittest.main()

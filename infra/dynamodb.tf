@@ -12,6 +12,10 @@ resource "aws_dynamodb_table" "scans" {
     attribute_name = "expires_at"
     enabled        = true
   }
+
+  server_side_encryption {
+    enabled = true
+  }
 }
 
 output "scans_table_name" {
