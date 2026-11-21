@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - "infra/*.tf"
+      - "README.md"
+      # - "infra/*.tf"
       # - "frontend/**"
       # - "backend/**"
   workflow_dispatch:

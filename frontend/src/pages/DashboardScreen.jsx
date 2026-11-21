@@ -126,21 +126,7 @@ export default function DashboardScreen({
       ...(results.resources.load_balancers        || []),
       ...(results.resources.dynamodb_tables       || []),
       ...(results.resources.vpcs                  || []),
-      ...(results.resources.auto_scaling_groups   || []),
-      ...(results.resources.ecs_clusters          || []),
-      ...(results.resources.eks_clusters          || []),
-      ...(results.resources.elasticache_clusters  || []),
-      ...(results.resources.sqs_queues            || []),
-      ...(results.resources.sns_topics            || []),
-      ...(results.resources.secrets               || []),
-      ...(results.resources.api_gateways          || []),
-      ...(results.resources.aurora_clusters       || []),
-      ...(results.resources.cloudformation_stacks || []),
-      ...(results.resources.eventbridge_rules     || []),
-      ...(results.resources.ecr_repositories      || []),
       ...(results.resources.internet_gateways     || []),
-      ...(results.resources.cloudwatch_alarms     || []),
-      ...(results.resources.redshift_clusters     || []),
     ];
   }, [scanResults]);
 

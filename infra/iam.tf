@@ -68,52 +68,68 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
       {
         Effect = "Allow"
         Action = [
+          # STS
+          "sts:GetCallerIdentity",
+          # IAM
+          "iam:ListUsers",
+          "iam:ListRoles",
+          "iam:ListPolicies",
+          "iam:GetPolicyVersion",
+          "iam:ListUserPolicies",
+          "iam:GetUserPolicy",
+          "iam:ListAttachedUserPolicies",
+          "iam:ListRolePolicies",
+          "iam:GetRolePolicy",
+          "iam:ListAttachedRolePolicies",
+          "iam:ListAccessKeys",
+          "iam:GetAccessKeyLastUsed",
+          "iam:ListMFADevices",
+          # S3
+          "s3:ListAllMyBuckets",
+          "s3:GetBucketLocation",
+          "s3:GetBucketPublicAccessBlock",
+          "s3:GetBucketPolicyStatus",
+          "s3:GetBucketAcl",
+          "s3:GetEncryptionConfiguration",
+          "s3:GetBucketVersioning",
+          "s3:ListBucket",
+          # EC2
+          "ec2:DescribeRegions",
           "ec2:DescribeInstances",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeSnapshots",
-          "ec2:DescribeAddresses",
           "ec2:DescribeSecurityGroups",
+          "ec2:DescribeVolumes",
+          "ec2:DescribeAddresses",
+          "ec2:DescribeSnapshots",
+          # VPC
           "ec2:DescribeVpcs",
           "ec2:DescribeSubnets",
+          "ec2:DescribeRouteTables",
           "ec2:DescribeNatGateways",
           "ec2:DescribeInternetGateways",
-          "elasticloadbalancing:DescribeLoadBalancers",
-          "s3:ListAllMyBuckets",
-          "s3:GetBucketAcl",
-          "s3:GetBucketPolicy",
-          "s3:GetBucketPolicyStatus",
-          "s3:GetBucketPublicAccessBlock",
-          "s3:GetEncryptionConfiguration",
-          "s3:GetBucketLocation",
-          "s3:ListBucket",
+          # RDS
           "rds:DescribeDBInstances",
-          "rds:DescribeDBClusters",
+          # Lambda
           "lambda:ListFunctions",
-          "iam:ListRoles",
-          "iam:GetRolePolicy",
-          "iam:ListRolePolicies",
-          "iam:ListAttachedRolePolicies",
-          "sts:GetCallerIdentity",
+          "lambda:GetFunctionConfiguration",
+          "lambda:GetPolicy",
+          # DynamoDB
           "dynamodb:ListTables",
           "dynamodb:DescribeTable",
-          "elasticache:DescribeCacheClusters",
-          "redshift:DescribeClusters",
-          "sqs:ListQueues",
-          "sqs:GetQueueAttributes",
-          "sns:ListTopics",
-          "sns:GetTopicAttributes",
-          "secretsmanager:ListSecrets",
-          "autoscaling:DescribeAutoScalingGroups",
-          "ecs:ListClusters",
-          "ecs:DescribeClusters",
-          "eks:ListClusters",
-          "eks:DescribeCluster",
-          "ecr:DescribeRepositories",
-          "ecr:BatchGetRepositoryScanningConfiguration",
-          "cloudformation:DescribeStacks",
-          "cloudwatch:DescribeAlarms",
-          "events:ListRules",
-          "apigateway:GET"
+          "dynamodb:DescribeContinuousBackups",
+          # Elastic Load Balancing
+          "elasticloadbalancing:DescribeLoadBalancers",
+          "elasticloadbalancing:DescribeListeners",
+          "elasticloadbalancing:DescribeTargetGroups",
+          "elasticloadbalancing:DescribeTargetHealth",
+          "elasticloadbalancing:DescribeInstanceHealth",
+          # CloudFront
+          "cloudfront:ListDistributions",
+          "cloudfront:GetDistributionConfig",
+          # Route 53
+          "route53:ListHostedZones",
+          "route53:ListResourceRecordSets",
+          # CloudWatch (30-day unused evidence only)
+          "cloudwatch:GetMetricStatistics"
         ]
         Resource = "*"
       }

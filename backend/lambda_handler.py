@@ -9,10 +9,7 @@ from utils import assume_role, validate_role_arn
 from exceptions import InvalidRoleARNError, AssumeRoleError, PermissionDeniedError, ScannerError
 from scanner import ec2, s3, rds, ebs, elastic_ip, security_group, snapshots, iam
 from scanner import lambda_functions, nat_gateways, vpcs, internet_gateways, load_balancers
-from scanner import dynamodb_tables, aurora_clusters, elasticache_clusters, redshift_clusters
-from scanner import sqs_queues, sns_topics, secrets_manager
-from scanner import auto_scaling_groups, ecs_clusters, eks_clusters, ecr_repositories, cloudformation_stacks
-from scanner import cloudwatch_alarms, eventbridge_rules, api_gateways
+from scanner import dynamodb_tables
 from scanner.misconfig import evaluate
 
 VALID_REGIONS = [
@@ -61,31 +58,17 @@ CORE_PERMISSIONS = {
 
 SCANNER_METADATA = {
     "ec2_instances": {"service": "EC2", "label": "EC2 Instances", "permission": "ec2:DescribeInstances", "capability": "Virtual machines"},
-    "ebs_volumes": {"service": "EBS", "label": "EBS Volumes", "permission": "ec2:DescribeVolumes", "capability": "Block storage disks"},
+    "ebs_volumes": {"service": "EC2", "label": "EBS Volumes", "permission": "ec2:DescribeVolumes", "capability": "Block storage disks"},
     "elastic_ips": {"service": "EC2", "label": "Elastic IPs", "permission": "ec2:DescribeAddresses", "capability": "Static IP addresses"},
     "security_groups": {"service": "EC2", "label": "Security Groups", "permission": "ec2:DescribeSecurityGroups", "capability": "Firewall rules"},
-    "snapshots": {"service": "EBS", "label": "EBS Snapshots", "permission": "ec2:DescribeSnapshots", "capability": "Volume backups"},
+    "snapshots": {"service": "EC2", "label": "EBS Snapshots", "permission": "ec2:DescribeSnapshots", "capability": "Volume backups"},
     "rds_instances": {"service": "RDS", "label": "RDS Databases", "permission": "rds:DescribeDBInstances", "capability": "Relational databases"},
     "lambda_functions": {"service": "Lambda", "label": "Lambda Functions", "permission": "lambda:ListFunctions", "capability": "Serverless functions"},
     "nat_gateways": {"service": "VPC", "label": "NAT Gateways", "permission": "ec2:DescribeNatGateways", "capability": "Outbound subnet routing"},
     "load_balancers": {"service": "ELB", "label": "Load Balancers", "permission": "elasticloadbalancing:DescribeLoadBalancers", "capability": "Traffic distribution"},
     "dynamodb_tables": {"service": "DynamoDB", "label": "DynamoDB Tables", "permission": "dynamodb:ListTables", "capability": "NoSQL data tables"},
     "vpcs": {"service": "VPC", "label": "VPCs", "permission": "ec2:DescribeVpcs", "capability": "Virtual private clouds"},
-    "auto_scaling_groups": {"service": "AutoScaling", "label": "Auto Scaling Groups", "permission": "autoscaling:DescribeAutoScalingGroups", "capability": "Compute scaling pools"},
-    "ecs_clusters": {"service": "ECS", "label": "ECS Clusters", "permission": "ecs:ListClusters", "capability": "Container clusters"},
-    "eks_clusters": {"service": "EKS", "label": "EKS Clusters", "permission": "eks:ListClusters", "capability": "Kubernetes clusters"},
-    "elasticache_clusters": {"service": "ElastiCache", "label": "ElastiCache Clusters", "permission": "elasticache:DescribeCacheClusters", "capability": "In-memory caching"},
-    "sqs_queues": {"service": "SQS", "label": "SQS Queues", "permission": "sqs:ListQueues", "capability": "Message queues"},
-    "sns_topics": {"service": "SNS", "label": "SNS Topics", "permission": "sns:ListTopics", "capability": "Pub/sub topics"},
-    "secrets": {"service": "SecretsManager", "label": "Secrets Manager", "permission": "secretsmanager:ListSecrets", "capability": "Encrypted credentials"},
-    "api_gateways": {"service": "APIGateway", "label": "API Gateways", "permission": "apigateway:GET", "capability": "HTTP APIs"},
-    "aurora_clusters": {"service": "RDS", "label": "Aurora Clusters", "permission": "rds:DescribeDBClusters", "capability": "Aurora DB clusters"},
-    "cloudformation_stacks": {"service": "CloudFormation", "label": "CloudFormation Stacks", "permission": "cloudformation:DescribeStacks", "capability": "Infrastructure templates"},
-    "eventbridge_rules": {"service": "EventBridge", "label": "EventBridge Rules", "permission": "events:ListRules", "capability": "Event bus routing"},
-    "ecr_repositories": {"service": "ECR", "label": "ECR Repositories", "permission": "ecr:DescribeRepositories, ecr:BatchGetRepositoryScanningConfiguration", "capability": "Container registries"},
     "internet_gateways": {"service": "VPC", "label": "Internet Gateways", "permission": "ec2:DescribeInternetGateways", "capability": "VPC internet ingress/egress"},
-    "cloudwatch_alarms": {"service": "CloudWatch", "label": "CloudWatch Alarms", "permission": "cloudwatch:DescribeAlarms", "capability": "Metric alerts"},
-    "redshift_clusters": {"service": "Redshift", "label": "Redshift Clusters", "permission": "redshift:DescribeClusters", "capability": "Data warehouses"},
     "iam_roles": {"service": "IAM", "label": "IAM Roles", "permission": "iam:ListRoles, iam:GetRolePolicy", "capability": "IAM roles & trust policies"},
     "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation", "capability": "S3 storage buckets"},
 }
@@ -148,21 +131,7 @@ def run_scan(role_arn, regions):
         "load_balancers": load_balancers.scan,
         "dynamodb_tables": dynamodb_tables.scan,
         "vpcs": vpcs.scan,
-        "auto_scaling_groups": auto_scaling_groups.scan,
-        "ecs_clusters": ecs_clusters.scan,
-        "eks_clusters": eks_clusters.scan,
-        "elasticache_clusters": elasticache_clusters.scan,
-        "sqs_queues": sqs_queues.scan,
-        "sns_topics": sns_topics.scan,
-        "secrets": secrets_manager.scan,
-        "api_gateways": api_gateways.scan,
-        "aurora_clusters": aurora_clusters.scan,
-        "cloudformation_stacks": cloudformation_stacks.scan,
-        "eventbridge_rules": eventbridge_rules.scan,
-        "ecr_repositories": ecr_repositories.scan,
         "internet_gateways": internet_gateways.scan,
-        "cloudwatch_alarms": cloudwatch_alarms.scan,
-        "redshift_clusters": redshift_clusters.scan,
     }
 
     resources = {key: [] for key in REGIONAL_SCANNERS}
@@ -539,7 +508,7 @@ def _response(status_code, payload):
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Headers": "Content-Type",
-            "Access-Control-Allow-Methods": "POST,OPTIONS",
+            "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
         },
         "body": json.dumps(payload, default=str),  # default=str handles datetime objects
     }
