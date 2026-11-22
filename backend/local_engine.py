@@ -18,6 +18,7 @@ import concurrent.futures
 import datetime
 import time
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound, TokenRetrievalError
 
 from exceptions import AssumeRoleError, InvalidRoleARNError, ScannerError
@@ -35,6 +36,14 @@ from lambda_handler import (
 from scanner import iam, s3
 from scanner.misconfig import SERVICE_COVERAGE_MATRIX, evaluate, get_rules_catalog
 from utils import CachedSession, SCAN_BOTO_CONFIG, validate_external_id, validate_role_arn
+
+# Workstation-friendly timeouts & pool size (avoids false timeouts on home/office broadband)
+LOCAL_BOTO_CONFIG = Config(
+    connect_timeout=4.0,
+    read_timeout=12.0,
+    max_pool_connections=32,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
 
 REPORT_SCHEMA_VERSION = "aws-clarity-report/v1"
 CLI_VERSION = "1.0.0"
@@ -270,7 +279,7 @@ def run_local_scan(
 
     scan_started = time.monotonic()
     is_real_boto_session = isinstance(session, boto3.Session)
-    cached = CachedSession(session)
+    cached = CachedSession(session, config=LOCAL_BOTO_CONFIG)
 
     identity = verify_identity(cached)
     account_id = identity["account_id"]
@@ -350,6 +359,8 @@ def run_local_scan(
             target_regions,
             is_real_boto_session=is_real_boto_session,
             deadline_s=deadline_s,
+            probe_timeout_s=3.0,
+            max_workers_cap=24,
         )
         for key, items in reg_res.items():
             if key in resources:

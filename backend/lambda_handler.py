@@ -368,7 +368,14 @@ def _get_regional_scanners() -> dict:
     }
 
 
-def _scan_region_batch_local(session, regions: list[str], is_real_boto_session: bool, deadline_s: float = 14.0) -> tuple[dict, list, list]:
+def _scan_region_batch_local(
+    session,
+    regions: list[str],
+    is_real_boto_session: bool,
+    deadline_s: float = 14.0,
+    probe_timeout_s: float = 0.9,
+    max_workers_cap: int = 64,
+) -> tuple[dict, list, list]:
     """Scan a batch of AWS regions concurrently on the current worker."""
     regional_scanners = _get_regional_scanners()
     resources = {key: [] for key in regional_scanners}
@@ -384,7 +391,7 @@ def _scan_region_batch_local(session, regions: list[str], is_real_boto_session: 
         except Exception:
             pass
 
-    max_workers = min(64, max(14, len(regions) * len(regional_scanners)))
+    max_workers = min(max_workers_cap, max(14, len(regions) * len(regional_scanners)))
     executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
     future_to_task = {}
 
@@ -393,7 +400,7 @@ def _scan_region_batch_local(session, regions: list[str], is_real_boto_session: 
             probe_executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(regions)))
             try:
                 probe_futs = {
-                    probe_executor.submit(_probe_region_endpoint, region, 0.9): region
+                    probe_executor.submit(_probe_region_endpoint, region, probe_timeout_s): region
                     for region in regions
                 }
                 for pfut in concurrent.futures.as_completed(probe_futs):
