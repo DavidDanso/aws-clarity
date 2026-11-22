@@ -23,20 +23,20 @@ export default function CoverageModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="coverage-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[88vh] overflow-y-auto flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-slate-800">
-          <div>
-            <div className="flex items-center gap-2">
-              <h3 id="coverage-modal-title" className="text-base font-bold text-white">
-                Inventory Coverage & Scan Transparency
+      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden flex flex-col">
+        <div className="flex items-start sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-slate-800 shrink-0">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 id="coverage-modal-title" className="text-sm sm:text-base font-bold text-white">
+                Inventory Coverage &amp; Scan Transparency
               </h3>
-              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border shrink-0 ${
                 isIncomplete
                   ? "bg-orange-500/15 text-orange-300 border-orange-500/30"
                   : "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
@@ -52,13 +52,13 @@ export default function CoverageModal({
             type="button"
             onClick={onClose}
             aria-label="Close coverage modal"
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-5 space-y-5 text-xs">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs">
           {/* Top Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
@@ -92,17 +92,17 @@ export default function CoverageModal({
               <div className="max-h-52 overflow-y-auto rounded-lg bg-orange-950/20 border border-orange-500/30 divide-y divide-orange-500/20">
                 {failures.map((f, idx) => (
                   <div key={idx} className="p-2.5 space-y-1 text-[11px]">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-semibold text-orange-200">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-semibold text-orange-200 break-words">
                         {f.service} · {f.label}
                       </span>
-                      <span className="font-mono text-[10px] text-orange-300 bg-orange-950/60 px-1.5 py-0.5 rounded">
+                      <span className="font-mono text-[10px] text-orange-300 bg-orange-950/60 px-1.5 py-0.5 rounded shrink-0">
                         {f.region}
                       </span>
                     </div>
-                    <p className="text-orange-200/80">{f.reason}</p>
+                    <p className="text-orange-200/80 break-words">{f.reason}</p>
                     {f.required_permission && (
-                      <p className="text-[10px] font-mono text-slate-400">
+                      <p className="text-[10px] font-mono text-slate-400 break-all">
                         Required IAM action(s): {f.required_permission}
                       </p>
                     )}
@@ -195,14 +195,14 @@ export default function CoverageModal({
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
           <span className="text-[11px] text-slate-500">
             Strictly read-only · Full API pagination · Zero paid AWS APIs
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+            className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer"
           >
             Close
           </button>

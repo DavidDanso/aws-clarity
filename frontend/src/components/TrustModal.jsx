@@ -12,23 +12,23 @@ export default function TrustModal({ isOpen, onClose }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="trust-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto flex flex-col">
-        <div className="flex items-center justify-between p-5 border-b border-slate-800">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[85dvh] overflow-hidden flex flex-col">
+        <div className="flex items-start sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 shrink-0">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
               </svg>
             </div>
-            <div>
-              <h3 id="trust-modal-title" className="text-base font-bold text-white">
-                Trust & Security Architecture
+            <div className="min-w-0">
+              <h3 id="trust-modal-title" className="text-sm sm:text-base font-bold text-white">
+                Trust &amp; Security Architecture
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 Verifiable security architecture, tenant isolation, and data boundaries.
@@ -38,14 +38,14 @@ export default function TrustModal({ isOpen, onClose }) {
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+            className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
             aria-label="Close Trust Center"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-5 space-y-5 text-xs">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
               <div className="flex items-center gap-2">
@@ -106,14 +106,14 @@ export default function TrustModal({ isOpen, onClose }) {
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
           <span className="text-[11px] text-slate-500">
             Verified against actual IAM policies and backend STS implementation
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+            className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer"
           >
             Close
           </button>

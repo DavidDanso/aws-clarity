@@ -128,10 +128,10 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     >
       <div
         ref={drawerRef}
-        className="absolute right-0 top-0 h-full w-full sm:w-[500px] md:w-[580px] bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in"
+        className="absolute right-0 top-0 h-[100dvh] w-full sm:w-[500px] md:w-[580px] max-w-full bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in flex flex-col"
       >
-        {/* Header */}
-        <div className="flex items-start justify-between p-4 sm:p-6 border-b border-slate-700/50">
+        {/* Sticky Header so Close button stays reachable on mobile */}
+        <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md flex items-start justify-between p-4 sm:p-6 border-b border-slate-700/50 shrink-0">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className="text-[11px] font-semibold text-teal-400 uppercase tracking-wider">
@@ -147,13 +147,13 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 {displayedStatus}
               </span>
             </div>
-            <h2 className="text-lg font-bold text-white truncate">{resource.name}</h2>
-            <div className="flex items-center gap-2 mt-0.5">
+            <h2 className="text-base sm:text-lg font-bold text-white truncate">{resource.name}</h2>
+            <div className="flex items-center gap-2 mt-0.5 min-w-0">
               <p className="text-xs text-slate-500 font-mono truncate">{resource.id}</p>
               <button
                 type="button"
                 onClick={() => handleCopy("id", resource.id)}
-                className="text-[10px] text-slate-400 hover:text-teal-300 shrink-0 cursor-pointer bg-transparent border-none p-0"
+                className="text-[11px] text-slate-400 hover:text-teal-300 shrink-0 cursor-pointer bg-transparent border-none p-0"
               >
                 {copiedKey === "id" ? "Copied ✓" : "Copy ID"}
               </button>
@@ -162,7 +162,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
           <button
             type="button"
             onClick={onClose}
-            className="ml-4 w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+            className="ml-3 w-9 h-9 shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
             aria-label="Close inspection drawer"
           >
             <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -171,14 +171,14 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
           </button>
         </div>
 
-        <div className="p-4 sm:p-6 space-y-6">
+        <div className="p-4 sm:p-6 pb-8 space-y-6 flex-1">
           {/* Context Strip */}
-          <div className="flex items-center justify-between gap-4 text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-lg p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-lg p-3">
             <div>
               <span className="text-slate-500 block text-[10px] uppercase font-semibold">AWS Region</span>
               <span className="font-mono text-slate-200">{resource.region || "global"}</span>
             </div>
-            <div className="text-right">
+            <div className="sm:text-right">
               <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Inspected</span>
               <span className="font-mono text-slate-200">{formatLastChecked(resolvedScannedAt)}</span>
             </div>
@@ -336,7 +336,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                         <h4 className="text-sm font-semibold text-slate-100 leading-snug">{issue.title}</h4>
 
                         {/* Affected Resource */}
-                        <div className="text-[11px] font-mono text-slate-400 bg-slate-950/50 px-2.5 py-1.5 rounded border border-slate-800/60">
+                        <div className="text-[11px] font-mono text-slate-400 bg-slate-950/50 px-2.5 py-1.5 rounded border border-slate-800/60 break-all">
                           Affected: <span className="text-slate-200">{resource.name}</span> ({resource.id} · {resource.region || "global"})
                         </div>
 
@@ -345,7 +345,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
                               Problem Details
                             </span>
-                            <p className="text-slate-200 leading-relaxed bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/70">
+                            <p className="text-slate-200 leading-relaxed bg-slate-950/60 p-2.5 rounded-lg border border-slate-800/70 break-words">
                               {issue.what_found}
                             </p>
                           </div>
@@ -356,7 +356,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
                               Why It Matters
                             </span>
-                            <p className="text-slate-300 leading-relaxed">{issue.why}</p>
+                            <p className="text-slate-300 leading-relaxed break-words">{issue.why}</p>
                           </div>
                         )}
 
@@ -367,9 +367,9 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                             </span>
                             <div className="rounded-lg bg-slate-950 border border-slate-800/80 divide-y divide-slate-800/60 overflow-hidden font-mono text-[11px]">
                               {evidenceEntries.map(([k, v]) => (
-                                <div key={k} className="flex items-baseline justify-between gap-3 px-3 py-1.5">
+                                <div key={k} className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-0.5 sm:gap-3 px-3 py-1.5">
                                   <span className="text-slate-400 shrink-0">{k}:</span>
-                                  <span className="text-slate-100 text-right break-all">
+                                  <span className="text-slate-100 sm:text-right break-all">
                                     {typeof v === "object" ? JSON.stringify(v) : String(v)}
                                   </span>
                                 </div>
@@ -380,7 +380,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
 
                         {issue.fix && (
                           <div className="pt-1">
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
                               <span className="text-[10px] font-bold uppercase tracking-wider text-teal-400">
                                 How to Resolve (Manual in AWS)
                               </span>
@@ -392,7 +392,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                                 {copiedKey === copyId ? "Copied ✓" : "Copy steps"}
                               </button>
                             </div>
-                            <div className="p-3 rounded-lg bg-teal-950/20 border border-teal-500/20 text-teal-200 leading-relaxed text-[12px]">
+                            <div className="p-3 rounded-lg bg-teal-950/20 border border-teal-500/20 text-teal-200 leading-relaxed text-[12px] break-words">
                               {issue.fix}
                             </div>
                           </div>
@@ -403,7 +403,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 block mb-1">
                               How to Verify the Fix
                             </span>
-                            <div className="p-2.5 rounded-lg bg-emerald-950/15 border border-emerald-500/20 text-emerald-200/90 leading-relaxed text-[11px]">
+                            <div className="p-2.5 rounded-lg bg-emerald-950/15 border border-emerald-500/20 text-emerald-200/90 leading-relaxed text-[11px] break-words">
                               {issue.verify}
                             </div>
                           </div>

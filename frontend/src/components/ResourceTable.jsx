@@ -7,7 +7,7 @@ import {
   SUPPORTED_SERVICES,
 } from "../utils/constants";
 
-const PAGE_SIZE = 15;
+const PAGE_SIZE = 6;
 
 const SEVERITY_RANK = {
   CRITICAL: 1,
@@ -192,12 +192,12 @@ export default function ResourceTable({
 
   return (
     <div className="flex flex-col gap-4">
-      {/* 10 Supported Services Navigation Bar */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      {/* 10 Supported Services Navigation Bar (horizontal rail on phones, wrapped pills on sm+) */}
+      <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-1 sm:pb-0 -mx-1 px-1 sm:mx-0 sm:px-0 no-scrollbar">
         <button
           type="button"
           onClick={() => setServiceFilter("ALL")}
-          className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+          className={`shrink-0 text-[11px] font-medium px-2.5 py-1.5 sm:py-1 rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
             serviceFilter === "ALL"
               ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
               : "bg-slate-900/60 border-slate-800 text-slate-400 hover:text-slate-200 hover:border-slate-700"
@@ -210,7 +210,7 @@ export default function ResourceTable({
             type="button"
             key={svc}
             onClick={() => setServiceFilter((prev) => (prev === svc ? "ALL" : svc))}
-            className={`text-[11px] font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer ${
+            className={`shrink-0 text-[11px] font-medium px-2.5 py-1.5 sm:py-1 rounded-lg border transition-colors cursor-pointer whitespace-nowrap ${
               serviceFilter === svc
                 ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
                 : count === 0
@@ -224,8 +224,8 @@ export default function ResourceTable({
       </div>
 
       {/* Search + Region Filter + Sort Row */}
-      <div className="flex flex-col sm:flex-row gap-2.5">
-        <div className="relative flex-1">
+      <div className="flex flex-col lg:flex-row gap-2.5">
+        <div className="relative flex-1 min-w-0">
           <svg
             className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none"
             xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
@@ -238,14 +238,14 @@ export default function ResourceTable({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by name, AWS ID, service, region, or finding (e.g. ssh, mfa, retention, nat)…"
-            className="w-full bg-slate-900/60 border border-slate-800 rounded-lg pl-9 pr-8 py-2 text-[13px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500/50 transition-colors"
+            placeholder="Search by name, AWS ID, service, region, or finding…"
+            className="w-full bg-slate-900/60 border border-slate-800 rounded-lg pl-9 pr-8 py-2.5 sm:py-2 text-base sm:text-[13px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500/50 transition-colors"
           />
           {searchQuery.length > 0 && (
             <button
               type="button"
               onClick={() => setSearchQuery("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer text-sm leading-none"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors cursor-pointer text-base leading-none p-1"
               aria-label="Clear search"
             >
               ×
@@ -253,34 +253,36 @@ export default function ResourceTable({
           )}
         </div>
 
-        <select
-          aria-label="Filter by region"
-          value={regionFilter}
-          onChange={(e) => setRegionFilter(e.target.value)}
-          className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
-        >
-          <option value="ALL">All Regions ({discoveredRegions.length})</option>
-          {discoveredRegions.map((reg) => (
-            <option key={reg} value={reg}>{reg}</option>
-          ))}
-        </select>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex gap-2 shrink-0">
+          <select
+            aria-label="Filter by region"
+            value={regionFilter}
+            onChange={(e) => setRegionFilter(e.target.value)}
+            className="w-full lg:w-auto min-w-0 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2.5 sm:py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
+          >
+            <option value="ALL">All Regions ({discoveredRegions.length})</option>
+            {discoveredRegions.map((reg) => (
+              <option key={reg} value={reg}>{reg}</option>
+            ))}
+          </select>
 
-        <select
-          aria-label="Sort resources"
-          value={sortBy}
-          onChange={(e) => setSortBy(e.target.value)}
-          className="bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
-        >
-          <option value="severity">Sort: Highest Risk First</option>
-          <option value="service">Sort: AWS Service</option>
-          <option value="region">Sort: Region</option>
-          <option value="name">Sort: Name (A–Z)</option>
-        </select>
+          <select
+            aria-label="Sort resources"
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="w-full lg:w-auto min-w-0 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-2.5 sm:py-2 text-xs text-slate-300 focus:outline-none focus:border-teal-500/50 cursor-pointer"
+          >
+            <option value="severity">Sort: Highest Risk First</option>
+            <option value="service">Sort: AWS Service</option>
+            <option value="region">Sort: Region</option>
+            <option value="name">Sort: Name (A–Z)</option>
+          </select>
+        </div>
       </div>
 
       {/* Status & Cost Focus Pills */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-1.5 flex-wrap">
+        <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-1 sm:pb-0 -mx-1 px-1 sm:mx-0 sm:px-0 no-scrollbar max-w-full">
           {[
             { key: "ALL", label: "All", count: statusCounts.all },
             { key: "CRITICAL", label: "Critical", count: statusCounts.critical, active: "bg-red-500/15 border-red-500/30 text-red-400" },
@@ -295,7 +297,7 @@ export default function ResourceTable({
               type="button"
               key={pill.key}
               onClick={() => setStatusFilter(pill.key)}
-              className={`text-[11px] font-medium px-2.5 py-1 rounded-md border transition-colors cursor-pointer ${
+              className={`shrink-0 whitespace-nowrap text-[11px] font-medium px-2.5 py-1.5 sm:py-1 rounded-md border transition-colors cursor-pointer ${
                 statusFilter === pill.key
                   ? pill.active || "bg-slate-800 border-slate-600 text-white"
                   : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900"
@@ -315,23 +317,103 @@ export default function ResourceTable({
               setRegionFilter("ALL");
               setStatusFilter("ALL");
             }}
-            className="text-[11px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
+            className="text-[11px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 shrink-0"
           >
             Reset filters
           </button>
         )}
       </div>
 
-      {/* Resource Table */}
-      <div className="overflow-x-auto w-full rounded-xl border border-slate-800/80 bg-slate-900/30">
-        <table className="min-w-[680px] w-full text-sm text-left">
+      {/* Mobile Resource Card View (< md: zero horizontal scroll, touch-friendly) */}
+      <div className="block md:hidden space-y-2.5">
+        {resources.length === 0 ? (
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/30 py-10 px-4 text-center text-slate-500 text-sm">
+            No resources discovered across the 10 supported AWS services.
+          </div>
+        ) : sortedResources.length === 0 ? (
+          <div className="rounded-xl border border-slate-800/80 bg-slate-900/30 py-10 px-4 text-center text-slate-500 text-sm">
+            No resources match the current search or filter.
+          </div>
+        ) : (
+          paginatedResources.map((resource) => {
+            const status = getDisplayedStatus(resource);
+            const issues = resource.issues || [];
+            const topIssue = issues[0];
+            const svc = resource.service || RESOURCE_SERVICE_MAP[resource.type] || "";
+
+            return (
+              <button
+                type="button"
+                key={`${resource.type}-${resource.id}-${resource.region}`}
+                onClick={() => onInspect(resource)}
+                className="w-full text-left rounded-xl border border-slate-800/80 bg-slate-900/40 hover:bg-slate-800/40 active:bg-slate-800/60 p-3.5 space-y-2.5 transition-colors cursor-pointer"
+              >
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-slate-100 text-[13px] truncate">{resource.name}</p>
+                    <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{resource.id}</p>
+                  </div>
+                  <span
+                    className={`shrink-0 inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                      STATUS_BADGE[status] || STATUS_BADGE.INCOMPLETE
+                    }`}
+                  >
+                    {status}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-400">
+                  <span className="font-semibold text-slate-300">{svc}</span>
+                  <span className="text-slate-700">·</span>
+                  <span>{RESOURCE_TYPE_LABELS[resource.type] || resource.type}</span>
+                  <span className="text-slate-700">·</span>
+                  <span className="font-mono text-slate-400">{resource.region || "global"}</span>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-800/60">
+                  <div className="min-w-0 flex-1">
+                    {topIssue ? (
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {topIssue.category && (
+                          <span
+                            className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${
+                              CATEGORY_BADGE[topIssue.category] || "bg-slate-800 text-slate-400 border-slate-700"
+                            }`}
+                          >
+                            {topIssue.category}
+                          </span>
+                        )}
+                        <span className="text-xs text-slate-300 truncate">{topIssue.title}</span>
+                        {issues.length > 1 && (
+                          <span className="text-[10px] font-mono text-slate-500 shrink-0">
+                            +{issues.length - 1}
+                          </span>
+                        )}
+                      </div>
+                    ) : status === "INCOMPLETE" ? (
+                      <span className="text-xs text-orange-300/80">Check blocked by API / IAM error</span>
+                    ) : (
+                      <span className="text-xs text-emerald-500/80">All applicable checks passed</span>
+                    )}
+                  </div>
+                  <span className="text-xs text-teal-400 font-medium shrink-0">Inspect →</span>
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Tablet & Desktop Resource Table (>= md) */}
+      <div className="hidden md:block overflow-x-auto w-full rounded-xl border border-slate-800/80 bg-slate-900/30">
+        <table className="w-full text-sm text-left">
           <thead>
             <tr className="border-b border-slate-800/80 bg-slate-900/60">
               <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Resource</th>
               <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Service / Type</th>
               <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Region</th>
               <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Health</th>
-              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hidden md:table-cell">Key Finding</th>
+              <th className="px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 hidden lg:table-cell">Key Finding</th>
               <th className="px-4 py-2.5 text-right text-[11px] font-semibold uppercase tracking-wider text-slate-500"></th>
             </tr>
           </thead>
@@ -361,7 +443,7 @@ export default function ResourceTable({
                     onClick={() => onInspect(resource)}
                     className="border-b border-slate-800/40 last:border-b-0 hover:bg-slate-800/30 transition-colors cursor-pointer"
                   >
-                    <td className="px-4 py-3 max-w-[220px]">
+                    <td className="px-4 py-3 max-w-[240px]">
                       <p className="font-medium text-slate-200 truncate text-[13px]">{resource.name}</p>
                       <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{resource.id}</p>
                     </td>
@@ -383,7 +465,7 @@ export default function ResourceTable({
                         {status}
                       </span>
                     </td>
-                    <td className="px-3 py-3 hidden md:table-cell max-w-[250px]">
+                    <td className="px-3 py-3 hidden lg:table-cell max-w-[280px]">
                       {topIssue ? (
                         <div className="flex items-center gap-1.5 min-w-0">
                           {topIssue.category && (
@@ -431,26 +513,26 @@ export default function ResourceTable({
         <nav aria-label="Resource table pagination" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1">
           <p className="text-[12px] text-slate-500">{rangeText}</p>
           {totalPages > 1 && (
-            <div className="flex items-center gap-1.5 self-start sm:self-auto flex-wrap">
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 w-full sm:w-auto flex-wrap">
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                 disabled={safePage === 1}
-                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
+                className="min-h-[34px] sm:min-h-[28px] px-3 sm:px-2.5 py-1 text-[12px] border border-slate-800 rounded-md bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
               >
-                ‹ Previous
+                ‹ Prev
               </button>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-wrap justify-center">
                 {pageNumbers.map((p, idx) =>
                   p === "..." ? (
-                    <span key={`ellipsis-${idx}`} className="px-1.5 py-0.5 text-[12px] text-slate-600 select-none">…</span>
+                    <span key={`ellipsis-${idx}`} className="px-1 py-0.5 text-[12px] text-slate-600 select-none">…</span>
                   ) : (
                     <button
                       type="button"
                       key={p}
                       onClick={() => setCurrentPage(p)}
                       aria-current={safePage === p ? "page" : undefined}
-                      className={`min-w-[28px] h-7 px-2 text-[12px] rounded border transition-colors cursor-pointer ${
+                      className={`min-w-[32px] sm:min-w-[28px] h-8 sm:h-7 px-2 text-[12px] rounded-md border transition-colors cursor-pointer ${
                         safePage === p
                           ? "bg-slate-800 border-slate-700 text-white font-medium"
                           : "border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
@@ -465,7 +547,7 @@ export default function ResourceTable({
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                 disabled={safePage === totalPages}
-                className="px-2.5 py-1 text-[12px] border border-slate-800 rounded bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
+                className="min-h-[34px] sm:min-h-[28px] px-3 sm:px-2.5 py-1 text-[12px] border border-slate-800 rounded-md bg-slate-900/50 text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-colors disabled:opacity-40 cursor-pointer"
               >
                 Next ›
               </button>

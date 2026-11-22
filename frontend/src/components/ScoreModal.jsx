@@ -12,16 +12,16 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="score-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 id="score-modal-title" className="text-base font-bold text-white">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl">
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-start sm:items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <h3 id="score-modal-title" className="text-sm sm:text-base font-bold text-white">
               How Your Health Score Is Calculated
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
@@ -31,19 +31,19 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 transition-colors p-1 cursor-pointer bg-transparent border-none"
+            className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none"
             aria-label="Close score explanation modal"
           >
             ✕
           </button>
         </div>
 
-        <div className="p-5 overflow-y-auto space-y-5 text-xs">
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
+        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Scoring Formula
             </p>
-            <div className="font-mono text-xs sm:text-sm text-teal-300 bg-slate-900/90 p-3 rounded-lg border border-slate-800">
+            <div className="font-mono text-[11px] sm:text-sm text-teal-300 bg-slate-900/90 p-3 rounded-lg border border-slate-800 overflow-x-auto break-words">
               Score = max(0, 100 − [10 × Critical + 4 × Warnings + 1 × Unused])
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
@@ -52,8 +52,8 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
             </p>
           </div>
 
-          <div className="p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex items-center justify-between">
+          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
                 Live Account Calculation
               </p>
@@ -63,23 +63,23 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
             </div>
 
             <div className="divide-y divide-slate-800/80 font-mono text-[11px]">
-              <div className="py-1.5 flex justify-between">
+              <div className="py-1.5 flex flex-wrap justify-between gap-x-2">
                 <span className="text-slate-400">Base Starting Score:</span>
                 <span className="text-slate-200">+100 pts</span>
               </div>
-              <div className="py-1.5 flex justify-between text-red-400">
+              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-red-400">
                 <span>Critical Findings ({scoreData.critical} × −10 pts):</span>
                 <span>−{scoreData.critical * 10} pts</span>
               </div>
-              <div className="py-1.5 flex justify-between text-amber-400">
+              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-amber-400">
                 <span>Warning Findings ({scoreData.warning} × −4 pts):</span>
                 <span>−{scoreData.warning * 4} pts</span>
               </div>
-              <div className="py-1.5 flex justify-between text-sky-300">
+              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-sky-300">
                 <span>Unused / Idle Resources ({scoreData.unused} × −1 pt):</span>
                 <span>−{scoreData.unused * 1} pts</span>
               </div>
-              <div className="py-2 flex justify-between font-bold text-xs border-t border-slate-700">
+              <div className="py-2 flex flex-wrap justify-between gap-x-2 font-bold text-xs border-t border-slate-700">
                 <span className="text-white font-sans">Calculated Score:</span>
                 <span className="text-teal-300">{scoreData.score} pts</span>
               </div>
@@ -111,11 +111,11 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
           </div>
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex justify-end shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+            className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer"
           >
             Close
           </button>

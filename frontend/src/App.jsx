@@ -169,9 +169,12 @@ function App() {
       )}
 
       {/* Global floating feedback button */}
-      <div ref={feedbackRef} className="fixed bottom-6 right-6 z-40">
+      <div
+        ref={feedbackRef}
+        className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end"
+      >
         {feedbackOpen && (
-          <div className="mb-3 w-52 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+          <div className="mb-2.5 w-52 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
             <div className="px-3 py-2 border-b border-slate-800">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Send Feedback</p>
             </div>

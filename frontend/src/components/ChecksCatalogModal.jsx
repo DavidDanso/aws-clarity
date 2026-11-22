@@ -45,17 +45,17 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2.5 sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="checks-catalog-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl">
-        <div className="p-5 border-b border-slate-800 flex items-center justify-between">
-          <div>
-            <h3 id="checks-catalog-title" className="text-base font-bold text-white">
-              Security & Cost Checks Catalog
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl">
+        <div className="p-4 sm:p-5 border-b border-slate-800 flex items-start sm:items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0">
+            <h3 id="checks-catalog-title" className="text-sm sm:text-base font-bold text-white">
+              Security &amp; Cost Checks Catalog
             </h3>
             <p className="text-xs text-slate-400 mt-0.5">
               {evaluatedChecks.length} deterministic rules across all 10 supported AWS services
@@ -64,23 +64,23 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           <button
             type="button"
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-200 transition-colors p-1 cursor-pointer bg-transparent border-none"
+            className="w-9 h-9 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none"
             aria-label="Close checks catalog modal"
           >
             ✕
           </button>
         </div>
 
-        <div className="px-5 pt-4 pb-3 border-b border-slate-800 space-y-3 bg-slate-950/40">
+        <div className="px-4 sm:px-5 pt-3.5 pb-3 border-b border-slate-800 space-y-3 bg-slate-950/40 shrink-0">
           <input
             type="text"
             value={catalogSearch}
             onChange={(e) => setCatalogSearch(e.target.value)}
             placeholder="Filter checks by rule ID, name, service, or category…"
-            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
           />
 
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-0.5 sm:pb-0 no-scrollbar">
             {[
               { key: "all", label: "All Checks", count: checkCounts.total },
               { key: "violated", label: "Violated", count: checkCounts.violated, activeClass: "text-red-400 bg-red-500/10 border-red-500/20" },
@@ -94,7 +94,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                 type="button"
                 key={tab.key}
                 onClick={() => setCatalogFilter(tab.key)}
-                className={`text-[11px] font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
+                className={`shrink-0 whitespace-nowrap text-[11px] font-semibold px-2.5 py-1.5 sm:py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
                   catalogFilter === tab.key
                     ? tab.activeClass || "text-teal-400 bg-teal-500/10 border-teal-500/20"
                     : "text-slate-400 hover:text-slate-200 border-transparent"
@@ -109,7 +109,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           </div>
         </div>
 
-        <div className="p-5 overflow-y-auto space-y-3 text-xs flex-1">
+        <div className="p-4 sm:p-5 overflow-y-auto space-y-3 text-xs flex-1">
           {filteredChecks.length === 0 ? (
             <div className="text-center py-8 text-slate-500">No checks match the current filter.</div>
           ) : (
@@ -126,16 +126,16 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                     isViolated ? "border-red-500/30 bg-red-950/10" : "border-slate-800 bg-slate-950/60"
                   } space-y-2`}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                     <div className="flex items-center gap-2 flex-wrap min-w-0">
                       <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-800 text-slate-300">
                         {check.id}
                       </span>
-                      <span className="font-semibold text-slate-100 text-xs">
+                      <span className="font-semibold text-slate-100 text-xs break-words">
                         {check.service} — {check.name}
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
                       {check.category && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border ${
                           CATEGORY_BADGE[check.category] || "bg-slate-800 text-slate-400 border-slate-700"
@@ -157,7 +157,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
 
                   <p className="text-slate-400 text-[11px] leading-relaxed">{check.whatItChecks}</p>
 
-                  <div className="flex items-center justify-between pt-1 text-[11px] border-t border-slate-800/60">
+                  <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 text-[11px] border-t border-slate-800/60">
                     <span className="text-slate-500">Live Status:</span>
                     <div className="flex items-center gap-1.5">
                       {isViolated && (
@@ -189,14 +189,14 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           )}
         </div>
 
-        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
           <span className="text-[11px] text-slate-500">
             Deterministic rules backed by real AWS API evidence
           </span>
           <button
             type="button"
             onClick={onClose}
-            className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-1.5 rounded-lg transition-colors cursor-pointer"
+            className="w-full sm:w-auto bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold px-4 py-2 sm:py-1.5 rounded-lg transition-colors cursor-pointer"
           >
             Close
           </button>

@@ -297,8 +297,8 @@ export default function DashboardScreen({
       : "text-slate-500";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      <div className="px-4 sm:px-6 lg:px-8 py-4 sm:py-6 max-w-6xl mx-auto w-full">
+    <div className="min-h-[100dvh] bg-slate-950 text-white">
+      <div className="px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-20 sm:pb-16 max-w-7xl mx-auto w-full">
         <TopBar
           accountId={scanResults?.account_id || ""}
           regionsCount={regionsScanned.length}
@@ -309,16 +309,16 @@ export default function DashboardScreen({
           onOpenTrust={() => setTrustModalOpen(true)}
         />
 
-        <main className="mt-7 sm:mt-10">
+        <main className="mt-6 sm:mt-9">
           {/* Active Scan Progress */}
           {isLoading && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-8 flex flex-col items-center text-center gap-5">
-              <div className="flex items-center gap-3">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 sm:p-8 flex flex-col items-center text-center gap-5">
+              <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
                 <svg className="animate-spin w-6 h-6 text-teal-400 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
                 </svg>
-                <p className="text-base font-semibold text-slate-100">
+                <p className="text-sm sm:text-base font-semibold text-slate-100">
                   {SCAN_STAGE_LABELS[progressStage] || "Running parallel multi-region read-only AWS scan…"}
                 </p>
               </div>
@@ -337,17 +337,17 @@ export default function DashboardScreen({
                     style={{ width: `${progressPct}%` }}
                   />
                 </div>
-                <div className="flex items-center justify-between text-xs font-mono text-slate-400 tabular-nums">
-                  <span>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] sm:text-xs font-mono text-slate-400 tabular-nums">
+                  <span className="text-left">
                     {progressRegionsTotal > 0
                       ? `${progressRegionsDone} / ${progressRegionsTotal} regions · ${progressResourcesFound} resources`
                       : "Parallel multi-region scan across all enabled AWS regions…"}
                   </span>
-                  <span className="text-teal-400">{(elapsedMs / 1000).toFixed(1)}s</span>
+                  <span className="text-teal-400 shrink-0">{(elapsedMs / 1000).toFixed(1)}s</span>
                 </div>
               </div>
 
-              <p className="text-xs text-slate-500">
+              <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed">
                 EC2 · VPC · S3 · IAM · Lambda · RDS · DynamoDB · EBS · CloudWatch · CloudTrail
               </p>
             </div>
@@ -355,23 +355,23 @@ export default function DashboardScreen({
 
           {/* Scan Failed State */}
           {!isLoading && scanError && (
-            <div className="rounded-2xl border border-red-800/50 bg-red-950/20 p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1">
+            <div className="rounded-2xl border border-red-800/50 bg-red-950/20 p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-1 min-w-0">
                 <p className="text-sm font-semibold text-red-300">Unable to complete account scan</p>
-                <p className="text-xs text-red-200/80 leading-relaxed">{scanError}</p>
+                <p className="text-xs text-red-200/80 leading-relaxed break-words">{scanError}</p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={onDisconnect}
-                  className="px-3 py-1.5 text-xs rounded-lg border border-slate-700 text-slate-300 hover:text-white cursor-pointer bg-transparent"
+                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-700 text-slate-300 hover:text-white cursor-pointer bg-transparent text-center"
                 >
                   Back to Connection Setup
                 </button>
                 <button
                   type="button"
                   onClick={onRescan}
-                  className="px-3 py-1.5 text-xs rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold cursor-pointer"
+                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold cursor-pointer text-center"
                 >
                   Retry Scan
                 </button>
@@ -381,16 +381,16 @@ export default function DashboardScreen({
 
           {/* Connected Account Dashboard */}
           {!isLoading && !scanError && scanResults && (
-            <div className="flex flex-col space-y-10 sm:space-y-12">
+            <div className="flex flex-col space-y-8 sm:space-y-11">
               {/* SEPARATE INVENTORY COVERAGE STATUS BANNER */}
               <div
-                className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 text-xs ${
+                className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 text-xs ${
                   isIncompleteScan
                     ? "bg-orange-950/25 border-orange-500/40 text-orange-200"
                     : "bg-slate-900/50 border-slate-800 text-slate-300"
                 }`}
               >
-                <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
                   <span
                     className={`w-2 h-2 rounded-full shrink-0 ${
                       isIncompleteScan ? "bg-orange-400" : "bg-emerald-400"
@@ -422,7 +422,7 @@ export default function DashboardScreen({
                 <button
                   type="button"
                   onClick={() => setCoverageModalOpen(true)}
-                  className={`text-[11px] font-semibold underline underline-offset-2 transition-colors cursor-pointer bg-transparent border-none p-0 self-start sm:self-auto shrink-0 ${
+                  className={`text-[11px] font-semibold underline underline-offset-2 transition-colors cursor-pointer bg-transparent border-none p-0 self-start md:self-auto shrink-0 ${
                     isIncompleteScan ? "text-orange-300 hover:text-orange-200" : "text-teal-400 hover:text-teal-300"
                   }`}
                 >
@@ -436,7 +436,7 @@ export default function DashboardScreen({
                   {accountAdvisories.map((adv, idx) => (
                     <div
                       key={`${adv.rule_id}-${idx}`}
-                      className="rounded-xl border border-red-500/35 bg-red-950/20 p-4 text-xs space-y-1.5"
+                      className="rounded-xl border border-red-500/35 bg-red-950/20 p-3.5 sm:p-4 text-xs space-y-1.5 break-words"
                     >
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
@@ -446,8 +446,8 @@ export default function DashboardScreen({
                         <span className="text-sm font-semibold text-red-100">{adv.title}</span>
                       </div>
                       <p className="text-slate-300 leading-relaxed">{adv.why}</p>
-                      <p className="text-teal-300"><strong className="text-teal-400">Fix:</strong> {adv.fix}</p>
-                      <p className="text-emerald-300/90"><strong className="text-emerald-400">Verify:</strong> {adv.verify}</p>
+                      <p className="text-teal-300 leading-relaxed"><strong className="text-teal-400">Fix:</strong> {adv.fix}</p>
+                      <p className="text-emerald-300/90 leading-relaxed"><strong className="text-emerald-400">Verify:</strong> {adv.verify}</p>
                     </div>
                   ))}
                 </div>
@@ -459,53 +459,53 @@ export default function DashboardScreen({
                   Security &amp; Cost Assessment Results
                 </p>
 
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
                   <ScoreRing
                     score={scoreData.score}
                     label={scoreData.label}
                     labelColor={scoreData.labelColor}
                   />
 
-                  <div className="flex flex-wrap items-center gap-2.5 text-xs">
+                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs w-full md:w-auto">
                     <button
                       type="button"
                       onClick={() => jumpToInventory("CRITICAL")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer font-medium"
+                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer font-medium"
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
                       <span>{scoreData.critical} Critical</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => jumpToInventory("WARNING")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
+                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
                       <span>{scoreData.warning} Warning{scoreData.warning === 1 ? "" : "s"}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => jumpToInventory("COST_UNUSED")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer font-medium"
+                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer font-medium"
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
                       <span>{scoreData.costAndUnusedFindings} Cost / Unused</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => jumpToInventory("HEALTHY")}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer font-medium"
+                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer font-medium"
                     >
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
                       <span>{scoreData.healthy} Healthy</span>
                     </button>
                     {scoreData.incomplete > 0 && (
                       <button
                         type="button"
                         onClick={() => jumpToInventory("INCOMPLETE")}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 hover:bg-orange-500/20 transition-colors cursor-pointer font-medium"
+                        className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 hover:bg-orange-500/20 transition-colors cursor-pointer font-medium"
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
                         <span>{scoreData.incomplete} Incomplete</span>
                       </button>
                     )}
@@ -753,8 +753,8 @@ export default function DashboardScreen({
 
               {/* LEVEL 3 — CENTRAL RESOURCE INVENTORY */}
               <section ref={inventorySectionRef} className="scroll-mt-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <div className="min-w-0">
                     <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
                       Complete Account Inventory (10 Supported Services)
                     </p>
@@ -766,7 +766,7 @@ export default function DashboardScreen({
                     type="button"
                     onClick={handleExportCSV}
                     disabled={allResources.length === 0}
-                    className="text-xs px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-600 text-slate-300 hover:text-white cursor-pointer bg-slate-900/60 transition-colors disabled:opacity-40"
+                    className="self-start sm:self-auto text-xs px-3 py-2 sm:py-1.5 rounded-lg border border-slate-800 hover:border-slate-600 text-slate-300 hover:text-white cursor-pointer bg-slate-900/60 transition-colors disabled:opacity-40 shrink-0"
                   >
                     Export CSV
                   </button>
