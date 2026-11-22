@@ -22,7 +22,7 @@ def _inspect_bucket(session, s3, bucket, selected_regions):
         code = e.response.get("Error", {}).get("Code", "AWS error")
         raw_location = None
         bucket_region = "global"
-        assessment_errors["S3-001"] = f"Could not determine bucket region: {code}"
+        assessment_errors["bucket_location"] = f"Could not determine bucket region: {code}"
 
     if selected_regions is not None and bucket_region != "global" and bucket_region not in selected_regions:
         return None
@@ -34,32 +34,12 @@ def _inspect_bucket(session, s3, bucket, selected_regions):
         else s3
     )
 
-    is_empty = None
     versioning_status = None
-
-    def fetch_empty():
-        objs_resp = regional_s3.list_objects_v2(Bucket=bucket_name, MaxKeys=1)
-        return objs_resp.get("KeyCount", 0) == 0
-
-    def fetch_versioning():
+    try:
         ver_resp = regional_s3.get_bucket_versioning(Bucket=bucket_name)
-        return ver_resp.get("Status", "Disabled")
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as ex:
-        f_empty = ex.submit(fetch_empty) if "S3-001" not in assessment_errors else None
-        f_ver = ex.submit(fetch_versioning)
-
-        if f_empty is not None:
-            try:
-                is_empty = f_empty.result()
-            except ClientError as e:
-                code = e.response.get("Error", {}).get("Code", "AWS error")
-                assessment_errors["S3-001"] = f"Could not inspect bucket objects: {code}"
-
-        try:
-            versioning_status = f_ver.result()
-        except ClientError:
-            versioning_status = None
+        versioning_status = ver_resp.get("Status", "Disabled")
+    except ClientError:
+        versioning_status = None
 
     item = {
         "id": bucket_name,
@@ -73,7 +53,6 @@ def _inspect_bucket(session, s3, bucket, selected_regions):
             "arn": f"arn:aws:s3:::{bucket_name}",
             "name": bucket_name,
             "creation_date": creation_date,
-            "is_empty": is_empty,
             "location": raw_location,
             "versioning": versioning_status,
         },

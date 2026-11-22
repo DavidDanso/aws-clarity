@@ -22,6 +22,11 @@ const SEVERITY_STYLE = {
     border: "border-sky-500/30",
     left:   "border-l-sky-500",
   },
+  INFO: {
+    badge:  "text-slate-300 bg-slate-500/15 border border-slate-600/40",
+    border: "border-slate-700/70",
+    left:   "border-l-slate-400",
+  },
 };
 
 const RAW_SKIP_KEYS = [

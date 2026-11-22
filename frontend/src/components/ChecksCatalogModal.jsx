@@ -15,6 +15,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
   const checkCounts = useMemo(() => ({
     total: evaluatedChecks.length,
     violated: evaluatedChecks.filter((c) => c.eval.status === "VIOLATED").length,
+    review: evaluatedChecks.filter((c) => c.eval.status === "REVIEW").length,
     passed: evaluatedChecks.filter((c) => c.eval.status === "PASSED").length,
     failed: evaluatedChecks.filter((c) => c.eval.status === "CHECK_FAILED").length,
     na: evaluatedChecks.filter((c) => c.eval.status === "NOT_APPLICABLE").length,
@@ -23,6 +24,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
   const filteredChecks = useMemo(() => {
     let list = evaluatedChecks;
     if (catalogFilter === "violated") list = list.filter((c) => c.eval.status === "VIOLATED");
+    else if (catalogFilter === "review") list = list.filter((c) => c.eval.status === "REVIEW");
     else if (catalogFilter === "passed") list = list.filter((c) => c.eval.status === "PASSED");
     else if (catalogFilter === "failed") list = list.filter((c) => c.eval.status === "CHECK_FAILED");
     else if (catalogFilter === "na") list = list.filter((c) => c.eval.status === "NOT_APPLICABLE");
@@ -84,6 +86,9 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
             {[
               { key: "all", label: "All Checks", count: checkCounts.total },
               { key: "violated", label: "Violated", count: checkCounts.violated, activeClass: "text-red-400 bg-red-500/10 border-red-500/20" },
+              ...(checkCounts.review > 0
+                ? [{ key: "review", label: "Review Info", count: checkCounts.review, activeClass: "text-slate-200 bg-slate-600/20 border-slate-500/30" }]
+                : []),
               { key: "passed", label: "Passed", count: checkCounts.passed, activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
               ...(checkCounts.failed > 0
                 ? [{ key: "failed", label: "Check Failed", count: checkCounts.failed, activeClass: "text-orange-300 bg-orange-500/10 border-orange-500/20" }]
@@ -116,6 +121,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
             filteredChecks.map((check) => {
               const status = check.eval.status;
               const isViolated = status === "VIOLATED";
+              const isReview = status === "REVIEW";
               const isPassed = status === "PASSED";
               const isFailed = status === "CHECK_FAILED";
 
@@ -166,6 +172,12 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                           <span className="font-mono text-[10px] text-red-300">({check.eval.label})</span>
                         </span>
                       )}
+                      {isReview && (
+                        <span className="font-medium text-slate-300 flex items-center gap-1">
+                          <span>ℹ Review</span>
+                          <span className="font-mono text-[10px] text-slate-400">({check.eval.label})</span>
+                        </span>
+                      )}
                       {isPassed && (
                         <span className="font-medium text-emerald-400 flex items-center gap-1">
                           <span>✓ Passed</span>
@@ -178,7 +190,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                           <span className="font-mono text-[10px] text-orange-200">({check.eval.label})</span>
                         </span>
                       )}
-                      {!isViolated && !isPassed && !isFailed && (
+                      {!isViolated && !isReview && !isPassed && !isFailed && (
                         <span className="text-slate-500 font-mono text-[10px]">— No resources in account</span>
                       )}
                     </div>

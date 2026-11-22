@@ -83,12 +83,15 @@ const SCAN_STAGE_LABELS = {
 export default function DashboardScreen({
   scanResults,
   previousScanResults,
+  isDemoMode = false,
+  onExitDemo,
   onRescan,
   onDisconnect,
   isLoading,
   scanStatus,
   scanProgress,
   scanError,
+  dataControls = null,
 }) {
   const [selectedResource, setSelectedResource] = useState(null);
   const [coverageModalOpen, setCoverageModalOpen] = useState(false);
@@ -98,6 +101,7 @@ export default function DashboardScreen({
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState("resolved");
   const [tableStatusFilter, setTableStatusFilter] = useState("ALL");
+  const [tableCategoryFilter, setTableCategoryFilter] = useState("ALL");
   const [elapsedMs, setElapsedMs] = useState(0);
 
   useEffect(() => {
@@ -127,13 +131,17 @@ export default function DashboardScreen({
   const inventorySectionRef = useRef(null);
 
   const coverage = scanResults?.coverage || {};
-  const isIncompleteScan = coverage?.status === "INCOMPLETE" || scanResults?.partial === true;
   const coverageFailures = coverage?.failures || [];
+  const isIncompleteScan =
+    coverage?.status === "INCOMPLETE" ||
+    scanResults?.partial === true ||
+    coverageFailures.length > 0;
   const regionsScanned = coverage?.regions_scanned || scanResults?.regions || [];
   const accountAdvisories = scanResults?.account_advisories || [];
 
-  const jumpToInventory = (statusFilter) => {
+  const jumpToInventory = (statusFilter, categoryFilter = "ALL") => {
     setTableStatusFilter(statusFilter);
+    setTableCategoryFilter(categoryFilter);
     inventorySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -152,7 +160,15 @@ export default function DashboardScreen({
     [previousAllResources, allResources]
   );
 
-  const scoreData = useMemo(() => computeScore(allResources), [allResources]);
+  const scoreData = useMemo(
+    () => computeScore(allResources, isIncompleteScan),
+    [allResources, isIncompleteScan]
+  );
+
+  const previousScanIncomplete =
+    previousScanResults?.coverage?.status === "INCOMPLETE" ||
+    previousScanResults?.partial === true ||
+    (previousScanResults?.coverage?.failures || []).length > 0;
 
   const activeCatalog = useMemo(() => {
     const rulesCatalog = scanResults?.coverage?.rules_catalog;
@@ -192,7 +208,15 @@ export default function DashboardScreen({
     };
 
     addMatching((i) => i.severity === "CRITICAL", 2);
-    addMatching((i) => i.category === "Cost Risk" || i.category === "Unused" || i.severity === "UNUSED", 2);
+    addMatching(
+      (i) =>
+        i.severity !== "INFO" &&
+        (i.category === "Potential Cost Waste" ||
+          i.category === "Cost Risk" ||
+          i.category === "Unused" ||
+          i.severity === "UNUSED"),
+      2
+    );
     if (items.length < 4) {
       addMatching((i) => i.severity === "WARNING", 4 - items.length);
     }
@@ -303,6 +327,8 @@ export default function DashboardScreen({
           accountId={scanResults?.account_id || ""}
           regionsCount={regionsScanned.length}
           scannedAt={scanResults?.scanned_at || ""}
+          isDemoMode={isDemoMode}
+          onExitDemo={onExitDemo}
           onRescan={onRescan}
           onDisconnect={onDisconnect}
           isLoading={isLoading}
@@ -310,6 +336,27 @@ export default function DashboardScreen({
         />
 
         <main className="mt-6 sm:mt-9">
+          {/* Unmistakable Demonstration Mode Banner */}
+          {isDemoMode && (
+            <div className="mb-6 rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
+              <div className="space-y-0.5 min-w-0">
+                <p className="font-semibold text-indigo-200">
+                  Demonstration Account — Sample AWS Assessment Data Only
+                </p>
+                <p className="text-indigo-200/80 text-[11px] leading-relaxed">
+                  You are viewing static fixture data covering CRITICAL, WARNING, UNUSED, INFO, HEALTHY, and INCOMPLETE
+                  states across all 10 supported services. Demo data is never stored or mixed with real AWS scans.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onExitDemo}
+                className="self-start sm:self-auto shrink-0 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Connect Your AWS Account →
+              </button>
+            </div>
+          )}
           {/* Active Scan Progress */}
           {isLoading && (
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 sm:p-8 flex flex-col items-center text-center gap-5">
@@ -453,62 +500,116 @@ export default function DashboardScreen({
                 </div>
               )}
 
-              {/* LEVEL 1 — SECURITY & COST ASSESSMENT RESULTS */}
+              {/* LEVEL 1 — SECURITY, OPERATIONAL & COST ASSESSMENT RESULTS */}
               <section className="space-y-4">
                 <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                  Security &amp; Cost Assessment Results
+                  Assessment Summary — Security Risks · Operational Concerns · Potential Cost Waste
                 </p>
 
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
-                  <ScoreRing
-                    score={scoreData.score}
-                    label={scoreData.label}
-                    labelColor={scoreData.labelColor}
-                  />
-
-                  <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs w-full md:w-auto">
-                    <button
-                      type="button"
-                      onClick={() => jumpToInventory("CRITICAL")}
-                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer font-medium"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-                      <span>{scoreData.critical} Critical</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => jumpToInventory("WARNING")}
-                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                      <span>{scoreData.warning} Warning{scoreData.warning === 1 ? "" : "s"}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => jumpToInventory("COST_UNUSED")}
-                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-300 hover:bg-sky-500/20 transition-colors cursor-pointer font-medium"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
-                      <span>{scoreData.costAndUnusedFindings} Cost / Unused</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => jumpToInventory("HEALTHY")}
-                      className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer font-medium"
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      <span>{scoreData.healthy} Healthy</span>
-                    </button>
-                    {scoreData.incomplete > 0 && (
+                  {scoreData.isAvailable ? (
+                    <ScoreRing
+                      score={scoreData.score}
+                      label={scoreData.label}
+                      labelColor={scoreData.labelColor}
+                    />
+                  ) : (
+                    <div className="rounded-xl border border-orange-500/35 bg-orange-950/20 px-4 py-3.5 max-w-md space-y-1.5">
+                      <p className="text-sm font-semibold text-orange-200">
+                        Health score unavailable — assessment incomplete.
+                      </p>
+                      <p className="text-xs text-orange-200/80 leading-relaxed">
+                        {coverageFailures.length > 0
+                          ? `${coverageFailures.length} collection or check failure${coverageFailures.length === 1 ? "" : "s"} prevented a complete account assessment.`
+                          : "One or more resource checks could not complete."}{" "}
+                        AWS Clarity withholds the numeric score so partial scans are never mistaken for a 100/100 healthy account.
+                      </p>
                       <button
                         type="button"
-                        onClick={() => jumpToInventory("INCOMPLETE")}
-                        className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 hover:bg-orange-500/20 transition-colors cursor-pointer font-medium"
+                        onClick={() => setCoverageModalOpen(true)}
+                        className="text-xs font-semibold text-orange-300 hover:text-orange-200 underline underline-offset-2 cursor-pointer bg-transparent border-none p-0"
                       >
-                        <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                        <span>{scoreData.incomplete} Incomplete</span>
+                        Inspect incomplete services &amp; regions →
                       </button>
-                    )}
+                    </div>
+                  )}
+
+                  <div className="space-y-2.5 w-full md:w-auto">
+                    {/* 3 Finding Category Buttons */}
+                    <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("ALL", "Security Risk")}
+                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span>Security Risks</span>
+                        <span className="font-mono font-bold">{scoreData.securityRisks}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("ALL", "Operational Concern")}
+                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span>Operational Concerns</span>
+                        <span className="font-mono font-bold">{scoreData.operationalConcerns}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("ALL", "Potential Cost Waste")}
+                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span>Potential Cost Waste</span>
+                        <span className="font-mono font-bold">{scoreData.potentialCostWaste}</span>
+                      </button>
+                    </div>
+
+                    {/* Severity Quick Filters */}
+                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("CRITICAL", "ALL")}
+                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
+                        <span>{scoreData.critical} Critical</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("WARNING", "ALL")}
+                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        <span>{scoreData.warning} Warning{scoreData.warning === 1 ? "" : "s"}</span>
+                      </button>
+                      {scoreData.info > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => jumpToInventory("INFO", "ALL")}
+                          className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-500/10 border border-slate-600/40 text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer font-medium"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                          <span>{scoreData.info} Review Info</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => jumpToInventory("HEALTHY", "ALL")}
+                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer font-medium"
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                        <span>{scoreData.healthy} Healthy</span>
+                      </button>
+                      {scoreData.incomplete > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => jumpToInventory("INCOMPLETE", "ALL")}
+                          className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 hover:bg-orange-500/20 transition-colors cursor-pointer font-medium"
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
+                          <span>{scoreData.incomplete} Incomplete</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 
@@ -535,22 +636,30 @@ export default function DashboardScreen({
                     onClick={() => setCoverageModalOpen(true)}
                     className="hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
                   >
-                    Coverage matrix
+                    Coverage report
                   </button>
 
                   {comparison.hasPrevious && (
                     <>
                       <span>·</span>
-                      <span className="text-slate-400">
-                        Previous: {comparison.previousScore} → {comparison.currentScore}
-                      </span>
-                      <span className={`font-semibold ${deltaColor}`}>{deltaLabel}</span>
+                      {scoreData.isAvailable && !previousScanIncomplete ? (
+                        <>
+                          <span className="text-slate-400">
+                            Previous: {comparison.previousScore} → {comparison.currentScore}
+                          </span>
+                          <span className={`font-semibold ${deltaColor}`}>{deltaLabel}</span>
+                        </>
+                      ) : (
+                        <span className="text-slate-400">
+                          Scan Diff: {comparison.newCount} new · {comparison.resolvedCount} resolved · {comparison.stillOpenCount} unchanged
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={() => setComparisonExpanded((prev) => !prev)}
-                        className="hover:text-slate-200 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 text-slate-400"
+                        className="hover:text-slate-200 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 text-teal-400"
                       >
-                        Diff <ChevronIcon open={comparisonExpanded} />
+                        Scan Diff <ChevronIcon open={comparisonExpanded} />
                       </button>
                     </>
                   )}
@@ -560,9 +669,9 @@ export default function DashboardScreen({
                   <div className="border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/40">
                     <div className="flex items-center gap-1 flex-wrap">
                       {[
+                        { key: "new", label: "⚡ New", count: comparison.newCount, activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
                         { key: "resolved", label: "✓ Resolved", count: comparison.resolvedCount, activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-                        { key: "stillOpen", label: "⚠ Still Open", count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-                        { key: "new", label: "⚡ New Issues", count: comparison.newCount, activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
+                        { key: "stillOpen", label: "• Unchanged", count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
                         { key: "newResources", label: "New Resources", count: comparison.newResourcesCount, activeClass: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
                         { key: "removedResources", label: "Removed", count: comparison.removedResourcesCount, activeClass: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
                         { key: "statusChanges", label: "Status Changes", count: comparison.statusChangesCount, activeClass: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
@@ -775,6 +884,7 @@ export default function DashboardScreen({
                 <ResourceTable
                   resources={allResources}
                   initialStatusFilter={tableStatusFilter}
+                  initialCategoryFilter={tableCategoryFilter}
                   onInspect={(resource) => setSelectedResource(resource)}
                 />
               </section>
@@ -794,6 +904,7 @@ export default function DashboardScreen({
         isOpen={scoreModalOpen}
         onClose={() => setScoreModalOpen(false)}
         scoreData={scoreData}
+        coverageFailuresCount={coverageFailures.length}
       />
 
       <ChecksCatalogModal
@@ -802,7 +913,11 @@ export default function DashboardScreen({
         evaluatedChecks={evaluatedChecks}
       />
 
-      <TrustModal isOpen={trustModalOpen} onClose={() => setTrustModalOpen(false)} />
+      <TrustModal
+        isOpen={trustModalOpen}
+        onClose={() => setTrustModalOpen(false)}
+        dataControls={dataControls}
+      />
 
       {selectedResource && (
         <DetailDrawer

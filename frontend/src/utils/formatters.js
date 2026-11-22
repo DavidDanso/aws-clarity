@@ -11,7 +11,7 @@ export function validateExternalId(externalId) {
 }
 
 export function generateExternalId() {
-  const bytes = new Uint8Array(8);
+  const bytes = new Uint8Array(16);
   if (typeof crypto !== "undefined" && crypto.getRandomValues) {
     crypto.getRandomValues(bytes);
   } else {

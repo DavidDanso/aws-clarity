@@ -83,10 +83,10 @@ resource "aws_api_gateway_resource" "scan_id_status" {
 
 # --- GET STATUS METHOD ---
 resource "aws_api_gateway_method" "get_scan_status" {
-  rest_api_id      = aws_api_gateway_rest_api.api.id
-  resource_id      = aws_api_gateway_resource.scan_id_status.id
-  http_method      = "GET"
-  authorization    = "NONE"
+  rest_api_id   = aws_api_gateway_rest_api.api.id
+  resource_id   = aws_api_gateway_resource.scan_id_status.id
+  http_method   = "GET"
+  authorization = "NONE"
   request_parameters = {
     "method.request.path.scan_id" = true
   }
@@ -96,7 +96,7 @@ resource "aws_api_gateway_integration" "get_scan_status_lambda" {
   rest_api_id             = aws_api_gateway_rest_api.api.id
   resource_id             = aws_api_gateway_resource.scan_id_status.id
   http_method             = aws_api_gateway_method.get_scan_status.http_method
-  integration_http_method  = "POST"
+  integration_http_method = "POST"
   type                    = "AWS_PROXY"
   uri                     = aws_api_gateway_integration.post_scan_lambda.uri
 }
@@ -181,6 +181,18 @@ resource "aws_api_gateway_stage" "prod" {
   deployment_id = aws_api_gateway_deployment.prod.id
   rest_api_id   = aws_api_gateway_rest_api.api.id
   stage_name    = "prod"
+}
+
+# Built-in free stage-level request throttling to prevent abuse and protect free allowances
+resource "aws_api_gateway_method_settings" "prod_throttling" {
+  rest_api_id = aws_api_gateway_rest_api.api.id
+  stage_name  = aws_api_gateway_stage.prod.stage_name
+  method_path = "*/*"
+
+  settings {
+    throttling_burst_limit = var.api_throttle_burst_limit
+    throttling_rate_limit  = var.api_throttle_rate_limit
+  }
 }
 
 # Include CORS headers on API Gateway-generated 4XX/5XX errors so browsers

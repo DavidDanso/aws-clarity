@@ -62,7 +62,7 @@ SERVICE_COVERAGE_MATRIX = [
         "resource_types": [
             {"key": "s3_buckets", "type": "s3_bucket", "label": "S3 Buckets"},
         ],
-        "checks": ["S3-001", "S3-002", "S3-003", "S3-004", "S3-005"],
+        "checks": ["S3-002", "S3-003", "S3-004", "S3-005"],
     },
     {
         "service": "IAM",
@@ -135,7 +135,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "security_group",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether inbound firewall rules allow all protocols (-1) and all ports from 0.0.0.0/0 or ::/0.",
         "what_found": "Inbound firewall rule allows all protocols (-1) and all ports from 0.0.0.0/0 or ::/0.",
         "what_checked": "Evaluated Security Group ingress IP permissions for unrestricted CIDR routes across all protocols.",
@@ -145,7 +145,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "security_group",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether inbound SSH (port 22) is exposed to 0.0.0.0/0 or ::/0.",
         "what_found": "Inbound SSH access is allowed from 0.0.0.0/0 or ::/0 on port 22.",
         "what_checked": "Evaluated Security Group ingress IP permissions for port 22 with unrestricted CIDR sources.",
@@ -155,7 +155,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "security_group",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether inbound Windows RDP (port 3389) is exposed to 0.0.0.0/0 or ::/0.",
         "what_found": "Inbound RDP access is allowed from 0.0.0.0/0 or ::/0 on port 3389.",
         "what_checked": "Evaluated Security Group ingress IP permissions for port 3389 with unrestricted CIDR sources.",
@@ -165,7 +165,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "security_group",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether common database ports (3306, 5432, 1433, 6379, 27017) are open to 0.0.0.0/0 or ::/0.",
         "what_found": "Inbound firewall rule exposes a database port directly to the public internet.",
         "what_checked": "Evaluated Security Group ingress port ranges against database ports with unrestricted CIDR sources.",
@@ -175,7 +175,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "ec2_instance",
         "severity": "UNUSED",
-        "category": "Cost Risk",
+        "category": "Potential Cost Waste",
         "what_it_checks": "Checks whether an EC2 instance is stopped while retaining attached EBS storage and Elastic IPs that continue incurring charges.",
         "what_found": "EC2 instance is in 'stopped' state while retaining attached storage and IPs.",
         "what_checked": "Inspected EC2 DescribeInstances instance state.",
@@ -185,7 +185,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "ec2_instance",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an active EC2 instance requires IMDSv2 (HttpTokens=required) to protect IAM credentials from SSRF.",
         "what_found": "EC2 instance still permits IMDSv1 (HttpTokens is not 'required').",
         "what_checked": "Inspected EC2 DescribeInstances MetadataOptions.HttpTokens attribute.",
@@ -195,7 +195,7 @@ RULE_METADATA = {
         "service": "EC2",
         "resource_type": "elastic_ip",
         "severity": "UNUSED",
-        "category": "Cost Risk",
+        "category": "Potential Cost Waste",
         "what_it_checks": "Checks whether an allocated Elastic IP is unattached to any instance or ENI, incurring hourly public IPv4 charges.",
         "what_found": "Elastic IP address has no active AssociationId or attached network interface.",
         "what_checked": "Inspected EC2 DescribeAddresses AssociationId field.",
@@ -207,7 +207,7 @@ RULE_METADATA = {
         "service": "VPC",
         "resource_type": "vpc",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether a default VPC actively hosts public-facing EC2 or publicly accessible RDS workloads (an empty default VPC is not flagged).",
         "what_found": "Active public-facing compute or database resources are deployed inside the default VPC.",
         "what_checked": "Cross-referenced default VPC ID against running public EC2 instances and publicly accessible RDS databases.",
@@ -217,7 +217,7 @@ RULE_METADATA = {
         "service": "VPC",
         "resource_type": "internet_gateway",
         "severity": "UNUSED",
-        "category": "Unused",
+        "category": "Operational Concern",
         "what_it_checks": "Checks whether an Internet Gateway exists without being attached to any VPC.",
         "what_found": "Internet Gateway exists with 0 VPC attachments.",
         "what_checked": "Inspected EC2 DescribeInternetGateways Attachments array.",
@@ -227,39 +227,29 @@ RULE_METADATA = {
         "service": "VPC",
         "resource_type": "nat_gateway",
         "severity": "WARNING",
-        "category": "Reliability",
+        "category": "Operational Concern",
         "what_it_checks": "Checks whether a NAT Gateway is in a failed state and unable to route private subnet traffic.",
         "what_found": "NAT Gateway is in a failed state.",
         "what_checked": "Inspected EC2 DescribeNatGateways State attribute.",
     },
     "NAT-002": {
-        "name": "Active NAT Gateway (Ongoing Spend Risk)",
+        "name": "Active NAT Gateway (Review Ongoing Cost)",
         "service": "VPC",
         "resource_type": "nat_gateway",
-        "severity": "WARNING",
-        "category": "Cost Risk",
-        "what_it_checks": "Flags active NAT Gateways because they incur continuous hourly and per-GB data-processing charges.",
-        "what_found": "An active NAT Gateway incurs continuous hourly availability and data-processing charges.",
+        "severity": "INFO",
+        "category": "Potential Cost Waste",
+        "what_it_checks": "Informational cost review for active NAT Gateways because they incur continuous hourly and per-GB data-processing charges.",
+        "what_found": "NAT Gateway is active and incurs ongoing hourly and data-processing charges.",
         "what_checked": "Inspected EC2 DescribeNatGateways State and SubnetId.",
     },
 
     # ── S3 ───────────────────────────────────────────────────────────────────
-    "S3-001": {
-        "name": "Empty S3 Bucket",
-        "service": "S3",
-        "resource_type": "s3_bucket",
-        "severity": "UNUSED",
-        "category": "Unused",
-        "what_it_checks": "Checks whether an S3 bucket contains zero objects and may be leftover clutter.",
-        "what_found": "Bucket contains 0 objects.",
-        "what_checked": "Queried S3 ListObjectsV2 (MaxKeys=1) to verify whether the bucket holds objects.",
-    },
     "S3-002": {
         "name": "Public Access via Bucket Policy",
         "service": "S3",
         "resource_type": "s3_bucket",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an S3 bucket policy permits public read or write access.",
         "what_found": "Bucket policy explicitly allows public access from the internet.",
         "what_checked": "Queried S3 GetBucketPolicyStatus API.",
@@ -269,7 +259,7 @@ RULE_METADATA = {
         "service": "S3",
         "resource_type": "s3_bucket",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an S3 bucket ACL grants public access to AllUsers or AuthenticatedUsers.",
         "what_found": "Bucket ACL grants permissions to AllUsers or AuthenticatedUsers.",
         "what_checked": "Queried S3 GetBucketAcl API and inspected grantee URIs.",
@@ -279,7 +269,7 @@ RULE_METADATA = {
         "service": "S3",
         "resource_type": "s3_bucket",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Verifies S3 default server-side encryption configuration is readable and active (respecting AWS default SSE-S3).",
         "what_found": "Inspected bucket encryption configuration; AWS S3 applies SSE-S3 by default.",
         "what_checked": "Queried S3 GetBucketEncryption and accounted for AWS default SSE-S3 encryption.",
@@ -289,7 +279,7 @@ RULE_METADATA = {
         "service": "S3",
         "resource_type": "s3_bucket",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether all 4 S3 Block Public Access controls are enabled.",
         "what_found": "One or more of the four S3 Block Public Access controls are disabled.",
         "what_checked": "Queried S3 GetPublicAccessBlock configuration for all 4 flags.",
@@ -301,7 +291,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an inline role policy grants Action: *, iam:*, or NotAction on Resource: * without scoping conditions.",
         "what_found": "Inline IAM policy grants unrestricted administrative wildcard permissions.",
         "what_checked": "Evaluated role inline policy statements across Action/NotAction, Resource, and Condition context.",
@@ -311,7 +301,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether non-read-only write/mutate actions apply to Resource: * without scoping conditions (read-only Describe/List/Get actions are excluded).",
         "what_found": "Inline IAM policy grants write or state-changing actions across Resource: * without scoping conditions.",
         "what_checked": "Evaluated inline policy statements distinguishing write/destructive actions from read-only discovery actions and checking Conditions.",
@@ -321,7 +311,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether AWS-managed AdministratorAccess is attached to a customer-managed IAM role.",
         "what_found": "AWS managed policy AdministratorAccess is attached to this role.",
         "what_checked": "Inspected IAM ListAttachedRolePolicies (excluding AWS service-linked roles).",
@@ -331,7 +321,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether IAMFullAccess is attached to a customer-managed IAM role.",
         "what_found": "AWS managed policy IAMFullAccess is attached to this role.",
         "what_checked": "Inspected IAM ListAttachedRolePolicies for IAMFullAccess.",
@@ -341,7 +331,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an IAM role trust policy allows Principal: * or AWS: * without strong scoping conditions.",
         "what_found": "Role trust policy allows unrestricted wildcard principals without scoping conditions.",
         "what_checked": "Parsed AssumeRolePolicyDocument Principal and Condition blocks.",
@@ -351,7 +341,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether inline policies grant full service wildcards (e.g. s3:*, ec2:*) on Resource: * without scoping conditions.",
         "what_found": "Inline policy grants full service wildcard actions on Resource: * without conditions.",
         "what_checked": "Evaluated inline policy Action wildcards, Resource scope, and Condition blocks.",
@@ -361,7 +351,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether PowerUserAccess is attached to a customer-managed IAM role.",
         "what_found": "AWS managed policy PowerUserAccess is attached to this role.",
         "what_checked": "Inspected IAM ListAttachedRolePolicies for PowerUserAccess.",
@@ -371,7 +361,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_role",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether external cross-account trust policies enforce sts:ExternalId or aws:PrincipalOrgID.",
         "what_found": "Cross-account trust relationship lacks sts:ExternalId and aws:PrincipalOrgID conditions.",
         "what_checked": "Inspected AssumeRolePolicyDocument external account principals against current account ID and Condition blocks.",
@@ -381,19 +371,19 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_user",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an IAM user with console sign-in activity or administrative access has MFA enabled.",
         "what_found": "IAM user with console or privileged access has 0 MFA devices registered.",
         "what_checked": "Inspected IAM ListUsers PasswordLastUsed, attached policies, and ListMFADevices.",
     },
     "IAM-010": {
-        "name": "Stale Active IAM Access Key (>90 Days)",
+        "name": "Long-Lived Active IAM Access Key (>90 Days)",
         "service": "IAM",
         "resource_type": "iam_user",
         "severity": "WARNING",
-        "category": "Security",
-        "what_it_checks": "Checks whether an IAM user has an Active access key older than 90 days.",
-        "what_found": "IAM user has an Active access key that has not been rotated in over 90 days.",
+        "category": "Security Risk",
+        "what_it_checks": "Checks whether an IAM user has an Active static access key older than 90 days (age alone does not indicate compromise, but rotation reduces risk).",
+        "what_found": "IAM user has an Active static access key older than 90 days.",
         "what_checked": "Inspected IAM ListAccessKeys status and CreateDate.",
     },
     "IAM-011": {
@@ -401,7 +391,7 @@ RULE_METADATA = {
         "service": "IAM",
         "resource_type": "iam_user",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an IAM user has AdministratorAccess or wildcard Action: * attached directly.",
         "what_found": "IAM user has full administrative permissions attached directly to the user.",
         "what_checked": "Inspected IAM ListAttachedUserPolicies and inline user policies.",
@@ -409,12 +399,12 @@ RULE_METADATA = {
 
     # ── Lambda ───────────────────────────────────────────────────────────────
     "LAM-001": {
-        "name": "Stale Lambda Function (>90 Days)",
+        "name": "Lambda Function Unmodified >90 Days (Review)",
         "service": "Lambda",
         "resource_type": "lambda_function",
-        "severity": "WARNING",
-        "category": "Hygiene",
-        "what_it_checks": "Checks whether a Lambda function has not been updated in over 90 days.",
+        "severity": "INFO",
+        "category": "Operational Concern",
+        "what_it_checks": "Informational check noting whether a Lambda function has not been updated in over 90 days (stable functions are not automatically unhealthy).",
         "what_found": "Function has not been modified in over 90 days.",
         "what_checked": "Inspected Lambda ListFunctions LastModified timestamp.",
     },
@@ -423,7 +413,7 @@ RULE_METADATA = {
         "service": "Lambda",
         "resource_type": "lambda_function",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether a Lambda function uses an end-of-life runtime that no longer receives AWS security patches.",
         "what_found": "Lambda function uses a deprecated runtime.",
         "what_checked": "Inspected Lambda ListFunctions Runtime attribute.",
@@ -435,7 +425,7 @@ RULE_METADATA = {
         "service": "RDS",
         "resource_type": "rds_instance",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an RDS instance has PubliclyAccessible enabled.",
         "what_found": "RDS instance PubliclyAccessible flag is set to true.",
         "what_checked": "Inspected RDS DescribeDBInstances PubliclyAccessible attribute.",
@@ -445,7 +435,7 @@ RULE_METADATA = {
         "service": "RDS",
         "resource_type": "rds_instance",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an RDS database storage volume is encrypted at rest.",
         "what_found": "RDS instance storage encryption is disabled.",
         "what_checked": "Inspected RDS DescribeDBInstances StorageEncrypted attribute.",
@@ -455,7 +445,7 @@ RULE_METADATA = {
         "service": "RDS",
         "resource_type": "rds_instance",
         "severity": "WARNING",
-        "category": "Reliability",
+        "category": "Operational Concern",
         "what_it_checks": "Checks whether accidental deletion protection is enabled on RDS databases.",
         "what_found": "Deletion protection is disabled on this RDS instance.",
         "what_checked": "Inspected RDS DescribeDBInstances DeletionProtection attribute.",
@@ -465,7 +455,7 @@ RULE_METADATA = {
         "service": "RDS",
         "resource_type": "rds_instance",
         "severity": "WARNING",
-        "category": "Reliability",
+        "category": "Operational Concern",
         "what_it_checks": "Checks whether RDS automated backups are disabled (BackupRetentionPeriod = 0).",
         "what_found": "RDS automated backup retention period is set to 0 days.",
         "what_checked": "Inspected RDS DescribeDBInstances BackupRetentionPeriod attribute.",
@@ -477,7 +467,7 @@ RULE_METADATA = {
         "service": "DynamoDB",
         "resource_type": "dynamodb_table",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether a DynamoDB table explicitly reports encryption disabled (AWS-owned default encryption passes).",
         "what_found": "DynamoDB table explicitly reports encryption at rest disabled.",
         "what_checked": "Inspected DynamoDB DescribeTable SSEDescription (respecting AWS-owned default encryption).",
@@ -487,7 +477,7 @@ RULE_METADATA = {
         "service": "DynamoDB",
         "resource_type": "dynamodb_table",
         "severity": "UNUSED",
-        "category": "Cost Risk",
+        "category": "Potential Cost Waste",
         "what_it_checks": "Checks whether a PROVISIONED-capacity DynamoDB table holds 0 items and may incur unnecessary capacity charges.",
         "what_found": "DynamoDB table uses PROVISIONED billing mode while containing 0 items.",
         "what_checked": "Inspected DynamoDB DescribeTable BillingModeSummary and ItemCount.",
@@ -499,7 +489,7 @@ RULE_METADATA = {
         "service": "EBS",
         "resource_type": "ebs_volume",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether an EBS volume is encrypted at rest.",
         "what_found": "EBS volume block storage has encryption disabled.",
         "what_checked": "Inspected EC2 DescribeVolumes Encrypted attribute.",
@@ -509,19 +499,19 @@ RULE_METADATA = {
         "service": "EBS",
         "resource_type": "ebs_volume",
         "severity": "UNUSED",
-        "category": "Cost Risk",
+        "category": "Potential Cost Waste",
         "what_it_checks": "Checks whether an EBS volume is in 'available' state (unattached) and accumulating monthly storage charges.",
         "what_found": "EBS volume is in 'available' state and not attached to any EC2 instance.",
         "what_checked": "Inspected EC2 DescribeVolumes State and Attachments.",
     },
     "SNAP-001": {
-        "name": "Orphaned EBS Snapshot",
+        "name": "EBS Snapshot Without Original Volume (Review)",
         "service": "EBS",
         "resource_type": "ebs_snapshot",
-        "severity": "UNUSED",
-        "category": "Cost Risk",
-        "what_it_checks": "Checks whether an EBS snapshot's source volume has been deleted while the snapshot continues incurring storage charges.",
-        "what_found": "The EBS volume from which this snapshot was created no longer exists.",
+        "severity": "INFO",
+        "category": "Potential Cost Waste",
+        "what_it_checks": "Informational review for snapshots whose original EBS volume no longer exists (may be intentional backups or AMI snapshots).",
+        "what_found": "The original EBS volume for this snapshot no longer exists in the region.",
         "what_checked": "Cross-referenced Snapshot VolumeId against active EBS volumes in the region.",
     },
 
@@ -531,19 +521,19 @@ RULE_METADATA = {
         "service": "CloudWatch",
         "resource_type": "cloudwatch_alarm",
         "severity": "WARNING",
-        "category": "Reliability",
+        "category": "Operational Concern",
         "what_it_checks": "Checks whether a CloudWatch alarm has alarm actions disabled.",
         "what_found": "CloudWatch alarm has ActionsEnabled set to false.",
         "what_checked": "Inspected CloudWatch DescribeAlarms ActionsEnabled flag.",
     },
     "CW-002": {
-        "name": "CloudWatch Alarm in INSUFFICIENT_DATA State",
+        "name": "CloudWatch Alarm in INSUFFICIENT_DATA State (Review)",
         "service": "CloudWatch",
         "resource_type": "cloudwatch_alarm",
-        "severity": "WARNING",
-        "category": "Hygiene",
-        "what_it_checks": "Checks whether a CloudWatch alarm is stuck in INSUFFICIENT_DATA, often indicating a deleted or idle monitored resource.",
-        "what_found": "CloudWatch alarm state is INSUFFICIENT_DATA.",
+        "severity": "INFO",
+        "category": "Operational Concern",
+        "what_it_checks": "Informational check noting whether an alarm is currently in INSUFFICIENT_DATA (normal for sparse metrics or new alarms; not automatically a failure).",
+        "what_found": "CloudWatch alarm state is currently INSUFFICIENT_DATA.",
         "what_checked": "Inspected CloudWatch DescribeAlarms StateValue attribute.",
     },
     "CW-003": {
@@ -551,7 +541,7 @@ RULE_METADATA = {
         "service": "CloudWatch",
         "resource_type": "cloudwatch_log_group",
         "severity": "WARNING",
-        "category": "Cost Risk",
+        "category": "Potential Cost Waste",
         "what_it_checks": "Checks whether a CloudWatch Log Group has no retention policy, allowing stored logs and storage charges to grow indefinitely.",
         "what_found": "CloudWatch Log Group has no retention period configured (Never Expire).",
         "what_checked": "Inspected CloudWatch Logs DescribeLogGroups retentionInDays and storedBytes.",
@@ -563,7 +553,7 @@ RULE_METADATA = {
         "service": "CloudTrail",
         "resource_type": "cloudtrail_trail",
         "severity": "CRITICAL",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether a CloudTrail trail has logging actively turned on.",
         "what_found": "CloudTrail trail has IsLogging set to false.",
         "what_checked": "Inspected CloudTrail GetTrailStatus IsLogging flag.",
@@ -573,7 +563,7 @@ RULE_METADATA = {
         "service": "CloudTrail",
         "resource_type": "cloudtrail_trail",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether a CloudTrail trail captures API activity across all AWS regions.",
         "what_found": "CloudTrail trail is restricted to a single region (IsMultiRegionTrail=false).",
         "what_checked": "Inspected CloudTrail DescribeTrails IsMultiRegionTrail attribute.",
@@ -583,7 +573,7 @@ RULE_METADATA = {
         "service": "CloudTrail",
         "resource_type": "cloudtrail_trail",
         "severity": "WARNING",
-        "category": "Security",
+        "category": "Security Risk",
         "what_it_checks": "Checks whether CloudTrail cryptographic log file integrity validation is enabled.",
         "what_found": "CloudTrail log file integrity validation is disabled.",
         "what_checked": "Inspected CloudTrail DescribeTrails LogFileValidationEnabled attribute.",
@@ -597,7 +587,7 @@ CHECKS_BY_RESOURCE = {
     "vpcs": ["VPC-001"],
     "internet_gateways": ["IGW-001"],
     "nat_gateways": ["NAT-001", "NAT-002"],
-    "s3_buckets": ["S3-001", "S3-002", "S3-003", "S3-004", "S3-005"],
+    "s3_buckets": ["S3-002", "S3-003", "S3-004", "S3-005"],
     "iam_roles": ["IAM-001", "IAM-002", "IAM-003", "IAM-004", "IAM-005", "IAM-006", "IAM-007", "IAM-008"],
     "iam_users": ["IAM-009", "IAM-010", "IAM-011"],
     "lambda_functions": ["LAM-001", "LAM-002"],
@@ -622,7 +612,6 @@ RULE_REQUIRED_FIELDS = {
     "IGW-001": ("attachments",),
     "NAT-001": ("state",),
     "NAT-002": ("state",),
-    "S3-001": ("is_empty",),
     "S3-002": ("name",),
     "S3-003": ("name",),
     "S3-004": ("name",),
@@ -746,19 +735,22 @@ def _has_rule_evidence(raw: dict, rule_id: str) -> bool:
 
 
 def _assessment(rule_ids: list[str], raw: dict, issues: list[dict], rule_errors: dict | None = None) -> dict:
-    """Return explicit per-rule evaluation states (PASSED / VIOLATED / CHECK_FAILED)."""
+    """Return explicit per-rule evaluation states (PASSED / REVIEW / VIOLATED / CHECK_FAILED)."""
     rule_errors = rule_errors or {}
     results = []
     for rule_id in rule_ids:
         missing = _missing_rule_fields(raw, rule_id)
+        matching_issues = [issue for issue in issues if issue.get("rule_id") == rule_id]
         if rule_id in rule_errors:
             status = "CHECK_FAILED"
             reason = rule_errors[rule_id]
         elif missing:
             status = "CHECK_FAILED"
             reason = "Missing required AWS configuration field(s): " + ", ".join(missing)
-        elif any(issue.get("rule_id") == rule_id for issue in issues):
+        elif any(issue.get("severity") != "INFO" for issue in matching_issues):
             status, reason = "VIOLATED", None
+        elif matching_issues:
+            status, reason = "REVIEW", None
         else:
             status, reason = "PASSED", None
         check = {"rule_id": rule_id, "status": status}
@@ -790,7 +782,7 @@ def _issue(
     item = {
         "rule_id": rule_id,
         "severity": severity,
-        "category": category or meta.get("category") or "Security",
+        "category": category or meta.get("category") or "Security Risk",
         "title": title,
         "what_found": what_found or meta.get("what_found") or title,
         "why": why,
@@ -930,18 +922,6 @@ def evaluate(
             if r_type == "s3_buckets":
                 bucket_name = r["id"]
                 s3_client = get_s3_client(r.get("region"))
-
-                if raw.get("is_empty") is True:
-                    issues.append(_issue(
-                        rule_id="S3-001",
-                        severity="UNUSED",
-                        title="Empty S3 bucket",
-                        why="An empty bucket stores no objects and adds unnecessary clutter and namespace sprawl.",
-                        evidence={"Bucket": bucket_name, "Region": str(r.get("region")), "Objects": "0"},
-                        fix="If this bucket is no longer needed, delete it from S3 → Buckets → Delete.",
-                        verify="Re-scan with AWS Clarity and confirm the bucket no longer appears in your S3 inventory.",
-                        resource=r,
-                    ))
 
                 if s3_client is None:
                     for rid in ("S3-002", "S3-003", "S3-004", "S3-005"):
@@ -1125,15 +1105,15 @@ def evaluate(
                         rule_id="EC2-001",
                         severity="UNUSED",
                         title="EC2 instance is stopped",
-                        why="Stopped instances continue incurring monthly charges for attached EBS volumes and any associated Elastic IPs.",
+                        why="Stopped instances do not incur EC2 compute charges, but attached EBS volumes and any associated Elastic IPs continue generating monthly charges.",
                         evidence={
                             "Instance": r["id"],
                             "InstanceType": str(raw.get("instance_type") or "unknown"),
                             "State": "stopped",
                             "AttachedVolumes": str(len(raw.get("ebs_volumes") or [])),
                         },
-                        fix="If no longer needed, create a final AMI/snapshot if required and terminate the instance in EC2 → Instances.",
-                        verify="Re-scan in AWS Clarity after terminating or restarting the instance and confirm EC2-001 resolves.",
+                        fix="Verify whether this instance is paused intentionally (e.g., scheduled dev/staging server). Before terminating, confirm no data is needed or create an AMI/EBS snapshot backup, check IaC/Terraform state, and then terminate manually in EC2 → Instances.",
+                        verify="Re-scan in AWS Clarity after restarting or terminating the instance and confirm EC2-001 resolves.",
                         resource=r,
                     ))
 
@@ -1161,7 +1141,7 @@ def evaluate(
                         title="Unassociated Elastic IP incurring hourly IPv4 charges",
                         why="AWS charges hourly for allocated public IPv4 addresses even when unattached to any running resource.",
                         evidence={"AllocationId": r["id"], "PublicIp": str(raw.get("public_ip") or "unknown"), "AssociationId": "None"},
-                        fix="If unused, release the address via EC2 → Elastic IPs → Actions → Release Elastic IP address.",
+                        fix="Confirm this static IP is not allowlisted by external partners, DNS A-records, or firewall rules (releasing an Elastic IP permanently forfeits the address). If confirmed unneeded, release it manually via EC2 → Elastic IPs → Actions → Release Elastic IP address.",
                         verify="Re-scan in AWS Clarity and confirm the Elastic IP no longer appears as unassociated.",
                         resource=r,
                     ))
@@ -1199,9 +1179,9 @@ def evaluate(
                         rule_id="IGW-001",
                         severity="UNUSED",
                         title="Unattached Internet Gateway",
-                        why="This Internet Gateway is detached from all VPCs and serves no active routing purpose.",
+                        why="This Internet Gateway is detached from all VPCs and serves no active routing purpose (Internet Gateways have no hourly charge, but detached gateways add network clutter).",
                         evidence={"InternetGateway": igw_id, "Attachments": "0"},
-                        fix="Delete the unused gateway via VPC → Internet gateways → Actions → Delete internet gateway.",
+                        fix="Verify no Terraform/CloudFormation stack manages this gateway for a pending VPC before deleting it via VPC → Internet gateways → Actions → Delete internet gateway.",
                         verify="Re-scan in AWS Clarity and confirm the detached Internet Gateway no longer appears.",
                         resource=r,
                     ))
@@ -1223,12 +1203,12 @@ def evaluate(
                 elif state == "available":
                     issues.append(_issue(
                         rule_id="NAT-002",
-                        severity="WARNING",
-                        title="Active NAT Gateway (ongoing hourly & data-processing spend)",
-                        why="NAT Gateways incur continuous hourly availability and per-GB data-processing charges even with low traffic—a common cause of unexpected AWS bills.",
+                        severity="INFO",
+                        title="Active NAT Gateway (review ongoing hourly & data charges)",
+                        why="NAT Gateways are often legitimately required for private subnet egress, but they incur continuous hourly and per-GB data-processing charges even with minimal traffic—making them a frequent source of unexpected AWS bills.",
                         evidence={"NatGateway": nat_id, "State": "available", "SubnetId": str(raw.get("subnet_id") or "unknown")},
-                        fix="Audit private route tables. If S3/DynamoDB access is the main need, use free VPC Gateway Endpoints instead, or delete unused NAT Gateways.",
-                        verify="After deleting any unused NAT Gateway, re-scan in AWS Clarity to verify NAT-002 is resolved.",
+                        fix="Review private subnet route tables before making changes—deleting an actively used NAT Gateway will break outbound internet access for private workloads. If workloads only need S3/DynamoDB, consider free VPC Gateway Endpoints; delete only if confirmed unused.",
+                        verify="If you intentionally removed an unused NAT Gateway, re-scan in AWS Clarity to confirm it is no longer active.",
                         resource=r,
                     ))
 
@@ -1256,14 +1236,14 @@ def evaluate(
                         rule_id="EBS-002",
                         severity="UNUSED",
                         title="Unattached EBS volume incurring storage charges",
-                        why="Unattached volumes continue billing monthly per provisioned GB even though no EC2 instance is using them.",
+                        why="Unattached volumes continue billing monthly per provisioned GB even though no EC2 instance is currently using them.",
                         evidence={
                             "Volume": r["id"],
                             "State": "available (unattached)",
                             "SizeGB": str(vol_size) if vol_size is not None else "unknown",
                             "VolumeType": str(raw.get("volume_type") or "unknown"),
                         },
-                        fix="Take a final snapshot if you need to archive the data, then delete the volume from EC2 → Volumes.",
+                        fix="Deleting an EBS volume permanently destroys its data. First check tags/ownership and create an EBS snapshot if data might be needed later, then delete the volume manually from EC2 → Volumes.",
                         verify="Re-scan in AWS Clarity and verify EBS-002 is cleared.",
                         resource=r,
                     ))
@@ -1276,12 +1256,12 @@ def evaluate(
                 elif vol_id and vol_id not in active_volume_ids:
                     issues.append(_issue(
                         rule_id="SNAP-001",
-                        severity="UNUSED",
-                        title="Orphaned EBS snapshot (source volume deleted)",
-                        why="The EBS volume this snapshot came from no longer exists; abandoned snapshots continue generating monthly storage charges.",
+                        severity="INFO",
+                        title="EBS snapshot whose original volume no longer exists (review before deleting)",
+                        why="The original EBS volume for this snapshot no longer exists. This is NOT automatically wasteful or disposable—many snapshots are intentional backups, AMI backing snapshots, or compliance archives, though they continue incurring snapshot storage charges.",
                         evidence={"Snapshot": r["id"], "SourceVolumeId": vol_id, "VolumeSizeGB": str(raw.get("volume_size") or "unknown")},
-                        fix="Confirm the snapshot is not referenced by an active AMI or compliance retention requirement, then delete it from EC2 → Snapshots.",
-                        verify="Re-scan in AWS Clarity and confirm the orphaned snapshot no longer appears.",
+                        fix="Before deleting, confirm this snapshot is not backing an active AMI, disaster-recovery backup, or compliance retention policy (deletion is permanent). Only if confirmed obsolete, delete manually in EC2 → Snapshots.",
+                        verify="After reviewing or removing obsolete snapshots, re-scan in AWS Clarity to confirm your updated EBS snapshot inventory.",
                         resource=r,
                     ))
 
@@ -1362,7 +1342,7 @@ def evaluate(
                         rule_id="DDB-002",
                         severity="UNUSED",
                         title="Empty DynamoDB table using provisioned capacity",
-                        why="Provisioned capacity tables reserve RCU/WCU continuously even when holding 0 items, which can incur unnecessary charges.",
+                        why="Provisioned capacity tables reserve RCU/WCU continuously even when holding 0 items (note: AWS updates ItemCount approximately every 6 hours, so recently populated tables should be verified first).",
                         evidence={
                             "Table": table_name,
                             "BillingMode": "PROVISIONED",
@@ -1370,7 +1350,7 @@ def evaluate(
                             "RCU": str(raw.get("read_capacity_units") or "unknown"),
                             "WCU": str(raw.get("write_capacity_units") or "unknown"),
                         },
-                        fix="Switch the table to On-Demand (PAY_PER_REQUEST) capacity mode, or delete it if unused.",
+                        fix="Verify the table is not actively receiving writes or reserved for an application. Prefer switching to On-Demand (PAY_PER_REQUEST) capacity mode rather than deleting; delete only after confirming no dependencies or backups are needed.",
                         verify="Re-scan in AWS Clarity and verify DDB-002 resolves.",
                         resource=r,
                     ))
@@ -1389,12 +1369,12 @@ def evaluate(
                     if age_days > 90:
                         issues.append(_issue(
                             rule_id="LAM-001",
-                            severity="WARNING",
-                            title="Lambda function not updated in over 90 days",
-                            why="Unmaintained functions frequently carry outdated libraries or unused IAM roles.",
+                            severity="INFO",
+                            title="Lambda function unchanged for over 90 days (informational review)",
+                            why="A function that has not been edited in over 90 days is NOT automatically unhealthy or unused—many stable serverless functions run reliably for months without code changes. Periodic review helps ensure dependencies and IAM roles remain current.",
                             evidence={"Function": fn_name, "LastModified": str(last_mod), "DaysSinceModified": str(age_days)},
-                            fix="Review whether this function is still needed. Update dependencies/runtime or delete obsolete functions.",
-                            verify="After updating or deleting the function, re-scan in AWS Clarity to confirm LAM-001 resolves.",
+                            fix="Check CloudWatch invocation metrics and event triggers (API Gateway, EventBridge, S3, SQS) before making changes. Keep active functions intact (updating dependencies when needed), and delete only if confirmed unused and removed from IaC.",
+                            verify="If you update dependencies/runtime or remove a confirmed obsolete function, re-scan in AWS Clarity to confirm the change.",
                             resource=r,
                         ))
 
@@ -1698,11 +1678,11 @@ def evaluate(
                         issues.append(_issue(
                             rule_id="IAM-010",
                             severity="WARNING",
-                            title="Active IAM access key older than 90 days",
-                            why="Long-lived static IAM access keys increase the blast radius if accidentally committed or leaked.",
-                            evidence={"User": user_name, "StaleActiveKeys": ", ".join(stale_keys)},
-                            fix="Rotate the access key in IAM → Users → Security credentials (or migrate workloads to temporary IAM role credentials), then deactivate and delete the old key.",
-                            verify="Re-scan in AWS Clarity after deleting/deactivating keys older than 90 days.",
+                            title="Long-lived active IAM access key (>90 days)",
+                            why="Key age alone does not mean a key is compromised, but long-lived static credentials carry a larger blast radius if ever leaked. Rotating keys or migrating to temporary IAM roles reduces exposure.",
+                            evidence={"User": user_name, "KeysOver90Days": ", ".join(stale_keys)},
+                            fix="Do NOT delete an active key immediately—doing so can break scripts or CI pipelines. Create a replacement key (or migrate the workload to an IAM role), update all dependent applications, deactivate the old key first to confirm nothing breaks, and then delete it.",
+                            verify="Re-scan in AWS Clarity after replacing and removing active keys older than 90 days.",
                             resource=r,
                         ))
 
@@ -1741,12 +1721,12 @@ def evaluate(
                 if raw.get("state_value") == "INSUFFICIENT_DATA":
                     issues.append(_issue(
                         rule_id="CW-002",
-                        severity="WARNING",
-                        title="CloudWatch alarm is in INSUFFICIENT_DATA state",
-                        why="Alarms stuck in INSUFFICIENT_DATA often monitor deleted or idle resources, creating blind spots and unnecessary alarm clutter.",
+                        severity="INFO",
+                        title="CloudWatch alarm currently in INSUFFICIENT_DATA state (review metric)",
+                        why="INSUFFICIENT_DATA is NOT automatically a failure—it is common for sparse/event-driven metrics, newly created alarms, or alarms waiting for a metric period. Review to confirm whether the monitored resource still exists and missing-data treatment is intentional.",
                         evidence={"Alarm": alarm_name, "StateValue": "INSUFFICIENT_DATA"},
-                        fix="Verify the monitored metric/resource still exists. Fix the metric dimension or delete the orphaned alarm.",
-                        verify="Confirm alarm state is OK/ALARM (or deleted), then re-scan in AWS Clarity.",
+                        fix="Open CloudWatch → Alarms → Select Alarm and inspect the metric dimensions and 'Missing data treatment' setting. Keep alarms monitoring sparse workloads; update dimensions or delete only if the monitored resource was permanently removed.",
+                        verify="If you adjust the alarm configuration or remove a confirmed orphaned alarm, re-scan in AWS Clarity to confirm.",
                         resource=r,
                     ))
 
@@ -1835,7 +1815,9 @@ def evaluate(
             elif has_unused:
                 r["status"] = "UNUSED"
             elif assessment["status"] == "COMPLETE":
-                # Resource is ONLY HEALTHY when EVERY applicable implemented check ran and passed.
+                # Resource is HEALTHY when EVERY applicable implemented check ran cleanly
+                # and no CRITICAL/WARNING/UNUSED findings triggered (INFO observations remain inspectable
+                # without falsely branding the resource unhealthy).
                 r["status"] = "HEALTHY"
             else:
                 r["status"] = "INCOMPLETE"

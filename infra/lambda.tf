@@ -4,12 +4,13 @@ resource "aws_cloudwatch_log_group" "scanner" {
 }
 
 resource "aws_lambda_function" "scanner" {
-  function_name = "${var.app_name}-backend"
-  role          = aws_iam_role.lambda_exec.arn
-  handler       = "lambda_handler.handler"
-  runtime       = "python3.12"
-  memory_size   = var.lambda_memory
-  timeout       = var.lambda_timeout
+  function_name                  = "${var.app_name}-backend"
+  role                           = aws_iam_role.lambda_exec.arn
+  handler                        = "lambda_handler.handler"
+  runtime                        = "python3.12"
+  memory_size                    = var.lambda_memory
+  timeout                        = var.lambda_timeout
+  reserved_concurrent_executions = var.lambda_reserved_concurrency
 
   filename         = "lambda.zip"
   source_code_hash = filebase64sha256("lambda.zip")
@@ -21,8 +22,11 @@ resource "aws_lambda_function" "scanner" {
 
   environment {
     variables = {
-      ENVIRONMENT     = "prod"
-      SCAN_TABLE_NAME = aws_dynamodb_table.scans.name
+      ENVIRONMENT           = "prod"
+      SCAN_TABLE_NAME       = aws_dynamodb_table.scans.name
+      SCANS_ENABLED         = var.scans_enabled ? "true" : "false"
+      SCAN_COOLDOWN_SECONDS = tostring(var.scan_cooldown_seconds)
+      MAX_CONCURRENT_SCANS  = tostring(var.max_concurrent_scans)
     }
   }
 

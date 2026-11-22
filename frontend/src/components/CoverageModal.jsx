@@ -20,6 +20,13 @@ export default function CoverageModal({
   const failures = coverage?.failures || [];
   const serviceSummary = coverage?.service_summary || [];
   const regionsScanned = coverage?.regions_scanned || [];
+  const regionsFailed =
+    coverage?.regions_failed ||
+    Array.from(new Set(failures.map((f) => f.region).filter((r) => regionsScanned.includes(r))));
+  const regionsSucceeded =
+    coverage?.regions_succeeded ||
+    regionsScanned.filter((r) => !regionsFailed.includes(r));
+  const servicesCompleteCount = serviceSummary.filter((s) => s.status === "COMPLETE").length;
 
   return (
     <div
@@ -62,12 +69,16 @@ export default function CoverageModal({
           {/* Top Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Regions Scanned</p>
-              <p className="text-sm font-bold text-slate-100 mt-0.5">{regionsScanned.length}</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-500">Regions Completed</p>
+              <p className="text-sm font-bold text-slate-100 mt-0.5">
+                {regionsSucceeded.length} / {regionsScanned.length}
+              </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Supported Services</p>
-              <p className="text-sm font-bold text-teal-400 mt-0.5">10</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-500">Services Complete</p>
+              <p className="text-sm font-bold text-teal-400 mt-0.5">
+                {serviceSummary.length > 0 ? `${servicesCompleteCount} / 10` : "10 / 10"}
+              </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
               <p className="text-[10px] uppercase font-semibold text-slate-500">Resources Discovered</p>
@@ -158,21 +169,28 @@ export default function CoverageModal({
             </div>
           </div>
 
-          {/* Regions Scanned */}
+          {/* Regions Scanned — clearly split between Succeeded vs Inaccessible/Failed */}
           {regionsScanned.length > 0 && (
-            <div>
-              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                Enabled AWS Regions Scanned ({regionsScanned.length})
+            <div className="space-y-2">
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                Enabled AWS Regions ({regionsSucceeded.length} completed · {regionsFailed.length} incomplete/inaccessible)
               </h4>
               <div className="flex flex-wrap gap-1.5">
-                {regionsScanned.map((reg) => (
-                  <span
-                    key={reg}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300"
-                  >
-                    {reg}
-                  </span>
-                ))}
+                {regionsScanned.map((reg) => {
+                  const isFailed = regionsFailed.includes(reg);
+                  return (
+                    <span
+                      key={reg}
+                      className={`text-[10px] font-mono px-2 py-0.5 rounded border ${
+                        isFailed
+                          ? "bg-orange-950/40 border-orange-500/40 text-orange-300"
+                          : "bg-slate-950 border-slate-800 text-slate-300"
+                      }`}
+                    >
+                      {isFailed ? `⚠ ${reg}` : `✓ ${reg}`}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           )}

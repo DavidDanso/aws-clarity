@@ -6,6 +6,7 @@ import {
   STATUS_BADGE,
   SUPPORTED_SERVICES,
 } from "../utils/constants";
+import { normalizeCategory } from "../utils/securityScore";
 
 const PAGE_SIZE = 6;
 
@@ -27,8 +28,12 @@ function getDisplayedStatus(resource) {
 function hasCostOrUnusedFinding(resource) {
   if (resource?.status === "UNUSED") return true;
   return (resource?.issues || []).some(
-    (i) => i?.category === "Cost Risk" || i?.category === "Unused" || i?.severity === "UNUSED"
+    (i) => normalizeCategory(i?.category, i?.severity) === "Potential Cost Waste"
   );
+}
+
+function hasInfoObservation(resource) {
+  return (resource?.issues || []).some((i) => i?.severity === "INFO");
 }
 
 function getPageNumbers(current, total) {
@@ -43,11 +48,13 @@ export default function ResourceTable({
   onInspect,
   initialStatusFilter = "ALL",
   initialServiceFilter = "ALL",
+  initialCategoryFilter = "ALL",
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceFilter, setServiceFilter] = useState(initialServiceFilter);
   const [regionFilter, setRegionFilter] = useState("ALL");
   const [statusFilter, setStatusFilter] = useState(initialStatusFilter);
+  const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter);
   const [sortBy, setSortBy] = useState("severity");
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -58,6 +65,10 @@ export default function ResourceTable({
   useEffect(() => {
     setServiceFilter(initialServiceFilter);
   }, [initialServiceFilter]);
+
+  useEffect(() => {
+    setCategoryFilter(initialCategoryFilter);
+  }, [initialCategoryFilter]);
 
   // Live resource counts across all 10 supported services
   const serviceCounts = useMemo(() => {
@@ -83,6 +94,7 @@ export default function ResourceTable({
     let critical = 0;
     let warning = 0;
     let costUnused = 0;
+    let info = 0;
     let healthy = 0;
     let incomplete = 0;
     for (const r of resources) {
@@ -92,18 +104,20 @@ export default function ResourceTable({
       else if (st === "HEALTHY") healthy++;
       else if (st === "INCOMPLETE") incomplete++;
       if (hasCostOrUnusedFinding(r)) costUnused++;
+      if (hasInfoObservation(r)) info++;
     }
     return {
       all: resources.length,
       critical,
       warning,
       costUnused,
+      info,
       healthy,
       incomplete,
     };
   }, [resources]);
 
-  // 1. Filter by service, region, status, and multi-field search
+  // 1. Filter by service, region, status, category, and multi-field search
   const filtered = useMemo(() => {
     const query = searchQuery.toLowerCase().trim();
     return resources.filter((r) => {
@@ -115,8 +129,16 @@ export default function ResourceTable({
       if (statusFilter === "CRITICAL" && st !== "CRITICAL") return false;
       if (statusFilter === "WARNING" && st !== "WARNING") return false;
       if (statusFilter === "COST_UNUSED" && !hasCostOrUnusedFinding(r)) return false;
+      if (statusFilter === "INFO" && !hasInfoObservation(r)) return false;
       if (statusFilter === "HEALTHY" && st !== "HEALTHY") return false;
       if (statusFilter === "INCOMPLETE" && st !== "INCOMPLETE") return false;
+
+      if (categoryFilter !== "ALL") {
+        const hasCat = (r.issues || []).some(
+          (i) => normalizeCategory(i?.category, i?.severity) === categoryFilter
+        );
+        if (!hasCat) return false;
+      }
 
       if (!query) return true;
 
@@ -136,7 +158,7 @@ export default function ResourceTable({
         issueText.includes(query)
       );
     });
-  }, [resources, searchQuery, serviceFilter, regionFilter, statusFilter]);
+  }, [resources, searchQuery, serviceFilter, regionFilter, statusFilter, categoryFilter]);
 
   // 2. Sort
   const sortedResources = useMemo(() => {
@@ -167,7 +189,7 @@ export default function ResourceTable({
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, serviceFilter, regionFilter, statusFilter, sortBy, resources]);
+  }, [searchQuery, serviceFilter, regionFilter, statusFilter, categoryFilter, sortBy, resources]);
 
   const totalResources = sortedResources.length;
   const totalPages = Math.max(1, Math.ceil(totalResources / PAGE_SIZE));
@@ -188,7 +210,8 @@ export default function ResourceTable({
     searchQuery.trim() !== "" ||
     serviceFilter !== "ALL" ||
     regionFilter !== "ALL" ||
-    statusFilter !== "ALL";
+    statusFilter !== "ALL" ||
+    categoryFilter !== "ALL";
 
   return (
     <div className="flex flex-col gap-4">
@@ -280,14 +303,17 @@ export default function ResourceTable({
         </div>
       </div>
 
-      {/* Status & Cost Focus Pills */}
+      {/* Status & Category Focus Pills */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-1 sm:pb-0 -mx-1 px-1 sm:mx-0 sm:px-0 no-scrollbar max-w-full">
           {[
             { key: "ALL", label: "All", count: statusCounts.all },
             { key: "CRITICAL", label: "Critical", count: statusCounts.critical, active: "bg-red-500/15 border-red-500/30 text-red-400" },
             { key: "WARNING", label: "Warning", count: statusCounts.warning, active: "bg-amber-500/15 border-amber-500/30 text-amber-400" },
-            { key: "COST_UNUSED", label: "Unused & Cost Risk", count: statusCounts.costUnused, active: "bg-sky-500/15 border-sky-500/30 text-sky-300" },
+            { key: "COST_UNUSED", label: "Potential Cost Waste", count: statusCounts.costUnused, active: "bg-sky-500/15 border-sky-500/30 text-sky-300" },
+            ...(statusCounts.info > 0
+              ? [{ key: "INFO", label: "Review Info", count: statusCounts.info, active: "bg-slate-600/20 border-slate-500/40 text-slate-200" }]
+              : []),
             { key: "HEALTHY", label: "Healthy", count: statusCounts.healthy, active: "bg-emerald-500/15 border-emerald-500/30 text-emerald-400" },
             ...(statusCounts.incomplete > 0
               ? [{ key: "INCOMPLETE", label: "Check Incomplete", count: statusCounts.incomplete, active: "bg-orange-500/15 border-orange-500/30 text-orange-300" }]
@@ -308,20 +334,32 @@ export default function ResourceTable({
           ))}
         </div>
 
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchQuery("");
-              setServiceFilter("ALL");
-              setRegionFilter("ALL");
-              setStatusFilter("ALL");
-            }}
-            className="text-[11px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 shrink-0"
-          >
-            Reset filters
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {categoryFilter !== "ALL" && (
+            <button
+              type="button"
+              onClick={() => setCategoryFilter("ALL")}
+              className="text-[11px] px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 hover:text-white cursor-pointer"
+            >
+              Category: {categoryFilter} ×
+            </button>
+          )}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery("");
+                setServiceFilter("ALL");
+                setRegionFilter("ALL");
+                setStatusFilter("ALL");
+                setCategoryFilter("ALL");
+              }}
+              className="text-[11px] text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 shrink-0"
+            >
+              Reset filters
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Mobile Resource Card View (< md: zero horizontal scroll, touch-friendly) */}

@@ -3,8 +3,10 @@ import concurrent.futures
 import datetime
 from decimal import Decimal
 import gzip
+import hashlib
 import json
 import os
+import re
 import socket
 import time
 import uuid
@@ -60,6 +62,9 @@ _dynamodb = None
 _lambda_client = None
 
 MAX_ENCODED_RESULT_BYTES = 350_000
+SCAN_ID_UUID_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
 
 
 def _get_table():
@@ -152,7 +157,7 @@ SCANNER_METADATA = {
     "vpcs": {"service": "VPC", "label": "VPCs", "permission": "ec2:DescribeVpcs", "capability": "Virtual private clouds"},
     "internet_gateways": {"service": "VPC", "label": "Internet Gateways", "permission": "ec2:DescribeInternetGateways", "capability": "VPC internet gateways"},
     "nat_gateways": {"service": "VPC", "label": "NAT Gateways", "permission": "ec2:DescribeNatGateways", "capability": "Outbound routing & ongoing spend risk"},
-    "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:ListBucket, s3:GetBucketPolicyStatus, s3:GetBucketAcl, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock", "capability": "S3 buckets & public exposure"},
+    "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketPolicyStatus, s3:GetBucketAcl, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock, s3:GetBucketVersioning", "capability": "S3 buckets & public exposure"},
     "iam_roles": {"service": "IAM", "label": "IAM Roles", "permission": "iam:ListRoles, iam:ListRolePolicies, iam:GetRolePolicy, iam:ListAttachedRolePolicies", "capability": "IAM roles, policies & trust relationships"},
     "iam_users": {"service": "IAM", "label": "IAM Users", "permission": "iam:ListUsers, iam:ListMFADevices, iam:ListAccessKeys, iam:ListAttachedUserPolicies, iam:ListUserPolicies, iam:GetUserPolicy", "capability": "IAM users, MFA & access key age"},
     "lambda_functions": {"service": "Lambda", "label": "Lambda Functions", "permission": "lambda:ListFunctions", "capability": "Serverless functions & runtimes"},
@@ -792,7 +797,7 @@ def run_scan(
         account_advisories.append({
             "rule_id": "CT-000",
             "severity": "CRITICAL",
-            "category": "Security",
+            "category": "Security Risk",
             "service": "CloudTrail",
             "title": "No CloudTrail trails configured in this AWS account",
             "why": "Without an active multi-region CloudTrail trail, API events older than 90 days are not archived to S3 and unauthorized changes are difficult to audit.",
@@ -805,19 +810,24 @@ def run_scan(
         for r in all_resources
     )
 
+    all_issues = [issue for r in all_resources for issue in r.get("issues", [])]
     summary = {
         "total_resources": len(all_resources),
         "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),
         "warnings": sum(1 for r in all_resources if r.get("status") == "WARNING"),
         "unused": sum(1 for r in all_resources if r.get("status") == "UNUSED"),
+        "info_observations": sum(1 for i in all_issues if i.get("severity") == "INFO"),
         "healthy": sum(1 for r in all_resources if r.get("status") == "HEALTHY"),
         "incomplete_resources": sum(1 for r in all_resources if r.get("status") == "INCOMPLETE"),
+        "security_risks": sum(1 for i in all_issues if i.get("category") == "Security Risk"),
+        "operational_concerns": sum(1 for i in all_issues if i.get("category") == "Operational Concern"),
+        "potential_cost_waste": sum(1 for i in all_issues if i.get("category") == "Potential Cost Waste"),
         "cost_risk_findings": sum(
             1
-            for r in all_resources
-            for issue in r.get("issues", [])
-            if issue.get("category") in ("Cost Risk", "Unused") or issue.get("severity") == "UNUSED"
+            for i in all_issues
+            if i.get("category") in ("Potential Cost Waste", "Cost Risk", "Unused") or i.get("severity") == "UNUSED"
         ),
+        "health_score_available": not is_incomplete,
     }
 
     # Build per-service coverage rollup (10 services)
@@ -838,17 +848,28 @@ def run_scan(
             "resource_types": svc_entry["resource_types"],
         })
 
+    failed_region_set = {
+        s["region"]
+        for s in scanner_statuses
+        if s.get("region") in target_regions and s.get("status") != "COMPLETED"
+    }
+    regions_succeeded = [r for r in target_regions if r not in failed_region_set]
+    regions_failed = [r for r in target_regions if r in failed_region_set]
+
     coverage = {
         "status": "INCOMPLETE" if is_incomplete else "COMPLETE",
         "is_partial": is_incomplete,
         "region_discovery": region_discovery,
         "regions_scanned": target_regions,
+        "regions_succeeded": regions_succeeded,
+        "regions_failed": regions_failed,
         "services_supported": [s["service"] for s in SERVICE_COVERAGE_MATRIX],
         "services_scanned": sorted({s["service"] for s in scanner_statuses if s["status"] in ("COMPLETED", "INCOMPLETE")}),
+        "services_complete": [s["service"] for s in service_summary if s["status"] == "COMPLETE"],
         "service_matrix": SERVICE_COVERAGE_MATRIX,
         "service_summary": service_summary,
         "resources_inspected": len(all_resources),
-        "findings_detected": sum(len(r.get("issues", [])) for r in all_resources),
+        "findings_detected": len(all_issues),
         "failures": coverage_failures,
         "unsupported_services": OUT_OF_SCOPE_DISCLOSURES,
         "scanner_statuses": scanner_statuses,
@@ -872,6 +893,140 @@ def run_scan(
     }
 
 
+def _is_scans_enabled() -> bool:
+    return os.environ.get("SCANS_ENABLED", "true").strip().lower() not in ("false", "0", "no", "off")
+
+
+def _get_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _check_and_record_cooldown(
+    table,
+    role_arn: str,
+    prefix: str = "ratelimit",
+    cooldown_s: int | None = None,
+) -> tuple[bool, int]:
+    """Atomically enforce per-role cooldown using only a SHA-256 hash of the Role ARN.
+    Uses a conditional PutItem (1 WCU, 0 RCU on allowed requests) to prevent race conditions.
+    Never stores the raw Role ARN or External ID in DynamoDB.
+    """
+    resolved_cooldown = (
+        _get_int_env("SCAN_COOLDOWN_SECONDS", 15) if cooldown_s is None else cooldown_s
+    )
+    if resolved_cooldown <= 0 or table is None:
+        return True, 0
+    now = int(time.time())
+    cutoff = now - resolved_cooldown
+    role_digest = hashlib.sha256(role_arn.encode("utf-8")).hexdigest()[:24]
+    key_id = f"{prefix}#{role_digest}"
+    try:
+        table.put_item(
+            Item={
+                "scan_id": key_id,
+                "last_scan_at": now,
+                "expires_at": now + max(resolved_cooldown * 2, 60),
+            },
+            ConditionExpression="attribute_not_exists(last_scan_at) OR last_scan_at <= :cutoff",
+            ExpressionAttributeValues={":cutoff": cutoff},
+        )
+        return True, 0
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            retry_after = resolved_cooldown
+            try:
+                resp = table.get_item(Key={"scan_id": key_id})
+                item = resp.get("Item") if isinstance(resp, dict) else None
+                if isinstance(item, dict) and isinstance(item.get("last_scan_at"), (int, float, Decimal)):
+                    elapsed = now - int(item["last_scan_at"])
+                    retry_after = max(1, resolved_cooldown - max(0, elapsed))
+            except Exception:
+                pass
+            return False, retry_after
+        # Fail open on transient DynamoDB errors so legitimate scans are not broken
+        return True, 0
+    except Exception:
+        return True, 0
+
+
+def _acquire_concurrency_slot(table) -> bool:
+    """Atomically acquire a concurrency slot using conditional DynamoDB UpdateItem.
+    Prevents burst race conditions and consumes 1 WCU / 0 RCU on normal requests.
+    """
+    max_concurrent = _get_int_env("MAX_CONCURRENT_SCANS", 3)
+    if max_concurrent <= 0 or table is None:
+        return True
+    now = int(time.time())
+    stale_before = now - 180
+    guard_key = {"scan_id": "guard#active_scans"}
+    try:
+        table.update_item(
+            Key=guard_key,
+            UpdateExpression="SET active_count = if_not_exists(active_count, :zero) + :one, updated_at = :now, expires_at = :exp",
+            ConditionExpression="attribute_not_exists(active_count) OR active_count < :max",
+            ExpressionAttributeValues={
+                ":zero": 0,
+                ":one": 1,
+                ":max": max_concurrent,
+                ":now": now,
+                ":exp": now + 300,
+            },
+        )
+        return True
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") != "ConditionalCheckFailedException":
+            return True
+        # Counter reached max_concurrent; atomically reset ONLY if stale (>180s without update)
+        try:
+            table.update_item(
+                Key=guard_key,
+                UpdateExpression="SET active_count = :one, updated_at = :now, expires_at = :exp",
+                ConditionExpression="attribute_exists(updated_at) AND updated_at < :stale_before",
+                ExpressionAttributeValues={
+                    ":one": 1,
+                    ":now": now,
+                    ":exp": now + 300,
+                    ":stale_before": stale_before,
+                },
+            )
+            return True
+        except ClientError as reset_err:
+            if reset_err.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+                return False
+            return True
+        except Exception:
+            return True
+    except Exception:
+        return True
+
+
+def _release_concurrency_slot(table):
+    if _get_int_env("MAX_CONCURRENT_SCANS", 3) <= 0 or table is None:
+        return
+    now = int(time.time())
+    guard_key = {"scan_id": "guard#active_scans"}
+    try:
+        table.update_item(
+            Key=guard_key,
+            UpdateExpression="SET active_count = active_count - :one, updated_at = :now, expires_at = :exp",
+            ConditionExpression="attribute_exists(active_count) AND active_count > :zero",
+            ExpressionAttributeValues={
+                ":one": 1,
+                ":zero": 0,
+                ":now": now,
+                ":exp": now + 300,
+            },
+        )
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            return
+    except Exception:
+        pass
+
+
 def _mark_failed(table, scan_id: str, error_code: str, message: str):
     table.update_item(
         Key={"scan_id": scan_id},
@@ -882,6 +1037,13 @@ def _mark_failed(table, scan_id: str, error_code: str, message: str):
 
 
 def handle_trigger(event, context):
+    if not _is_scans_enabled():
+        return _response(503, {
+            "status": "error",
+            "error_code": "SCANS_PAUSED",
+            "message": "Live account scans are temporarily paused to protect free hosting limits. You can still explore the interactive Demo Mode.",
+        })
+
     try:
         body = json.loads(event.get("body") or "{}")
         role_arn = validate_role_arn(body.get("role_arn", ""))
@@ -901,6 +1063,22 @@ def handle_trigger(event, context):
 
     # Synchronous connection verification & permission pre-check (parallelized)
     if body.get("action") == "precheck" or body.get("is_precheck") is True:
+        precheck_table = None
+        try:
+            precheck_table = _get_table()
+        except Exception:
+            precheck_table = None
+        precheck_cooldown = _get_int_env("PRECHECK_COOLDOWN_SECONDS", 3)
+        precheck_allowed, precheck_retry = _check_and_record_cooldown(
+            precheck_table, role_arn, prefix="precheck", cooldown_s=precheck_cooldown
+        )
+        if not precheck_allowed:
+            return _response(429, {
+                "status": "error",
+                "error_code": "RATE_LIMITED",
+                "retry_after_seconds": precheck_retry,
+                "message": f"Please wait {precheck_retry} second{'s' if precheck_retry != 1 else ''} before verifying this role again.",
+            })
         try:
             raw_session = assume_role(role_arn, external_id=external_id)
             session = CachedSession(raw_session)
@@ -929,11 +1107,11 @@ def handle_trigger(event, context):
                 "error_code": "ASSUME_ROLE_FAILED",
                 "message": "Could not assume the provided role. Verify the trust policy, App Account ID, and External ID.",
             })
-        except Exception as e:
+        except Exception:
             return _response(500, {
                 "status": "error",
                 "error_code": "INTERNAL_ERROR",
-                "message": str(e),
+                "message": "Account verification encountered an unexpected error. Please try again.",
             })
 
     # Default to scanning ALL enabled AWS regions unless specific regions are requested
@@ -949,7 +1127,30 @@ def handle_trigger(event, context):
             "message": "Specify 'all' to scan all enabled AWS regions, or provide a valid list of region IDs.",
         })
 
-    # Fast synchronous path (1 HTTP round-trip, zero DynamoDB persistence, 8-worker map-reduce)
+    guard_table = None
+    try:
+        guard_table = _get_table()
+    except Exception:
+        guard_table = None
+
+    # Enforce per-role cooldown & concurrent-scan cap to protect free usage allowances
+    allowed, retry_after = _check_and_record_cooldown(guard_table, role_arn)
+    if not allowed:
+        return _response(429, {
+            "status": "error",
+            "error_code": "RATE_LIMITED",
+            "retry_after_seconds": retry_after,
+            "message": f"Please wait {retry_after} second{'s' if retry_after != 1 else ''} before starting another scan for this role.",
+        })
+
+    if not _acquire_concurrency_slot(guard_table):
+        return _response(429, {
+            "status": "error",
+            "error_code": "TOO_MANY_CONCURRENT_SCANS",
+            "message": "Too many scans are currently running. Please wait a few seconds and try again.",
+        })
+
+    # Fast synchronous path (1 HTTP round-trip, zero inventory persistence, 8-worker map-reduce)
     if body.get("sync") is True:
         try:
             fanout_arn = getattr(context, "invoked_function_arn", None)
@@ -973,14 +1174,16 @@ def handle_trigger(event, context):
                 "error_code": "PERMISSION_DENIED",
                 "message": "The role was assumed but lacks required read permissions.",
             })
-        except Exception as e:
+        except Exception:
             return _response(500, {
                 "status": "error",
                 "error_code": "INTERNAL_ERROR",
-                "message": str(e),
+                "message": "The scan encountered an unexpected error. Please try again.",
             })
+        finally:
+            _release_concurrency_slot(guard_table)
 
-    table = _get_table()
+    table = guard_table if guard_table is not None else _get_table()
     scan_id = str(uuid.uuid4())
     scan_token, token_hash = generate_scan_token()
 
@@ -1006,8 +1209,9 @@ def handle_trigger(event, context):
                 "function_arn": context.invoked_function_arn,
             }),
         )
-    except Exception as e:
-        _mark_failed(table, scan_id, "INTERNAL_ERROR", f"Failed to start background scan: {e}")
+    except Exception:
+        _release_concurrency_slot(table)
+        _mark_failed(table, scan_id, "INTERNAL_ERROR", "Failed to start background scan worker.")
 
     return _response(202, {
         "status": "PENDING",
@@ -1074,8 +1278,10 @@ def handle_worker(event, context=None):
             "PERMISSION_DENIED",
             "The role was assumed but lacks required read permissions.",
         )
-    except Exception as e:
-        _mark_failed(table, scan_id, "INTERNAL_ERROR", str(e))
+    except Exception:
+        _mark_failed(table, scan_id, "INTERNAL_ERROR", "The scan encountered an unexpected error. Please try again.")
+    finally:
+        _release_concurrency_slot(table)
 
 
 def _normalize_progress(raw_progress):
@@ -1089,8 +1295,13 @@ def _normalize_progress(raw_progress):
 
 def handle_status(event):
     scan_id = (event.get("pathParameters") or {}).get("scan_id")
-    if not scan_id:
-        return _response(400, {"status": "error", "message": "Missing scan_id"})
+    if not scan_id or not isinstance(scan_id, str) or not SCAN_ID_UUID_RE.match(scan_id.strip()):
+        return _response(400, {
+            "status": "error",
+            "error_code": "INVALID_SCAN_ID",
+            "message": "Invalid or missing scan_id.",
+        })
+    scan_id = scan_id.strip()
 
     # Extract tenant isolation token (case-insensitive HTTP headers)
     headers = {str(k).lower(): v for k, v in (event.get("headers") or {}).items()}
@@ -1102,9 +1313,9 @@ def handle_status(event):
     if not item:
         return _response(404, {"status": "error", "message": "Scan not found or expired"})
 
-    # Enforce per-scan tenant isolation via constant-time token hash comparison
+    # Always require per-scan tenant isolation via constant-time token hash comparison
     expected_hash = item.get("token_hash")
-    if expected_hash and not verify_scan_token(provided_token, expected_hash):
+    if not expected_hash or not verify_scan_token(provided_token, expected_hash):
         return _response(403, {
             "status": "error",
             "error_code": "UNAUTHORIZED_SCAN_ACCESS",

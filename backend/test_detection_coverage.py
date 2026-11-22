@@ -73,38 +73,57 @@ class TestSecurityAndTenantIsolation(unittest.TestCase):
         self.assertFalse(verify_scan_token("wrong-token", token_hash))
         self.assertFalse(verify_scan_token(None, token_hash))
 
+        valid_scan_id = "11111111-2222-4333-8444-555555555555"
         fake_table = MagicMock()
         fake_table.get_item.return_value = {
             "Item": {
-                "scan_id": "scan-123",
+                "scan_id": valid_scan_id,
                 "token_hash": token_hash,
                 "status": "COMPLETE",
                 "result_gz": lambda_handler._encode_result({"account_id": "123456789012", "resources": {}}),
             }
         }
         with patch("lambda_handler._get_table", return_value=fake_table):
+            # Non-UUID / internal guard key must be rejected with 400 BEFORE querying DynamoDB
+            resp_guard = lambda_handler.handle_status({
+                "pathParameters": {"scan_id": "guard#active_scans"},
+                "headers": {},
+            })
+            self.assertEqual(resp_guard["statusCode"], 400)
+            fake_table.get_item.assert_not_called()
+
             # Missing token -> 403
             resp_missing = lambda_handler.handle_status({
-                "pathParameters": {"scan_id": "scan-123"},
+                "pathParameters": {"scan_id": valid_scan_id},
                 "headers": {},
             })
             self.assertEqual(resp_missing["statusCode"], 403)
 
             # Wrong token -> 403
             resp_wrong = lambda_handler.handle_status({
-                "pathParameters": {"scan_id": "scan-123"},
+                "pathParameters": {"scan_id": valid_scan_id},
                 "headers": {"X-Scan-Token": "forged-token"},
             })
             self.assertEqual(resp_wrong["statusCode"], 403)
 
             # Valid token (case-insensitive header) -> 200
             resp_ok = lambda_handler.handle_status({
-                "pathParameters": {"scan_id": "scan-123"},
+                "pathParameters": {"scan_id": valid_scan_id},
                 "headers": {"x-scan-token": token},
             })
             self.assertEqual(resp_ok["statusCode"], 200)
             body = json.loads(resp_ok["body"])
             self.assertEqual(body["account_id"], "123456789012")
+
+            # Item without token_hash must fail closed with 403
+            fake_table.get_item.return_value = {
+                "Item": {"scan_id": valid_scan_id, "status": "RUNNING"}
+            }
+            resp_no_hash = lambda_handler.handle_status({
+                "pathParameters": {"scan_id": valid_scan_id},
+                "headers": {"x-scan-token": token},
+            })
+            self.assertEqual(resp_no_hash["statusCode"], 403)
 
     def test_trigger_never_persists_role_arn_or_external_id_to_dynamodb(self):
         fake_table = MagicMock()
@@ -234,11 +253,11 @@ class TestCollectorsAndPagination(unittest.TestCase):
         client.get_bucket_location.side_effect = (
             lambda Bucket: {"LocationConstraint": None if Bucket == "b1" else "eu-west-1"}
         )
-        client.list_objects_v2.return_value = {"KeyCount": 1}
         client.get_bucket_versioning.return_value = {"Status": "Enabled"}
 
         buckets = s3.scan(session, selected_regions=None)
         self.assertEqual({(b["id"], b["region"]) for b in buckets}, {("b1", "us-east-1"), ("b2", "eu-west-1")})
+        client.list_objects_v2.assert_not_called()
 
 
 class TestContextAwareAccuracy(unittest.TestCase):
@@ -499,6 +518,130 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
         norm = lambda_handler._normalize_progress({"stage": "SCANNING", "regions_done": Decimal("12"), "regions_total": Decimal("32")})
         self.assertEqual(norm, {"stage": "SCANNING", "regions_done": 12, "regions_total": 32})
 
+    def test_reclassified_info_rules_and_three_categories(self):
+        # Every rule in RULE_METADATA must strictly use one of the 3 standardized categories
+        allowed_categories = {"Security Risk", "Operational Concern", "Potential Cost Waste"}
+        for rule_id, meta in RULE_METADATA.items():
+            self.assertIn(meta["category"], allowed_categories, f"{rule_id} has non-standard category {meta['category']}")
+
+        # Snapshot without original volume, >90d Lambda, INSUFFICIENT_DATA alarm,
+        # and active NAT Gateway should produce INFO review notes without marking resources unhealthy.
+        # Clean S3 buckets have 0 issues (S3-001 empty-bucket listing was removed to avoid S3 LIST charges).
+        old_ts = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=150)).isoformat()
+        mock_s3_client = MagicMock()
+        mock_s3_client.get_bucket_policy_status.return_value = {"PolicyStatus": {"IsPublic": False}}
+        mock_s3_client.get_bucket_acl.return_value = {"Grants": []}
+        mock_s3_client.get_bucket_encryption.return_value = {"ServerSideEncryptionConfiguration": {}}
+        mock_s3_client.get_public_access_block.return_value = {
+            "PublicAccessBlockConfiguration": {
+                "BlockPublicAcls": True,
+                "IgnorePublicAcls": True,
+                "BlockPublicPolicy": True,
+                "RestrictPublicBuckets": True,
+            }
+        }
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_s3_client
+
+        evaluated = evaluate(mock_session, {
+            "s3_buckets": [{"id": "clean-b", "name": "clean-b", "type": "s3_bucket", "service": "S3", "region": "us-east-1", "raw": {"name": "clean-b"}}],
+            "ebs_volumes": [],
+            "snapshots": [{"id": "snap-1", "name": "backup", "type": "ebs_snapshot", "service": "EBS", "region": "us-east-1", "raw": {"volume_id": "vol-deleted", "volume_size": 50}}],
+            "lambda_functions": [{"id": "fn-1", "name": "stable-fn", "type": "lambda_function", "service": "Lambda", "region": "us-east-1", "raw": {"last_modified": old_ts, "runtime": "python3.12"}}],
+            "cloudwatch_alarms": [{"id": "al-1", "name": "sparse-alarm", "type": "cloudwatch_alarm", "service": "CloudWatch", "region": "us-east-1", "raw": {"actions_enabled": True, "state_value": "INSUFFICIENT_DATA"}}],
+            "nat_gateways": [{"id": "nat-1", "name": "prod-nat", "type": "nat_gateway", "service": "VPC", "region": "us-east-1", "raw": {"state": "available", "subnet_id": "subnet-1"}}],
+        })
+
+        self.assertEqual(evaluated["s3_buckets"][0]["status"], "HEALTHY")
+        self.assertEqual(evaluated["s3_buckets"][0]["issues"], [])
+        self.assertNotIn("S3-001", RULE_METADATA)
+
+        for key in ("snapshots", "lambda_functions", "cloudwatch_alarms", "nat_gateways"):
+            res = evaluated[key][0]
+            self.assertEqual(res["status"], "HEALTHY", f"{key} with INFO-only observation must remain HEALTHY")
+            self.assertTrue(any(i["severity"] == "INFO" for i in res["issues"]), f"{key} should retain INFO review note")
+
+    def test_usage_safeguards_kill_switch_cooldown_and_concurrency(self):
+        ctx = MagicMock(invoked_function_arn="arn:aws:lambda:us-east-1:111122223333:function:clarity")
+        body = json.dumps({
+            "role_arn": "arn:aws:iam::123456789012:role/AWSClarityReadOnly",
+            "external_id": "stable-ext-id-123",
+            "sync": True,
+        })
+        cond_failed = ClientError(
+            {"Error": {"Code": "ConditionalCheckFailedException", "Message": "Condition not met"}},
+            "PutItem",
+        )
+
+        # 1. Kill-switch disables scans cleanly with 503
+        with patch.dict(os.environ, {"SCANS_ENABLED": "false"}):
+            resp = lambda_handler.handle_trigger({"body": body}, ctx)
+        self.assertEqual(resp["statusCode"], 503)
+        self.assertEqual(json.loads(resp["body"])["error_code"], "SCANS_PAUSED")
+
+        # 2. Repeated-scan atomic cooldown returns 429 and never stores raw Role ARN
+        now_ts = int(datetime.datetime.now(datetime.timezone.utc).timestamp())
+        fake_table = MagicMock()
+        fake_table.put_item.side_effect = cond_failed
+        fake_table.get_item.return_value = {"Item": {"last_scan_at": now_ts - 2}}
+        with patch.dict(os.environ, {"SCANS_ENABLED": "true", "SCAN_COOLDOWN_SECONDS": "15"}), \
+             patch("lambda_handler._get_table", return_value=fake_table):
+            resp = lambda_handler.handle_trigger({"body": body}, ctx)
+        self.assertEqual(resp["statusCode"], 429)
+        self.assertEqual(json.loads(resp["body"])["error_code"], "RATE_LIMITED")
+        # Ensure lookup key is a hash, not the raw Role ARN
+        put_key = fake_table.put_item.call_args.kwargs["Item"]["scan_id"]
+        self.assertTrue(put_key.startswith("ratelimit#"))
+        self.assertNotIn("AWSClarityReadOnly", put_key)
+
+        # 3. Precheck endpoint enforces its own lightweight cooldown (429)
+        precheck_body = json.dumps({
+            "role_arn": "arn:aws:iam::123456789012:role/AWSClarityReadOnly",
+            "external_id": "stable-ext-id-123",
+            "action": "precheck",
+        })
+        fake_table_precheck = MagicMock()
+        fake_table_precheck.put_item.side_effect = cond_failed
+        fake_table_precheck.get_item.return_value = {"Item": {"last_scan_at": now_ts - 1}}
+        with patch.dict(os.environ, {"SCANS_ENABLED": "true", "PRECHECK_COOLDOWN_SECONDS": "3"}), \
+             patch("lambda_handler._get_table", return_value=fake_table_precheck):
+            resp_pre = lambda_handler.handle_trigger({"body": precheck_body}, ctx)
+        self.assertEqual(resp_pre["statusCode"], 429)
+        self.assertTrue(fake_table_precheck.put_item.call_args.kwargs["Item"]["scan_id"].startswith("precheck#"))
+
+        # 4. Atomic max concurrent scans returns 429 when both increment and stale-reset fail
+        fake_table2 = MagicMock()
+        fake_table2.update_item.side_effect = cond_failed
+        with patch.dict(os.environ, {"SCANS_ENABLED": "true", "SCAN_COOLDOWN_SECONDS": "0", "MAX_CONCURRENT_SCANS": "3"}), \
+             patch("lambda_handler._get_table", return_value=fake_table2):
+            resp = lambda_handler.handle_trigger({"body": body}, ctx)
+        self.assertEqual(resp["statusCode"], 429)
+        self.assertEqual(json.loads(resp["body"])["error_code"], "TOO_MANY_CONCURRENT_SCANS")
+
+    def test_iam_policy_matches_terraform_and_is_strictly_read_only(self):
+        import re
+        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        with open(os.path.join(repo_root, "infra", "iam.tf"), encoding="utf-8") as fh:
+            iam_tf = fh.read()
+        tf_block = iam_tf.split("clarity_read_only_policy")[1].split("lambda_scan_state")[0]
+        tf_actions = re.findall(r'"([a-z0-9]+:[A-Za-z0-9]+)"', tf_block)
+
+        with open(os.path.join(repo_root, "frontend", "src", "utils", "constants.js"), encoding="utf-8") as fh:
+            const_js = fh.read()
+        js_block = const_js.split("IAM_POLICY_ACTIONS = [")[1].split("];")[0]
+        js_actions = re.findall(r'"([a-z0-9]+:[A-Za-z0-9]+)"', js_block)
+
+        self.assertEqual(len(tf_actions), 35)
+        self.assertEqual(tf_actions, js_actions)
+        self.assertNotIn("s3:ListBucket", tf_actions)
+        # Ensure zero write/delete/data-read/paid billing actions
+        forbidden_prefixes = ("create", "delete", "put", "update", "modify", "terminate", "stop", "start", "attach", "detach")
+        for action in tf_actions:
+            svc, op = action.split(":", 1)
+            self.assertNotIn(svc, ("ce", "guardduty", "config", "securityhub"))
+            self.assertNotEqual(action, "s3:GetObject")
+            self.assertFalse(op.lower().startswith(forbidden_prefixes), f"Forbidden write action in policy: {action}")
+
     def test_partition_regions_and_sync_fast_path(self):
         batches = lambda_handler._partition_regions([f"r-{i}" for i in range(32)], max_batches=8)
         self.assertEqual(len(batches), 8)
@@ -507,7 +650,8 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
 
         fake_result = {"status": "COMPLETE", "partial": False, "account_id": "123456789012", "resources": {}}
         ctx = MagicMock(invoked_function_arn="arn:aws:lambda:us-east-1:111122223333:function:clarity")
-        with patch("lambda_handler.run_scan", return_value=fake_result) as mock_run:
+        with patch.dict(os.environ, {"SCAN_COOLDOWN_SECONDS": "0", "MAX_CONCURRENT_SCANS": "0"}), \
+             patch("lambda_handler.run_scan", return_value=fake_result) as mock_run:
             resp = lambda_handler.handle_trigger({
                 "body": json.dumps({
                     "role_arn": "arn:aws:iam::123456789012:role/AWSClarityReadOnly",

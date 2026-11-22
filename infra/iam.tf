@@ -82,7 +82,6 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "ec2:DescribeSnapshots",
           "s3:ListAllMyBuckets",
           "s3:GetBucketLocation",
-          "s3:ListBucket",
           "s3:GetBucketPolicyStatus",
           "s3:GetBucketAcl",
           "s3:GetEncryptionConfiguration",

@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-export default function ScoreModal({ isOpen, onClose, scoreData }) {
+export default function ScoreModal({ isOpen, onClose, scoreData, coverageFailuresCount = 0 }) {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -47,44 +47,64 @@ export default function ScoreModal({ isOpen, onClose, scoreData }) {
               Score = max(0, 100 − [10 × Critical + 4 × Warnings + 1 × Unused])
             </div>
             <p className="text-slate-400 text-[11px] leading-relaxed">
-              Scoring starts at 100 points and subtracts deterministic weights per verified finding.
-              Resources with <code className="text-orange-300">INCOMPLETE</code> checks are reported separately in Scan Coverage and never credited as Healthy.
+              Scoring starts at 100 points and subtracts deterministic weights per verified finding.{" "}
+              <code className="text-slate-300">INFO</code> review observations deduct <strong>0 points</strong>.
+              When any required service, region, or check is <code className="text-orange-300">INCOMPLETE</code>,
+              the numeric score is withheld rather than calculated from partial coverage.
             </p>
           </div>
 
-          <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                Live Account Calculation
+          {!scoreData.isAvailable ? (
+            <div className="p-4 rounded-xl bg-orange-950/25 border border-orange-500/35 space-y-2">
+              <p className="text-xs font-semibold text-orange-200">
+                Health score unavailable — assessment incomplete.
               </p>
-              <span className="text-xs font-mono font-bold text-slate-200">
-                Final Score: <span className="text-teal-400">{scoreData.score} / 100</span> ({scoreData.label})
-              </span>
+              <p className="text-[11px] text-orange-200/80 leading-relaxed">
+                {coverageFailuresCount > 0
+                  ? `${coverageFailuresCount} collection or check failure${coverageFailuresCount === 1 ? "" : "s"} prevented a complete assessment.`
+                  : "One or more resources had incomplete checks."}{" "}
+                Resolve the missing permissions or unreachable region issues listed in Scan Coverage and re-scan to compute a full account health score.
+              </p>
             </div>
+          ) : (
+            <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Live Account Calculation
+                </p>
+                <span className="text-xs font-mono font-bold text-slate-200">
+                  Final Score: <span className="text-teal-400">{scoreData.score} / 100</span> ({scoreData.label})
+                </span>
+              </div>
 
-            <div className="divide-y divide-slate-800/80 font-mono text-[11px]">
-              <div className="py-1.5 flex flex-wrap justify-between gap-x-2">
-                <span className="text-slate-400">Base Starting Score:</span>
-                <span className="text-slate-200">+100 pts</span>
-              </div>
-              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-red-400">
-                <span>Critical Findings ({scoreData.critical} × −10 pts):</span>
-                <span>−{scoreData.critical * 10} pts</span>
-              </div>
-              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-amber-400">
-                <span>Warning Findings ({scoreData.warning} × −4 pts):</span>
-                <span>−{scoreData.warning * 4} pts</span>
-              </div>
-              <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-sky-300">
-                <span>Unused / Idle Resources ({scoreData.unused} × −1 pt):</span>
-                <span>−{scoreData.unused * 1} pts</span>
-              </div>
-              <div className="py-2 flex flex-wrap justify-between gap-x-2 font-bold text-xs border-t border-slate-700">
-                <span className="text-white font-sans">Calculated Score:</span>
-                <span className="text-teal-300">{scoreData.score} pts</span>
+              <div className="divide-y divide-slate-800/80 font-mono text-[11px]">
+                <div className="py-1.5 flex flex-wrap justify-between gap-x-2">
+                  <span className="text-slate-400">Base Starting Score:</span>
+                  <span className="text-slate-200">+100 pts</span>
+                </div>
+                <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-red-400">
+                  <span>Critical Findings ({scoreData.critical} × −10 pts):</span>
+                  <span>−{scoreData.critical * 10} pts</span>
+                </div>
+                <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-amber-400">
+                  <span>Warning Findings ({scoreData.warning} × −4 pts):</span>
+                  <span>−{scoreData.warning * 4} pts</span>
+                </div>
+                <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-sky-300">
+                  <span>Unused Resources ({scoreData.unused} × −1 pt):</span>
+                  <span>−{scoreData.unused * 1} pts</span>
+                </div>
+                <div className="py-1.5 flex flex-wrap justify-between gap-x-2 text-slate-400">
+                  <span>Informational Review Notes ({scoreData.info} × 0 pts):</span>
+                  <span>0 pts</span>
+                </div>
+                <div className="py-2 flex flex-wrap justify-between gap-x-2 font-bold text-xs border-t border-slate-700">
+                  <span className="text-white font-sans">Calculated Score:</span>
+                  <span className="text-teal-300">{scoreData.score} pts</span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">

@@ -1,12 +1,12 @@
 # AWS Clarity
 
-**A secure, strictly read-only, zero-cost AWS account visibility platform.**
+**A free, strictly read-only AWS account visibility and configuration assessment platform.**
 
-Connect any AWS account using a least-privilege IAM Role ARN and a unique External ID to discover your real inventory across **all enabled AWS regions**, surface security risks and unused/wasteful resources, and get evidence-backed remediation and verification steps—from one responsive dashboard.
+Explore the interactive **Demo Mode** without connecting AWS, or connect an AWS account using a least-privilege IAM Role ARN (via an inspectable CloudFormation template or manual setup) and a stable External ID to inspect your real inventory across **10 core AWS services** and all enabled regions—with evidence-backed findings, manual remediation steps, and honest scan coverage.
 
 ![Read-Only](https://img.shields.io/badge/Access-Strictly%20Read--Only-0d9488)
-![Services](https://img.shields.io/badge/v1%20Scope-10%20AWS%20Services%20%7C%2044%20Rules-1e293b)
-![Cost](https://img.shields.io/badge/Paid%20AWS%20APIs-Zero%20(%240%2Fmo)-10b981)
+![Services](https://img.shields.io/badge/v1%20Scope-10%20AWS%20Services%20%7C%2043%20Rules-1e293b)
+![Free](https://img.shields.io/badge/Early%20Access-Free%20%7C%20No%20Paid%20Scanning%20APIs-10b981)
 ![Stack](https://img.shields.io/badge/Stack-React%20%7C%20Python%203.12%20%7C%20Terraform-334155)
 
 ---
@@ -19,7 +19,7 @@ Connect any AWS account using a least-privilege IAM Role ARN and a unique Extern
 - [Supported Services & Coverage Matrix (v1)](#supported-services--coverage-matrix-v1)
 - [How It Works — Architecture & Performance](#how-it-works--architecture--performance)
 - [Security & Trust Architecture](#security--trust-architecture)
-- [Cost Design ($0/Month Target)](#cost-design-0month-target)
+- [Cost Design & Usage Safeguards](#cost-design--usage-safeguards)
 - [How to Use AWS Clarity](#how-to-use-aws-clarity)
 - [Local Development](#local-development)
 - [Deployment & CI/CD](#deployment--cicd)
@@ -51,7 +51,7 @@ Understanding what is actually running inside an AWS account is unnecessarily pa
 
 ## Key Features & Principles
 
-1. **Landing & Connection First:** Every session starts on the setup screen explaining the 10 supported services, coverage matrix, External ID, and exact 36-action read-only IAM policy, with a one-click **Verify Account & Permissions** pre-check before scanning.
+1. **Landing & Connection First:** Every session starts on the setup screen explaining the 10 supported services, coverage matrix, stable External ID, and exact 35-action read-only IAM policy (with downloadable CloudFormation template and Explore Demo mode), plus a one-click **Verify Account & Permissions** pre-check before scanning.
 2. **Strictly Read-Only:** Uses only `Describe*`, `List*`, and `Get*` IAM actions. Never creates, modifies, stops, or deletes any customer resource.
 3. **Complete All-Region Inventory:** Auto-discovers **all enabled AWS regions** via `ec2:DescribeRegions`, paginates every API response completely, handles global services (`S3`, `IAM`) and `CloudTrail` home regions without duplication, and never shows mock or hardcoded data.
 4. **Honest Coverage Separation:** No `NOT_ASSESSED` resource status. Inventory coverage (`COMPLETE` vs `INCOMPLETE`, listing every failed service, region, reason, and missing IAM action) is tracked strictly separately from security/cost findings. A resource is only marked `HEALTHY` when every applicable rule executes and passes.
@@ -63,13 +63,13 @@ Understanding what is actually running inside an AWS account is unnecessarily pa
 
 ## Supported Services & Coverage Matrix (v1)
 
-AWS Clarity intentionally focuses on **10 core AWS services**, **17 resource types**, and **44 deterministic rules** (plus the `CT-000` account-level CloudTrail advisory):
+AWS Clarity intentionally focuses on **10 core AWS services**, **17 resource types**, and **43 deterministic rules** (plus the `CT-000` account-level CloudTrail advisory):
 
 | # | Service | Scope | Supported Resource Types | Implemented Deterministic Checks |
 | --- | --- | --- | --- | --- |
 | 1 | **EC2** | All enabled regions | EC2 Instances, Elastic IPs, Security Groups | Open all-traffic / SSH / RDP / DB ports (`SG-001`–`SG-004`), IMDSv2 enforcement (`EC2-002`), stopped instances (`EC2-001`), unassociated Elastic IPs (`EIP-001`) |
 | 2 | **VPC** | All enabled regions | VPCs, Internet Gateways, NAT Gateways | Public workloads inside default VPC (`VPC-001`; empty default VPCs are `HEALTHY`), unattached IGWs (`IGW-001`), failed & ongoing-spend active NAT Gateways (`NAT-001`–`NAT-002`) |
-| 3 | **S3** | Global (mapped to actual bucket region) | S3 Buckets | Public bucket policies (`S3-002`), public ACLs (`S3-003`), encryption check (`S3-004`), Block Public Access (`S3-005`), empty buckets (`S3-001`) |
+| 3 | **S3** | Global (mapped to actual bucket region) | S3 Buckets | Public bucket policies (`S3-002`), public ACLs (`S3-003`), encryption check (`S3-004`), Block Public Access (`S3-005`) — zero object listing (`s3:ListBucket` removed) |
 | 4 | **IAM** | Global | IAM Roles, IAM Users | Context-aware wildcard checks (`IAM-001`, `IAM-002`, `IAM-006` — excludes read-only `Describe/List/Get` & `/aws-service-role/`, checks conditions), admin managed policies (`IAM-003`, `IAM-004`, `IAM-007`), public & cross-account trusts (`IAM-005`, `IAM-008`), user MFA (`IAM-009`), active access keys >90d (`IAM-010`), direct user admin (`IAM-011`) |
 | 5 | **Lambda** | All enabled regions | Lambda Functions | Functions unmodified >90 days (`LAM-001`), deprecated runtimes (`LAM-002`) |
 | 6 | **RDS** | All enabled regions | RDS DB Instances | Publicly accessible (`RDS-001`), unencrypted storage (`RDS-002`), deletion protection disabled (`RDS-003`), automated backups disabled (`RDS-004`) |
@@ -104,7 +104,7 @@ Browser (React 18 + Vite + Tailwind CSS — Mobile / Tablet / Desktop)
   │                            ├── ec2:DescribeRegions (all enabled regions)
   │                            ├── Map-Reduce Fan-Out (up to 8 concurrent sub-worker
   │                            │   Lambdas, ~4 regions each, 0.9s TCP reachability probe)
-  │                            └── Merge → Deduplicate → Deterministic evaluate() (44 rules)
+  │                            └── Merge → Deduplicate → Deterministic evaluate() (43 rules)
   │                                → Return HTTP 200 directly (zero DB persistence)
   │
   └── Async Fallback (POST /scan without sync, or automatic fallback on HTTP 202 / 504)
@@ -125,27 +125,31 @@ Browser (React 18 + Vite + Tailwind CSS — Mobile / Tablet / Desktop)
 
 ## Security & Trust Architecture
 
-- **Least-Privilege Read-Only Access:** Exactly 36 read-only IAM actions (`Describe*`, `List*`, `Get*`). Zero write, modify, stop, or delete permissions.
-- **Confused-Deputy Protection:** Generates a unique per-session `sts:ExternalId` (with options to regenerate or use an existing role's ID) enforced during `sts:AssumeRole`.
+- **Least-Privilege Read-Only Access:** Exactly 35 read-only IAM actions (`Describe*`, `List*`, `Get*`). Zero write, modify, stop, delete, S3 object-listing (`s3:ListBucket`), or data-read (`s3:GetObject`) permissions.
+- **Confused-Deputy Protection:** Generates a stable 128-bit random `sts:ExternalId` per AWS account connection enforced during `sts:AssumeRole` (not a credential, with explicit regeneration warnings and recovery guidance).
 - **Short-Lived Credentials Only:** Uses temporary 1-hour AWS STS credentials kept strictly in Lambda memory. No long-lived AWS access keys are ever requested or stored.
-- **Strict Tenant Isolation:** On async scans, each scan generates a 256-bit `scan_token`; only its SHA-256 hash is stored in DynamoDB and verified via `hmac.compare_digest` against the `X-Scan-Token` header (`403` on missing/invalid token). Role ARNs and External IDs are never persisted in DynamoDB.
+- **Strict Tenant Isolation & UUID Guarding:** On async scans, each scan generates a 256-bit `scan_token`; only its SHA-256 hash is stored in DynamoDB and verified via `hmac.compare_digest` against the `X-Scan-Token` header (`403` on missing/invalid token or missing hash). `GET /scan/{scan_id}/status` validates UUID format before querying DynamoDB so internal guard keys cannot be probed. Role ARNs and External IDs are never persisted in DynamoDB.
+- **Public Endpoint Trade-Off (Documented):** Because `POST /scan` is public (no user login), `X-Scan-Token` isolates async scan result retrieval, while scan initiation relies on knowing both a customer's Role ARN and exact `sts:ExternalId` (mitigated by 128-bit random External IDs, atomic per-role cooldowns, concurrency caps, API Gateway throttling, and strict read-only permissions).
 - **Automatic Data Expiration:** Async scan payloads are gzip-compressed and automatically deleted from DynamoDB via a 1-hour TTL. Sync scans persist nothing to DynamoDB.
 - **Private Frontend Origin:** S3 bucket blocks all public access and is served exclusively through CloudFront with Origin Access Control (OAC).
-- **Instant Revocation:** Deleting the IAM role or updating its trust policy in AWS IAM immediately blocks all future access.
+- **Instant Revocation:** Clearing browser data only clears local browser storage. Deleting the CloudFormation stack or IAM role/trust policy in AWS immediately blocks all future access.
 
 ---
 
-## Cost Design ($0/Month Target)
+## Cost Design & Usage Safeguards
 
-AWS Clarity is architected to operate within AWS Always-Free / Free Tier limits with **zero paid scanning APIs**:
+AWS Clarity is free to use during early access (no subscription, no credit card, no paid AI APIs, and no paid AWS security/billing APIs). Your existing AWS infrastructure charges remain your responsibility; AWS Clarity never creates chargeable resources in customer accounts.
 
-| Component | Configuration | Cost Impact |
+> **Important note on hosting costs:** AWS Free Tier allowances vary by account age/type (API Gateway REST and S3 have 12-month introductory Free Tier allowances, whereas Lambda, Provisioned DynamoDB, CloudFront, and CloudWatch Logs include Always-Free allowances up to monthly usage caps). Hosting cannot be guaranteed `$0` forever under arbitrary traffic, so built-in free usage safeguards are configured in Terraform and Lambda:
+
+| Component | Configuration & Safeguards | Free Allowance / Exposure Notes |
 | --- | --- | --- |
-| **AWS Lambda** | Python 3.12, `1769 MB`, ~2.5s–4.6s scans (~33 GB-s per 32-region map-reduce scan) | Always-Free tier includes 1M requests + 400,000 GB-seconds/month (~12,000 free scans/mo) |
-| **Amazon DynamoDB** | `PAY_PER_REQUEST` on-demand, gzipped results, 1h TTL | Always-Free 25 GB storage + minimal on-demand usage (sync fast path makes 0 DB calls) |
-| **Amazon CloudWatch Logs** | Dedicated `/aws/lambda/aws-clarity-scanner`, `14-day` retention | Well within Always-Free 5 GB log ingestion/storage |
-| **CloudFront + Private S3** | Static SPA bundle (`~275 KB` JS / `~77 KB` gzipped) | Always-Free CloudFront 1 TB transfer + 10M HTTP requests/mo |
-| **Target Account Scanning APIs** | Free `Describe*`/`List*`/`Get*` APIs + 1 `ListObjectsV2(MaxKeys=1)` per S3 bucket | Zero paid AWS security/billing APIs |
+| **AWS Lambda** | Python 3.12, `1769 MB`, ~33 GB-s per 32-region map-reduce scan; optional `lambda_reserved_concurrency`, `SCANS_ENABLED` kill-switch, atomic `MAX_CONCURRENT_SCANS` (default `3`), `SCAN_COOLDOWN_SECONDS` (`15s`), `PRECHECK_COOLDOWN_SECONDS` (`3s`) | Always-Free tier: 1M requests + 400,000 GB-s/month; paid beyond cap |
+| **API Gateway (REST)** | Retained over Lambda Function URL to preserve built-in free stage throttling (`2 req/s` steady, `10` burst via `aws_api_gateway_method_settings`) and CORS error responses | 12-month Free Tier (1M REST API calls/mo); after 12 months, `$3.50/million` requests (`<$0.01/mo` at low early-access traffic) |
+| **Amazon DynamoDB** | `PROVISIONED` (`10 RCU / 10 WCU`), atomic conditional guards (`1 WCU / 0 RCU`), gzipped async payloads, 1-hour TTL (sync scans write zero inventory) | Always-Free tier: 25 GB storage + **25 RCU + 25 WCU** (`10/10` uses 40% of Always-Free capacity) |
+| **Amazon CloudWatch Logs** | Dedicated `/aws/lambda/aws-clarity-scanner`, `14-day` retention, no inventory/secret logging | Always-Free 5 GB ingestion + 5 GB storage/month |
+| **CloudFront + Private S3** | Static SPA (`~300 KB` JS / `~80 KB` gzipped) via OAC (`default_ttl = 3600`, `max_ttl = 86400`) | CloudFront Always-Free 1 TB transfer + 10M HTTP requests/mo; S3 is 12-month Free Tier (`<$0.01/mo` after 12 months) |
+| **Target Account Scanning APIs** | Strictly control-plane `Describe*`/`List*`/`Get*` APIs; `s3:ListBucket` (`ListObjectsV2`) removed | Zero Cost Explorer, GuardDuty, Config, Security Hub, or S3 LIST calls. S3 bucket-config GET calls (`$0.0004/1,000` requests after customer's 12-month S3 Free Tier) are negligible (`~$0.00004` per scan for 20 buckets) |
 
 ---
 
@@ -153,10 +157,10 @@ AWS Clarity is architected to operate within AWS Always-Free / Free Tier limits 
 
 ### Step 1: Create the Read-Only IAM Role in Your Target AWS Account
 
-1. Open **AWS IAM → Roles → Create role**.
+1. Open **AWS IAM → Roles → Create role** (or download the inspectable CloudFormation YAML directly on the AWS Clarity setup screen).
 2. Select **Trusted entity type: AWS account → Another AWS account**.
 3. Enter your deployed **App Account ID** (`terraform -chdir=infra output -raw app_account_id`) and check **Require external ID**, pasting the unique External ID shown on the AWS Clarity landing screen.
-4. Attach this exact **36-action read-only inline policy**:
+4. Attach this exact **35-action read-only inline policy**:
 
 ```json
 {
@@ -177,7 +181,6 @@ AWS Clarity is architected to operate within AWS Always-Free / Free Tier limits 
         "ec2:DescribeSnapshots",
         "s3:ListAllMyBuckets",
         "s3:GetBucketLocation",
-        "s3:ListBucket",
         "s3:GetBucketPolicyStatus",
         "s3:GetBucketAcl",
         "s3:GetEncryptionConfiguration",
@@ -230,7 +233,7 @@ AWS Clarity is architected to operate within AWS Always-Free / Free Tier limits 
 - **Node.js 20+** and `npm`
 - **Terraform `~> 1.15`** and **AWS CLI v2** (configured with credentials for your hosting AWS account)
 
-### 1. Run Backend Unit Tests (20 Tests)
+### 1. Run Backend Unit Tests (23 Tests)
 ```bash
 pip install -r backend/requirements.txt
 python3 -m unittest discover -s backend -p "test_*.py" -v
@@ -315,7 +318,7 @@ aws-clarity/
 │   ├── test_misconfig_eval.py      # Deterministic rule engine smoke tests
 │   ├── test_s3_region.py           # Global S3 discovery & region filtering tests
 │   └── scanner/
-│       ├── misconfig.py            # SERVICE_COVERAGE_MATRIX, 44 deterministic rules & parallel S3 evaluation
+│       ├── misconfig.py            # SERVICE_COVERAGE_MATRIX, 43 deterministic rules & parallel S3 evaluation
 │       ├── ec2.py                  # EC2 instances (paginated)
 │       ├── elastic_ip.py           # Elastic IPs
 │       ├── security_group.py       # Security Groups (paginated)
@@ -345,17 +348,17 @@ aws-clarity/
 │       │   ├── DetailDrawer.jsx    # Sticky-header slide-over drawer with evidence, fix & verify steps
 │       │   ├── CoverageModal.jsx   # Separate inventory coverage & failed regions/permissions breakdown
 │       │   ├── ScoreModal.jsx      # Transparent deterministic score formula & live calculation
-│       │   ├── ChecksCatalogModal.jsx # Searchable 44-rule catalog with live account status
-│       │   └── TrustModal.jsx      # Security boundaries, tenant isolation & data retention details
+│       │   ├── ChecksCatalogModal.jsx # Searchable 43-rule catalog with live account status
+│       │   └── TrustModal.jsx      # Trust & Privacy Centre, security boundaries & separated Data Controls
 │       ├── services/api.js         # Sync-first scan client, async 400ms fallback polling & pre-check
-│       └── utils/                  # Constants, IAM policy JSON, formatters, score & scan diff helpers
+│       └── utils/                  # Constants, IAM policy JSON, CloudFormation generator, connectionStorage, score & scan diff
 ├── infra/
 │   ├── main.tf                     # Terraform ~> 1.15, AWS provider ~> 6.0, remote S3 state backend
-│   ├── variables.tf                # Region, app name, Lambda memory (1769 MB), timeout (120s), log retention (14d)
-│   ├── iam.tf                      # Lambda execution role + sample 36-action AWSClarityReadOnly role
+│   ├── variables.tf                # Region, app name, Lambda memory (1769 MB), timeout (120s), log retention (14d), capacity & throttles
+│   ├── iam.tf                      # Lambda execution role + sample 35-action AWSClarityReadOnly role
 │   ├── lambda.tf                   # aws-clarity-backend Lambda + managed /aws/lambda/aws-clarity-scanner log group
-│   ├── api_gateway.tf              # REST API, CORS preflight, deterministic redeploy & CORS 4XX/5XX responses
-│   ├── dynamodb.tf                 # On-demand scan state table with 1h TTL
+│   ├── api_gateway.tf              # REST API, stage throttling (2 req/s, 10 burst), CORS preflight & CORS 4XX/5XX responses
+│   ├── dynamodb.tf                 # Provisioned scan state table (10 RCU / 10 WCU — Always-Free tier) with 1h TTL
 │   ├── s3_hosting.tf               # Private S3 frontend bucket + public access block
 │   ├── cloudfront.tf               # CloudFront CDN with SigV4 OAC
 │   └── outputs.tf                  # API URL, CloudFront URL, Lambda name, S3 bucket, App Account ID

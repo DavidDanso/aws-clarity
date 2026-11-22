@@ -2,78 +2,55 @@ import { useState, useEffect, useRef } from "react";
 import SetupScreen from "./pages/SetupScreen";
 import DashboardScreen from "./pages/DashboardScreen";
 import { scanAccount } from "./services/api";
-import { generateExternalId } from "./utils/formatters";
-
-const SESSION_KEY = "aws_clarity_session_v2";
-const EXTERNAL_ID_KEY = "aws_clarity_external_id";
-
-function loadSession() {
-  try {
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed && parsed.scanResults && parsed.scanResults.resources) {
-      return parsed;
-    }
-  } catch {
-    // Ignore parse errors
-  }
-  return null;
-}
-
-function getOrCreateSessionExternalId() {
-  try {
-    const existing = sessionStorage.getItem(EXTERNAL_ID_KEY);
-    if (existing && existing.trim()) return existing.trim();
-    const fresh = generateExternalId();
-    sessionStorage.setItem(EXTERNAL_ID_KEY, fresh);
-    return fresh;
-  } catch {
-    return generateExternalId();
-  }
-}
-
-function saveSession(data) {
-  try {
-    if (data && data.scanResults && data.scanResults.resources) {
-      sessionStorage.setItem(SESSION_KEY, JSON.stringify(data));
-    } else {
-      sessionStorage.removeItem(SESSION_KEY);
-    }
-  } catch {
-    // Ignore storage quota errors
-  }
-}
+import { buildDemoScanData } from "./data/demoScanData";
+import {
+  clearAllBrowserData,
+  clearConnectionPreferencesStorage,
+  clearScanSessionStorage,
+  getRememberedRoleArn,
+  getStableExternalId,
+  loadRealScanSession,
+  saveConnectionDetails,
+  saveRealScanSession,
+} from "./utils/connectionStorage";
 
 function App() {
-  const initialSession = loadSession();
+  const initialSession = loadRealScanSession();
 
   // Always start on the landing & account connection screen (never bypass straight to dashboard)
   const [view, setView] = useState("setup");
+  const [isDemoMode, setIsDemoMode] = useState(false);
   const [scanResults, setScanResults] = useState(() => initialSession?.scanResults || null);
-  const [previousScanResults, setPreviousScanResults] = useState(() => initialSession?.previousScanResults || null);
+  const [previousScanResults, setPreviousScanResults] = useState(
+    () => initialSession?.previousScanResults || null
+  );
   const [isLoading, setIsLoading] = useState(false);
   const [scanError, setScanError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
   const [scanProgress, setScanProgress] = useState(null);
-  const [storedRoleArn, setStoredRoleArn] = useState(() => initialSession?.storedRoleArn || "");
-  const [storedExternalId, setStoredExternalId] = useState(
-    () => initialSession?.storedExternalId || getOrCreateSessionExternalId()
+  const [storedRoleArn, setStoredRoleArn] = useState(
+    () => initialSession?.storedRoleArn || getRememberedRoleArn()
   );
+  const [storedExternalId, setStoredExternalId] = useState(() =>
+    initialSession?.storedExternalId || getStableExternalId(initialSession?.storedRoleArn || getRememberedRoleArn())
+  );
+  const [connectionResetSeq, setConnectionResetSeq] = useState(0);
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedbackRef = useRef(null);
 
+  // Persist ONLY real (non-demo) scan results in sessionStorage
   useEffect(() => {
-    if (scanResults && scanResults.resources) {
-      saveSession({
+    if (!isDemoMode && scanResults && scanResults.resources && scanResults.is_demo !== true) {
+      saveRealScanSession({
         scanResults,
-        previousScanResults,
+        previousScanResults:
+          previousScanResults && previousScanResults.is_demo !== true ? previousScanResults : null,
         storedRoleArn,
         storedExternalId,
       });
     }
-  }, [scanResults, previousScanResults, storedRoleArn, storedExternalId]);
+  }, [isDemoMode, scanResults, previousScanResults, storedRoleArn, storedExternalId]);
 
   useEffect(() => {
     if (!feedbackOpen) return;
@@ -86,16 +63,27 @@ function App() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [feedbackOpen]);
 
+  const handleExploreDemo = () => {
+    setIsDemoMode(true);
+    setIsLoading(false);
+    setScanError("");
+    setScanStatus("");
+    setScanProgress(null);
+    setView("dashboard");
+  };
+
+  const handleExitDemo = () => {
+    setIsDemoMode(false);
+    setView("setup");
+  };
+
   const handleScanStart = async (roleArn, externalId) => {
-    if (scanResults && scanResults.resources) {
+    setIsDemoMode(false);
+    if (scanResults && scanResults.resources && scanResults.is_demo !== true) {
       setPreviousScanResults(scanResults);
     }
-    const resolvedExternalId = externalId?.trim() || storedExternalId;
-    try {
-      sessionStorage.setItem(EXTERNAL_ID_KEY, resolvedExternalId);
-    } catch {
-      // Ignore storage errors
-    }
+    const resolvedExternalId = externalId?.trim() || getStableExternalId(roleArn);
+    saveConnectionDetails(roleArn, resolvedExternalId);
 
     setIsLoading(true);
     setScanStatus("STARTING");
@@ -126,16 +114,75 @@ function App() {
   };
 
   const handleDisconnect = () => {
+    setIsDemoMode(false);
+    setScanError("");
+    setScanStatus("");
+    setScanProgress(null);
+    setView("setup");
+  };
+
+  const handleClearCurrentResults = () => {
+    setIsDemoMode(false);
     setScanResults(null);
     setPreviousScanResults(null);
     setScanError("");
     setScanStatus("");
     setScanProgress(null);
-    sessionStorage.removeItem(SESSION_KEY);
+    clearScanSessionStorage();
     setView("setup");
   };
 
+  const handleClearScanHistory = () => {
+    setPreviousScanResults(null);
+    clearScanSessionStorage();
+    if (!isDemoMode && scanResults && scanResults.is_demo !== true) {
+      saveRealScanSession({
+        scanResults,
+        previousScanResults: null,
+        storedRoleArn,
+        storedExternalId,
+      });
+    }
+  };
+
+  const handleForgetConnectionDetails = () => {
+    clearConnectionPreferencesStorage();
+    const freshId = getStableExternalId("");
+    setStoredRoleArn("");
+    setStoredExternalId(freshId);
+    setConnectionResetSeq((n) => n + 1);
+  };
+
+  const handleClearAllLocalData = () => {
+    clearAllBrowserData();
+    const freshId = getStableExternalId("");
+    setIsDemoMode(false);
+    setScanResults(null);
+    setPreviousScanResults(null);
+    setScanError("");
+    setScanStatus("");
+    setScanProgress(null);
+    setStoredRoleArn("");
+    setStoredExternalId(freshId);
+    setConnectionResetSeq((n) => n + 1);
+    setView("setup");
+  };
+
+  const dataControls = {
+    hasCurrentScan: Boolean(!isDemoMode && scanResults && scanResults.is_demo !== true),
+    hasHistory: Boolean(!isDemoMode && previousScanResults && previousScanResults.is_demo !== true),
+    hasConnectionDetails: Boolean(storedRoleArn),
+    onClearCurrentResults: handleClearCurrentResults,
+    onClearScanHistory: handleClearScanHistory,
+    onForgetConnectionDetails: handleForgetConnectionDetails,
+    onClearAllLocalData: handleClearAllLocalData,
+  };
+
   const handleRescan = () => {
+    if (isDemoMode) {
+      handleExitDemo();
+      return;
+    }
     if (storedRoleArn) {
       handleScanStart(storedRoleArn, storedExternalId);
     } else {
@@ -143,28 +190,45 @@ function App() {
     }
   };
 
+  const activeDashboardResults = isDemoMode ? buildDemoScanData() : scanResults;
+  const activePreviousResults = isDemoMode ? null : previousScanResults;
+  const hasResumableRealScan = Boolean(scanResults && scanResults.is_demo !== true);
+
   return (
     <>
       {view === "setup" ? (
         <SetupScreen
           onScanStart={handleScanStart}
-          onResumeSession={scanResults ? () => setView("dashboard") : null}
-          resumableAccountId={scanResults?.account_id || ""}
+          onExploreDemo={handleExploreDemo}
+          onResumeSession={
+            hasResumableRealScan
+              ? () => {
+                  setIsDemoMode(false);
+                  setView("dashboard");
+                }
+              : null
+          }
+          resumableAccountId={hasResumableRealScan ? scanResults?.account_id || "" : ""}
           initialRoleArn={storedRoleArn}
           initialExternalId={storedExternalId}
+          connectionResetSeq={connectionResetSeq}
           scanError={scanError}
           setScanError={setScanError}
+          dataControls={dataControls}
         />
       ) : (
         <DashboardScreen
-          scanResults={scanResults}
-          previousScanResults={previousScanResults}
+          scanResults={activeDashboardResults}
+          previousScanResults={activePreviousResults}
+          isDemoMode={isDemoMode}
+          onExitDemo={handleExitDemo}
           onRescan={handleRescan}
           onDisconnect={handleDisconnect}
-          isLoading={isLoading}
+          isLoading={isDemoMode ? false : isLoading}
           scanStatus={scanStatus}
           scanProgress={scanProgress}
-          scanError={scanError}
+          scanError={isDemoMode ? "" : scanError}
+          dataControls={dataControls}
         />
       )}
 
