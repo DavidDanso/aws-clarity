@@ -46,7 +46,9 @@ jobs:
             CLEAN_CLI="clean-venv/Scripts/aws-clarity.exe"
           fi
           "$CLEAN_PIP" install dist-ci/*.whl
-          (cd /tmp || cd "$RUNNER_TEMP"; "$OLDPWD/$CLEAN_CLI" version && "$OLDPWD/$CLEAN_CLI" policy --zero-cost-only > /dev/null)
+          CLI_ABS="$(pwd)/$CLEAN_CLI"
+          TMP_DIR="${RUNNER_TEMP:-/tmp}"
+          (cd "$TMP_DIR" && "$CLI_ABS" version && "$CLI_ABS" policy --zero-cost-only > /dev/null)
 
   frontend-verify:
     name: Frontend Lint, Build, CSP & Audit

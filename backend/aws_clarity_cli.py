@@ -33,10 +33,11 @@ def _write_secure_json(path: str, payload: dict, pretty: bool = True) -> None:
         os.makedirs(parent, exist_ok=True)
     flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     fd = os.open(path, flags, 0o600)
-    try:
-        os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
+    if os.name == "posix":
+        try:
+            os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+        except OSError:
+            pass
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.write(text)
 
@@ -157,7 +158,8 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 f"  Skipped optional services (not marked healthy): {', '.join(cov['services_skipped_optional'])}",
                 file=sys.stderr,
             )
-        print(f"  Saved local report (mode 0600): {os.path.abspath(output_path)}", file=sys.stderr)
+        perm_note = "mode 0600" if os.name == "posix" else "user ACLs"
+        print(f"  Saved local report ({perm_note}): {os.path.abspath(output_path)}", file=sys.stderr)
         print("  Next step: Open the AWS Clarity website and click 'Import Local Report' to inspect it locally.", file=sys.stderr)
 
     return 0

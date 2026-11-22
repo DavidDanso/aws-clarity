@@ -163,9 +163,10 @@ class TestLocalFirstScannerAndCLI(unittest.TestCase):
 
             self.assertEqual(rc, 0)
             self.assertIn("123456789012", stderr_buf.getvalue())
-            # Ensure output file has owner-only 0600 permissions and contains zero credentials
-            file_mode = stat.S_IMODE(os.stat(out_path).st_mode)
-            self.assertEqual(file_mode, 0o600)
+            # Ensure output file has owner-only 0600 permissions on POSIX (Windows uses ACLs)
+            if os.name == "posix":
+                file_mode = stat.S_IMODE(os.stat(out_path).st_mode)
+                self.assertEqual(file_mode, 0o600)
             with open(out_path, encoding="utf-8") as fh:
                 content = fh.read()
             for forbidden in ("SecretAccessKey", "SessionToken", "aws_secret_access_key"):
