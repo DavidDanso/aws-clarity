@@ -514,14 +514,14 @@ aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-r
             <p className="text-[11px] text-slate-500 leading-relaxed">
               Inspect source code and verify release SHA-256 checksums on{" "}
               <a
-                href="https://github.com/DavidDanso/aws-clarity"
+                href="https://github.com/DavidDanso/aws-clarity/releases"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
               >
-                GitHub (DavidDanso/aws-clarity)
+                GitHub Releases (DavidDanso/aws-clarity)
               </a>
-              . Reports are written locally with owner-only permissions (<code className="text-slate-400">0600</code>) and never contain AWS credentials.
+              . Reports are written locally with <code className="text-slate-400">0600</code> permissions on macOS/Linux (standard user ACLs on Windows) and never contain AWS credentials.
             </p>
           </div>
 

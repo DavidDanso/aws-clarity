@@ -118,8 +118,16 @@ export function sanitizeReportForSharing(report) {
   };
 }
 
+const CSV_FORMULA_PREFIX_RE = /^[=+\-@\t\r]/;
+
+export function neutralizeCsvCell(val) {
+  const str = String(val ?? "");
+  const safe = CSV_FORMULA_PREFIX_RE.test(str) ? `'${str}` : str;
+  return `"${safe.replace(/"/g, '""')}"`;
+}
+
 export function buildInventoryCSV(allResources = [], { sanitized = false } = {}) {
-  const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
+  const escape = neutralizeCsvCell;
   const headers = [
     "Service",
     "Resource Name",

@@ -1,0 +1,93 @@
+name: CI & Cross-Platform Local Scanner Release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scanner-matrix:
+    name: Scanner (${{ matrix.os }} / Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install build & test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt build pip-audit
+      - name: Run Python unit tests
+        run: python -m unittest discover -s backend -p "test_*.py" -v
+      - name: Audit Python dependencies
+        run: pip-audit -r backend/requirements.txt
+      - name: Build wheel & sdist and verify clean isolated installation
+        shell: bash
+        run: |
+          python -m build --outdir dist-ci .
+          python -m venv clean-venv
+          if [ -f "clean-venv/bin/pip" ]; then
+            CLEAN_PIP="clean-venv/bin/pip"
+            CLEAN_CLI="clean-venv/bin/aws-clarity"
+          else
+            CLEAN_PIP="clean-venv/Scripts/pip.exe"
+            CLEAN_CLI="clean-venv/Scripts/aws-clarity.exe"
+          fi
+          "$CLEAN_PIP" install dist-ci/*.whl
+          (cd /tmp || cd "$RUNNER_TEMP"; "$OLDPWD/$CLEAN_CLI" version && "$OLDPWD/$CLEAN_CLI" policy --zero-cost-only > /dev/null)
+
+  frontend-verify:
+    name: Frontend Lint, Build, CSP & Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install, audit, lint, build & verify privacy invariants
+        working-directory: frontend
+        run: |
+          npm ci
+          npm audit
+          npm run lint -- --max-warnings 0
+          npm run build
+          node scripts/verify-frontend-invariants.mjs
+
+  publish-release:
+    name: Publish Scanner Release Artifacts
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [scanner-matrix, frontend-verify]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Build release wheel, sdist, tarball & SHA256SUMS.txt
+        run: |
+          python -m pip install --upgrade pip build
+          bash scripts/build-release-artifacts.sh
+          (cd dist-release && sha256sum -c SHA256SUMS.txt)
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" dist-release/*.whl dist-release/*.tar.gz dist-release/SHA256SUMS.txt \
+            --title "AWS Clarity ${GITHUB_REF_NAME} (Local-First Public Release)" \
+            --notes "Privacy-first local AWS scanner and release checksums. Verify downloads with \`shasum -a 256 -c SHA256SUMS.txt\`."

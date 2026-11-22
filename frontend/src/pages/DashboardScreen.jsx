@@ -852,7 +852,7 @@ export default function DashboardScreen({
                 >
                   <p className="font-semibold text-teal-200">Download Sanitized JSON (Recommended for Sharing)</p>
                   <p className="text-[11px] text-teal-200/75">
-                    Redacts Account IDs, ARNs, resource names, IP addresses, and raw IAM/network payloads while keeping rule IDs, severities, and coverage.
+                    Best-effort redaction of Account IDs, ARNs, resource names, IP addresses, and raw IAM/network payloads while keeping rule IDs, severities, and coverage. Always review before sharing externally.
                   </p>
                 </button>
                 <button

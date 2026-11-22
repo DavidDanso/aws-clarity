@@ -102,9 +102,9 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
               </p>
               <ol className="list-decimal pl-4 space-y-1 text-slate-400">
                 <li>You run the open-source <code className="text-teal-300">aws-clarity</code> Python CLI locally using your existing AWS CLI / IAM Identity Center profile.</li>
-                <li>The CLI communicates directly with official AWS service endpoints via <code className="text-slate-300">boto3</code> and writes <code className="text-teal-300">aws-clarity-report.json</code> locally (permissions <code className="text-slate-300">0600</code>).</li>
+                <li>The CLI communicates directly with official AWS service endpoints via <code className="text-slate-300">boto3</code> and writes <code className="text-teal-300">aws-clarity-report.json</code> locally (mode <code className="text-slate-300">0600</code> on macOS/Linux; standard user ACLs on Windows).</li>
                 <li>You import that JSON file into this static website, where the browser parses and renders it strictly in-memory.</li>
-                <li>Production builds enforce Content-Security-Policy <code className="text-teal-300">connect-src &apos;none&apos;</code> so the dashboard cannot upload reports or contact external analytics/APIs.</li>
+                <li>Production builds enforce Content-Security-Policy <code className="text-teal-300">connect-src &apos;none&apos;</code> so the dashboard cannot upload reports or contact external analytics/APIs. Note: the static hosting provider (e.g., GitHub Pages or CDN) may still process ordinary web request metadata such as IP address, User-Agent, and requested page URL when loading the site itself.</li>
               </ol>
             </div>
           </section>

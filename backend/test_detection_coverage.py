@@ -618,26 +618,25 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
         self.assertEqual(resp["statusCode"], 429)
         self.assertEqual(json.loads(resp["body"])["error_code"], "TOO_MANY_CONCURRENT_SCANS")
 
-    def test_iam_policy_matches_terraform_and_is_strictly_read_only(self):
+    def test_iam_policy_matches_local_cli_and_is_strictly_read_only(self):
         import re
+        import local_engine
+
         repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-        with open(os.path.join(repo_root, "infra", "iam.tf"), encoding="utf-8") as fh:
-            iam_tf = fh.read()
-        tf_block = iam_tf.split("clarity_read_only_policy")[1].split("lambda_scan_state")[0]
-        tf_actions = re.findall(r'"([a-z0-9]+:[A-Za-z0-9]+)"', tf_block)
+        cli_actions = local_engine.build_policy_document(include_s3=True)["Statement"][0]["Action"]
 
         with open(os.path.join(repo_root, "frontend", "src", "utils", "constants.js"), encoding="utf-8") as fh:
             const_js = fh.read()
         js_block = const_js.split("IAM_POLICY_ACTIONS = [")[1].split("];")[0]
         js_actions = re.findall(r'"([a-z0-9]+:[A-Za-z0-9]+)"', js_block)
 
-        self.assertEqual(len(tf_actions), 34)
-        self.assertEqual(tf_actions, js_actions)
-        self.assertNotIn("s3:ListBucket", tf_actions)
-        self.assertNotIn("s3:GetBucketVersioning", tf_actions)
+        self.assertEqual(len(cli_actions), 34)
+        self.assertEqual(cli_actions, js_actions)
+        self.assertNotIn("s3:ListBucket", cli_actions)
+        self.assertNotIn("s3:GetBucketVersioning", cli_actions)
         # Ensure zero write/delete/data-read/paid billing actions
         forbidden_prefixes = ("create", "delete", "put", "update", "modify", "terminate", "stop", "start", "attach", "detach")
-        for action in tf_actions:
+        for action in cli_actions:
             svc, op = action.split(":", 1)
             self.assertNotIn(svc, ("ce", "guardduty", "config", "securityhub"))
             self.assertNotEqual(action, "s3:GetObject")

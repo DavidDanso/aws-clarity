@@ -1,13 +1,8 @@
-name: aws-clarity-pipeline
+name: legacy-aws-infrastructure-manual
 
+# Retired from automatic push-to-main triggers in local-first v1 so pushing
+# code never resurrects legacy hosted scanning infrastructure.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - "infra/**"
-      - "frontend/**"
-      - "backend/**"
   workflow_dispatch:
     inputs:
       action:

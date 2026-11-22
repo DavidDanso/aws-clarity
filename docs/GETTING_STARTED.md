@@ -84,7 +84,7 @@ Using a customer-owned read-only IAM role from your local profile (no AWS Clarit
 aws-clarity scan --profile my-profile --role-arn arn:aws:iam::123456789012:role/MyReadOnlyRole --output aws-clarity-report.json
 ```
 
-Reports are saved locally with owner-only file permissions (`0600` on macOS/Linux) and never contain AWS credentials.
+Reports are saved locally with owner-only `0600` file permissions on macOS/Linux (POSIX); on Windows, standard user directory ACLs apply. Reports never contain AWS credentials.
 
 ## 5. View & Compare Reports Locally in Your Browser
 

@@ -121,6 +121,34 @@ assert.ok(serializedSanitized.includes("0.0.0.0/0"), "Unrestricted CIDR 0.0.0.0/
 const csv = buildInventoryCSV(Object.values(sanitized.resources).flat(), { sanitized: true });
 assert.ok(csv.includes("SG-002") && !csv.includes("prod-web-01"));
 
+// 6b. CSV formula-injection neutralization
+const formulaCsv = buildInventoryCSV([
+  {
+    id: "=CMD|' /C calc'!A0",
+    name: "+1+1",
+    type: "s3_bucket",
+    service: "S3",
+    region: "us-east-1",
+    status: "HEALTHY",
+    assessment: { status: "COMPLETE", checks: [] },
+    issues: [],
+  },
+  {
+    id: "@SUM(1,1)",
+    name: "-2+3",
+    type: "ec2_instance",
+    service: "EC2",
+    region: "us-east-1",
+    status: "HEALTHY",
+    assessment: { status: "COMPLETE", checks: [] },
+    issues: [],
+  },
+]);
+assert.ok(formulaCsv.includes(`"'=CMD|' /C calc'!A0"`), "Leading '=' must be neutralized in CSV");
+assert.ok(formulaCsv.includes(`"'+1+1"`), "Leading '+' must be neutralized in CSV");
+assert.ok(formulaCsv.includes(`"'@SUM(1,1)"`), "Leading '@' must be neutralized in CSV");
+assert.ok(formulaCsv.includes(`"'-2+3"`), "Leading '-' must be neutralized in CSV");
+
 // 7. Production static build verification: strict CSP (`connect-src 'none'`) and zero network upload code
 const distIndexPath = path.join(frontendRoot, "dist", "index.html");
 if (fs.existsSync(distIndexPath)) {

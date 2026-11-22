@@ -33,12 +33,15 @@
   - Strips control characters and renders all metadata as escaped React text (never `dangerouslySetInnerHTML`, never `eval`).
 - **In-Memory Processing:** Imported customer reports are kept in React memory only and cleared when the tab closes or when you click **Clear Current Assessment** in Trust & Privacy Centre.
 
-## 4. Safe Sanitized Sharing
+## 4. Safe Sanitized Sharing & CSV Formula Protection
 
-Before exporting, AWS Clarity displays a privacy reminder that full reports contain AWS Account IDs, Resource ARNs, Resource Names, Network Configuration, Public IP addresses, and IAM metadata. Use **Download Sanitized JSON** or **Download Sanitized CSV** to redact identifiers before sharing.
+- Before exporting, AWS Clarity displays a privacy reminder that full reports contain AWS Account IDs, Resource ARNs, Resource Names, Network Configuration, Public IP addresses, and IAM metadata.
+- **Best-effort sanitization:** Use **Download Sanitized JSON** or **Download Sanitized CSV** to redact common identifiers before sharing, and **always review the exported file** before posting externally (no automated sanitizer can guarantee zero remaining sensitive context inside custom resource tags or descriptions).
+- **CSV Formula Injection Neutralization:** All CSV exports prefix cells starting with `=`, `+`, `-`, `@`, tab, or carriage return with a leading `'` to prevent spreadsheet formula execution.
 
-## 5. Honest Security Limitations
+## 5. Static Hosting Metadata & Honest Security Limitations
 
+- **Static host metadata:** While your AWS assessment report is never uploaded to any server, the static hosting provider serving the website (e.g., GitHub Pages or CDN) may still process ordinary web request metadata such as client IP address, User-Agent, and requested page URL.
 - Local-first eliminates vendor backend compromise as a vector for exposing customer AWS accounts.
 - It does **not** protect against a compromised workstation, malicious dependency/supply-chain updates, or insecure sharing of unredacted reports.
-- Always pin/verify versions and check `SHA256SUMS.txt` against public source code.
+- Always pin/verify versions and check `SHA256SUMS.txt` against public source code (note: checksums verify download integrity against a release, not that the code itself is free of defects).

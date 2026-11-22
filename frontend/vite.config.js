@@ -36,5 +36,6 @@ function strictLocalFirstCsp() {
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  base: "./",
   plugins: [react(), strictLocalFirstCsp()],
 });
