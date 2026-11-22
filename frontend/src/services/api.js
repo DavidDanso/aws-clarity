@@ -1,10 +1,15 @@
-const API_URL = import.meta.env.VITE_API_URL;
+// In local dev (`npm run dev`), route through Vite's self-healing live-API proxy so
+// API Gateway recreations (e.g. GitHub Actions destroy/deploy) never break localhost.
+const API_URL = import.meta.env.DEV
+  ? "/__aws_clarity_api"
+  : (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
 
 export const ERROR_MESSAGES = {
   INVALID_ROLE_ARN: "The Role ARN format is invalid. Expected: arn:aws:iam::123456789012:role/RoleName",
   ASSUME_ROLE_FAILED: "Could not assume the provided role. Verify the trust policy, App Account ID, and External ID.",
   PERMISSION_DENIED: "The role was assumed but lacks required read permissions.",
   UNAUTHORIZED_SCAN_ACCESS: "Scan access token was rejected. Please start a fresh scan.",
+  BACKEND_NOT_DEPLOYED: "Could not reach the AWS Clarity backend API. Verify the stack is deployed and try again.",
   INTERNAL_ERROR: "An unexpected error occurred on the server. Please try again.",
   NETWORK_ERROR: "Unable to reach the server. Check your internet connection and try again.",
   NO_REGIONS_SELECTED: "Please choose 'all' enabled regions or select at least one AWS region.",
