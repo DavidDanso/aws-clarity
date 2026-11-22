@@ -106,8 +106,54 @@ export async function pollScanStatus(scanId, scanToken, onProgress) {
 }
 
 export async function scanAccount(roleArn, regions = "all", onProgress, externalId = "") {
-  const { scanId, scanToken } = await startScan(roleArn, regions, externalId);
-  return await pollScanStatus(scanId, scanToken, onProgress);
+  if (typeof onProgress === "function") {
+    onProgress("SCANNING", null);
+  }
+
+  // Fast single-round-trip map-reduce scan (falls back automatically to async polling if HTTP 202 or 504)
+  let response;
+  try {
+    response = await fetch(`${API_URL}/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role_arn: roleArn,
+        regions,
+        sync: true,
+        ...(externalId ? { external_id: externalId } : {}),
+      }),
+    });
+  } catch {
+    const err = new Error(ERROR_MESSAGES.NETWORK_ERROR);
+    err.code = "NETWORK_ERROR";
+    throw err;
+  }
+
+  if (response.status === 504) {
+    // Huge account exceeded API Gateway 29s sync ceiling — fall back to async polling
+    const { scanId, scanToken } = await startScan(roleArn, regions, externalId);
+    return await pollScanStatus(scanId, scanToken, onProgress);
+  }
+
+  const data = await parseJsonSafe(response);
+  if (!response.ok || data.status === "error") {
+    const error = new Error(
+      data.message || ERROR_MESSAGES[data.error_code] || ERROR_MESSAGES.INTERNAL_ERROR
+    );
+    error.code = data.error_code || "UNKNOWN_ERROR";
+    throw error;
+  }
+
+  const state = data.scan_state || data.status;
+  if (state === "COMPLETE" || state === "INCOMPLETE") {
+    return data;
+  }
+
+  if (data.scan_id) {
+    return await pollScanStatus(data.scan_id, data.scan_token, onProgress);
+  }
+
+  return data;
 }
 
 export async function checkPermissions(roleArn, externalId = "") {

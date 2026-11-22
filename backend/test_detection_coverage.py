@@ -499,6 +499,27 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
         norm = lambda_handler._normalize_progress({"stage": "SCANNING", "regions_done": Decimal("12"), "regions_total": Decimal("32")})
         self.assertEqual(norm, {"stage": "SCANNING", "regions_done": 12, "regions_total": 32})
 
+    def test_partition_regions_and_sync_fast_path(self):
+        batches = lambda_handler._partition_regions([f"r-{i}" for i in range(32)], max_batches=8)
+        self.assertEqual(len(batches), 8)
+        self.assertEqual(sum(len(b) for b in batches), 32)
+        self.assertEqual(len({r for b in batches for r in b}), 32)
+
+        fake_result = {"status": "COMPLETE", "partial": False, "account_id": "123456789012", "resources": {}}
+        ctx = MagicMock(invoked_function_arn="arn:aws:lambda:us-east-1:111122223333:function:clarity")
+        with patch("lambda_handler.run_scan", return_value=fake_result) as mock_run:
+            resp = lambda_handler.handle_trigger({
+                "body": json.dumps({
+                    "role_arn": "arn:aws:iam::123456789012:role/AWSClarityReadOnly",
+                    "external_id": "unique-ext-id",
+                    "sync": True,
+                })
+            }, ctx)
+        self.assertEqual(resp["statusCode"], 200)
+        body = json.loads(resp["body"])
+        self.assertEqual(body["scan_state"], "COMPLETE")
+        self.assertEqual(mock_run.call_args.kwargs["fanout_function_arn"], ctx.invoked_function_arn)
+
 
 if __name__ == "__main__":
     unittest.main()

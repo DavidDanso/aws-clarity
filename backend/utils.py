@@ -4,6 +4,7 @@ import re
 import secrets
 import threading
 import boto3
+import botocore.session
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from exceptions import InvalidRoleARNError, AssumeRoleError
@@ -15,7 +16,7 @@ DEFAULT_EXTERNAL_ID = "aws-clarity-scan"
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 SCAN_BOTO_CONFIG = Config(
-    connect_timeout=1.5,
+    connect_timeout=1.2,
     read_timeout=5,
     max_pool_connections=64,
     retries={"max_attempts": 1, "mode": "standard"},
@@ -23,6 +24,26 @@ SCAN_BOTO_CONFIG = Config(
 
 _STS_CLIENT = None
 _STS_LOCK = threading.Lock()
+
+# Static botocore JSON service definitions & endpoint rules (zero credentials or tenant state).
+# Reusing these across warm Lambda invocations avoids re-parsing ~10 MB of AWS API JSON specs per scan.
+_SHARED_STATIC_BC = botocore.session.get_session()
+_SHARED_DATA_LOADER = _SHARED_STATIC_BC.get_component("data_loader")
+_SHARED_ENDPOINT_RESOLVER = _SHARED_STATIC_BC.get_component("endpoint_resolver")
+
+
+def build_isolated_session(access_key_id: str, secret_access_key: str, session_token: str, region_name: str = "us-east-1") -> boto3.Session:
+    """Create a tenant-isolated boto3.Session backed by the shared static AWS JSON loader."""
+    bc_session = botocore.session.Session()
+    bc_session.register_component("data_loader", _SHARED_DATA_LOADER)
+    bc_session.register_component("endpoint_resolver", _SHARED_ENDPOINT_RESOLVER)
+    return boto3.Session(
+        aws_access_key_id=access_key_id,
+        aws_secret_access_key=secret_access_key,
+        aws_session_token=session_token,
+        region_name=region_name,
+        botocore_session=bc_session,
+    )
 
 
 def _get_sts_client():
@@ -143,15 +164,20 @@ def assume_role(role_arn: str, external_id: str | None = None) -> boto3.Session:
             DurationSeconds=3600,
         )
         credentials = response["Credentials"]
-        session = boto3.Session(
-            aws_access_key_id=credentials["AccessKeyId"],
-            aws_secret_access_key=credentials["SecretAccessKey"],
-            aws_session_token=credentials["SessionToken"],
+        session = build_isolated_session(
+            access_key_id=credentials["AccessKeyId"],
+            secret_access_key=credentials["SecretAccessKey"],
+            session_token=credentials["SessionToken"],
             region_name="us-east-1",
         )
-        # Attach verified identity directly so callers avoid a redundant sts:GetCallerIdentity RTT
+        # Attach verified identity & temporary STS credentials for in-memory map-reduce sub-workers
         session._aws_clarity_account_id = resolved_arn.split(":")[4]
         session._aws_clarity_caller_arn = (response.get("AssumedRoleUser") or {}).get("Arn", "")
+        session._aws_clarity_credentials = {
+            "AccessKeyId": credentials["AccessKeyId"],
+            "SecretAccessKey": credentials["SecretAccessKey"],
+            "SessionToken": credentials["SessionToken"],
+        }
         return session
     except ClientError as e:
         raise AssumeRoleError(f"AssumeRole failed: {str(e)}") from e

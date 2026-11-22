@@ -116,14 +116,13 @@ export default function DashboardScreen({
   const progressRegionsDone = scanProgress?.regions_done || 0;
   const progressResourcesFound = scanProgress?.resources_found || 0;
   const progressStage = scanProgress?.stage || scanStatus;
+  const smoothElapsedPct = Math.min(88, Math.round(14 + (1 - Math.exp(-elapsedMs / 2200)) * 74));
   const progressPct =
     progressStage === "EVALUATING"
       ? 96
       : progressRegionsTotal > 0
       ? Math.min(92, Math.max(12, Math.round((progressRegionsDone / progressRegionsTotal) * 90)))
-      : scanStatus === "RUNNING"
-      ? 14
-      : 6;
+      : smoothElapsedPct;
 
   const inventorySectionRef = useRef(null);
 
@@ -342,7 +341,7 @@ export default function DashboardScreen({
                   <span>
                     {progressRegionsTotal > 0
                       ? `${progressRegionsDone} / ${progressRegionsTotal} regions · ${progressResourcesFound} resources`
-                      : "Connecting to AWS STS & discovering regions…"}
+                      : "Parallel multi-region scan across all enabled AWS regions…"}
                   </span>
                   <span className="text-teal-400">{(elapsedMs / 1000).toFixed(1)}s</span>
                 </div>

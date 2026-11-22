@@ -15,6 +15,7 @@ from utils import (
     CachedSession,
     SCAN_BOTO_CONFIG,
     assume_role,
+    build_isolated_session,
     generate_scan_token,
     validate_external_id,
     validate_role_arn,
@@ -71,7 +72,12 @@ def _get_table():
 def _get_lambda_client():
     global _lambda_client
     if _lambda_client is None:
-        _lambda_client = boto3.client("lambda", region_name=_AWS_REGION)
+        from botocore.config import Config
+        _lambda_client = boto3.client(
+            "lambda",
+            region_name=_AWS_REGION,
+            config=Config(connect_timeout=2, read_timeout=24, max_pool_connections=16, retries={"max_attempts": 1}),
+        )
     return _lambda_client
 
 
@@ -338,7 +344,189 @@ def _collect_assessment_errors(result: list[dict]) -> list[tuple[str, str]]:
     ]
 
 
-def run_scan(role_arn: str, regions=None, external_id: str | None = None, progress_callback=None) -> dict:
+def _get_regional_scanners() -> dict:
+    return {
+        "ec2_instances": ec2.scan,
+        "elastic_ips": elastic_ip.scan,
+        "security_groups": security_group.scan,
+        "vpcs": vpcs.scan,
+        "internet_gateways": internet_gateways.scan,
+        "nat_gateways": nat_gateways.scan,
+        "lambda_functions": lambda_functions.scan,
+        "rds_instances": rds.scan,
+        "dynamodb_tables": dynamodb_tables.scan,
+        "ebs_volumes": ebs.scan,
+        "snapshots": snapshots.scan,
+        "cloudwatch_alarms": cloudwatch.scan_alarms,
+        "cloudwatch_log_groups": cloudwatch.scan_log_groups,
+        "cloudtrail_trails": cloudtrail.scan,
+    }
+
+
+def _scan_region_batch_local(session, regions: list[str], is_real_boto_session: bool, deadline_s: float = 14.0) -> tuple[dict, list, list]:
+    """Scan a batch of AWS regions concurrently on the current worker."""
+    regional_scanners = _get_regional_scanners()
+    resources = {key: [] for key in regional_scanners}
+    scanner_statuses = []
+    coverage_failures = []
+    started = time.monotonic()
+
+    # Pre-warm the 7 regional service models once on main thread
+    first_reg = regions[0] if regions else "us-east-1"
+    for svc_name in ("ec2", "lambda", "rds", "dynamodb", "cloudwatch", "logs", "cloudtrail"):
+        try:
+            session.client(svc_name, region_name=first_reg)
+        except Exception:
+            pass
+
+    max_workers = min(64, max(14, len(regions) * len(regional_scanners)))
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_workers)
+    future_to_task = {}
+
+    try:
+        if is_real_boto_session and regions:
+            probe_executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(16, len(regions)))
+            try:
+                probe_futs = {
+                    probe_executor.submit(_probe_region_endpoint, region, 0.9): region
+                    for region in regions
+                }
+                for pfut in concurrent.futures.as_completed(probe_futs):
+                    region = probe_futs[pfut]
+                    reachable, reason = pfut.result()
+                    if reachable:
+                        for key, fn in regional_scanners.items():
+                            future_to_task[executor.submit(fn, session, region)] = (key, region)
+                    else:
+                        err_reason = reason or f"AWS region {region} endpoint unreachable"
+                        for key in regional_scanners:
+                            meta = SCANNER_METADATA[key]
+                            scanner_statuses.append(_scanner_status_entry(key, region, "FAILED", 0, err_reason))
+                            coverage_failures.append({
+                                "service": meta["service"],
+                                "label": meta["label"],
+                                "region": region,
+                                "reason": err_reason,
+                                "required_permission": meta["permission"],
+                            })
+            finally:
+                probe_executor.shutdown(wait=False, cancel_futures=True)
+        else:
+            for region in regions:
+                for key, fn in regional_scanners.items():
+                    future_to_task[executor.submit(fn, session, region)] = (key, region)
+
+        completed_futures = set()
+        remaining = max(1.0, (started + deadline_s) - time.monotonic())
+        try:
+            for future in concurrent.futures.as_completed(future_to_task.keys(), timeout=remaining):
+                completed_futures.add(future)
+                key, region = future_to_task[future]
+                meta = SCANNER_METADATA[key]
+                try:
+                    result = future.result()
+                    resources[key].extend(result)
+                    assessment_errors = _collect_assessment_errors(result)
+                    if assessment_errors:
+                        reason = "; ".join(f"{name}: {msg}" for name, msg in assessment_errors[:5])
+                        scanner_statuses.append(_scanner_status_entry(key, region, "INCOMPLETE", len(result), reason))
+                        coverage_failures.append({
+                            "service": meta["service"],
+                            "label": meta["label"],
+                            "region": region,
+                            "reason": reason,
+                            "required_permission": meta["permission"],
+                        })
+                    else:
+                        scanner_statuses.append(_scanner_status_entry(key, region, "COMPLETED", len(result)))
+                except ScannerError as e:
+                    resources[key].extend(e.resources)
+                    state = "INCOMPLETE" if e.resources else "FAILED"
+                    scanner_statuses.append(_scanner_status_entry(key, region, state, len(e.resources), str(e)))
+                    coverage_failures.append({
+                        "service": meta["service"],
+                        "label": meta["label"],
+                        "region": region,
+                        "reason": str(e),
+                        "required_permission": meta["permission"],
+                    })
+                except Exception as e:
+                    scanner_statuses.append(_scanner_status_entry(key, region, "FAILED", 0, str(e)))
+                    coverage_failures.append({
+                        "service": meta["service"],
+                        "label": meta["label"],
+                        "region": region,
+                        "reason": str(e),
+                        "required_permission": meta["permission"],
+                    })
+        except concurrent.futures.TimeoutError:
+            pass
+
+        for future, (key, region) in future_to_task.items():
+            if future in completed_futures:
+                continue
+            future.cancel()
+            meta = SCANNER_METADATA[key]
+            reason = "Collector exceeded scan time budget"
+            scanner_statuses.append(_scanner_status_entry(key, region, "TIMED_OUT", 0, reason))
+            coverage_failures.append({
+                "service": meta["service"],
+                "label": meta["label"],
+                "region": region,
+                "reason": reason,
+                "required_permission": meta["permission"],
+            })
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+    return resources, scanner_statuses, coverage_failures
+
+
+def handle_region_batch(event):
+    """Sub-worker Lambda handler for parallel multi-region map-reduce scanning.
+
+    Receives already-assumed temporary STS credentials and a small batch of regions
+    (typically 4 regions) so each Lambda vCPU handles only ~56 fast I/O calls.
+    """
+    creds = event["credentials"]
+    regions = event.get("regions") or []
+    deadline_s = float(event.get("deadline_s", 14.0))
+    raw_session = build_isolated_session(
+        access_key_id=creds["AccessKeyId"],
+        secret_access_key=creds["SecretAccessKey"],
+        session_token=creds["SessionToken"],
+        region_name=regions[0] if regions else "us-east-1",
+    )
+    session = CachedSession(raw_session)
+    resources, scanner_statuses, coverage_failures = _scan_region_batch_local(
+        session, regions, is_real_boto_session=True, deadline_s=deadline_s
+    )
+    payload = {
+        "resources": resources,
+        "scanner_statuses": scanner_statuses,
+        "coverage_failures": coverage_failures,
+    }
+    raw_bytes = json.dumps(payload, default=str, separators=(",", ":")).encode("utf-8")
+    return {"batch_gz": base64.b64encode(gzip.compress(raw_bytes, compresslevel=4)).decode("ascii")}
+
+
+def _partition_regions(regions: list[str], max_batches: int = 8) -> list[list[str]]:
+    if not regions:
+        return []
+    n_batches = min(max_batches, len(regions))
+    batches = [[] for _ in range(n_batches)]
+    for idx, reg in enumerate(regions):
+        batches[idx % n_batches].append(reg)
+    return [b for b in batches if b]
+
+
+def run_scan(
+    role_arn: str,
+    regions=None,
+    external_id: str | None = None,
+    progress_callback=None,
+    fanout_function_arn: str | None = None,
+) -> dict:
     scan_started = time.monotonic()
     collection_deadline = scan_started + 20.0  # Fast ceiling while allowing large accounts to complete
 
@@ -365,29 +553,14 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None, progre
     # Use identity verified by STS AssumeRole when available (saves an extra STS RTT)
     account_id = getattr(raw_session, "_aws_clarity_account_id", None)
     caller_arn = getattr(raw_session, "_aws_clarity_caller_arn", None)
+    temp_creds = getattr(raw_session, "_aws_clarity_credentials", None)
     if not account_id:
         identity = session.client("sts", region_name="us-east-1").get_caller_identity()
         account_id = identity["Account"]
         caller_arn = identity.get("Arn", "")
 
     scan_all_regions = regions is None or regions == "all" or regions == ["all"]
-
-    regional_scanners = {
-        "ec2_instances": ec2.scan,
-        "elastic_ips": elastic_ip.scan,
-        "security_groups": security_group.scan,
-        "vpcs": vpcs.scan,
-        "internet_gateways": internet_gateways.scan,
-        "nat_gateways": nat_gateways.scan,
-        "lambda_functions": lambda_functions.scan,
-        "rds_instances": rds.scan,
-        "dynamodb_tables": dynamodb_tables.scan,
-        "ebs_volumes": ebs.scan,
-        "snapshots": snapshots.scan,
-        "cloudwatch_alarms": cloudwatch.scan_alarms,
-        "cloudwatch_log_groups": cloudwatch.scan_log_groups,
-        "cloudtrail_trails": cloudtrail.scan,
-    }
+    regional_scanners = _get_regional_scanners()
 
     resources = {key: [] for key in regional_scanners}
     resources["s3_buckets"] = []
@@ -397,30 +570,26 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None, progre
     scanner_statuses = []
     coverage_failures = []
 
-    # Pre-warm one client per service on the main thread so botocore service JSON
-    # models are loaded once before fanning out across worker threads.
-    for svc_name in ("ec2", "lambda", "rds", "dynamodb", "cloudwatch", "logs", "cloudtrail", "s3", "iam"):
+    # Pre-warm global + EC2 models once on main thread
+    for svc_name in ("ec2", "s3", "iam"):
         try:
-            session.client(svc_name, region_name="us-east-1" if svc_name not in ("s3", "iam") else None)
+            session.client(svc_name, region_name="us-east-1" if svc_name == "ec2" else None)
         except Exception:
             pass
 
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=128)
-    future_to_task = {}
-    regions_done = 0
-    total_found = 0
-    last_progress_emit = 0.0
+    global_executor = concurrent.futures.ThreadPoolExecutor(max_workers=12)
+    global_futures = {
+        global_executor.submit(iam.scan_roles, session): ("iam_roles", "global"),
+        global_executor.submit(iam.scan_users, session): ("iam_users", "global"),
+    }
 
-    # Launch global IAM & S3 collectors IMMEDIATELY (overlapped with ec2:DescribeRegions!)
-    future_to_task[executor.submit(iam.scan_roles, session)] = ("iam_roles", "global")
-    future_to_task[executor.submit(iam.scan_users, session)] = ("iam_users", "global")
     if scan_all_regions:
-        future_to_task[executor.submit(s3.scan, session, None)] = ("s3_buckets", "global")
+        global_futures[global_executor.submit(s3.scan, session, None)] = ("s3_buckets", "global")
         target_regions, region_discovery = discover_enabled_regions(session)
     else:
         target_regions = list(dict.fromkeys(regions))
         region_discovery = {"mode": "user_selected", "status": "COMPLETE", "count": len(target_regions)}
-        future_to_task[executor.submit(s3.scan, session, target_regions)] = ("s3_buckets", "global")
+        global_futures[global_executor.submit(s3.scan, session, target_regions)] = ("s3_buckets", "global")
 
     if region_discovery.get("status") == "INCOMPLETE":
         coverage_failures.append({
@@ -432,54 +601,87 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None, progre
         })
 
     _emit_progress("SCANNING", len(target_regions), 0, 0)
-    last_progress_emit = time.monotonic()
+    regions_done = 0
+    total_found = 0
+
+    use_lambda_fanout = (
+        bool(fanout_function_arn)
+        and is_real_boto_session
+        and isinstance(temp_creds, dict)
+        and len(target_regions) > 4
+    )
 
     try:
-        # Fast-probe regional reachability in parallel (real AWS only):
-        # healthy regions pass in 2–210ms and immediately submit their 14 collectors;
-        # unreachable/blackholed regions fail in <=1.2s without blocking the pool.
-        if is_real_boto_session and target_regions:
-            probe_executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(40, len(target_regions)))
-            try:
-                probe_futs = {
-                    probe_executor.submit(_probe_region_endpoint, region, 1.2): region
-                    for region in target_regions
-                }
-                for pfut in concurrent.futures.as_completed(probe_futs):
-                    region = probe_futs[pfut]
-                    reachable, reason = pfut.result()
-                    if reachable:
-                        for key, fn in regional_scanners.items():
-                            future_to_task[executor.submit(fn, session, region)] = (key, region)
-                    else:
-                        regions_done += 1
-                        err_reason = reason or f"AWS region {region} endpoint unreachable"
-                        for key in regional_scanners:
-                            meta = SCANNER_METADATA[key]
-                            scanner_statuses.append(_scanner_status_entry(key, region, "FAILED", 0, err_reason))
-                            coverage_failures.append({
-                                "service": meta["service"],
-                                "label": meta["label"],
-                                "region": region,
-                                "reason": err_reason,
-                                "required_permission": meta["permission"],
-                            })
-            finally:
-                probe_executor.shutdown(wait=False, cancel_futures=True)
+        if use_lambda_fanout:
+            # Serverless Map-Reduce: fan out regions across up to 8 concurrent Lambda sub-workers
+            # (4 regions each -> 8 dedicated vCPUs with zero GIL contention).
+            batches = _partition_regions(target_regions, max_batches=8)
+            lambda_client = _get_lambda_client()
+
+            def _invoke_batch(batch_regions: list[str]):
+                try:
+                    resp = lambda_client.invoke(
+                        FunctionName=fanout_function_arn,
+                        InvocationType="RequestResponse",
+                        Payload=json.dumps({
+                            "_invocation_type": "region_batch",
+                            "credentials": temp_creds,
+                            "regions": batch_regions,
+                            "deadline_s": 14.0,
+                        }),
+                    )
+                    if resp.get("FunctionError"):
+                        raise RuntimeError(f"Batch worker error: {resp.get('FunctionError')}")
+                    body = json.loads(resp["Payload"].read().decode("utf-8"))
+                    if isinstance(body, dict) and body.get("batch_gz"):
+                        decoded = json.loads(gzip.decompress(base64.b64decode(body["batch_gz"])).decode("utf-8"))
+                        return (
+                            batch_regions,
+                            decoded.get("resources", {}),
+                            decoded.get("scanner_statuses", []),
+                            decoded.get("coverage_failures", []),
+                        )
+                    raise RuntimeError("Malformed batch worker response")
+                except Exception:
+                    # Graceful local fallback if Lambda invoke throttles or fails
+                    res, st, fail = _scan_region_batch_local(session, batch_regions, True, deadline_s=12.0)
+                    return batch_regions, res, st, fail
+
+            batch_futs = [global_executor.submit(_invoke_batch, b) for b in batches]
+            for bfut in concurrent.futures.as_completed(batch_futs):
+                batch_regions, b_res, b_statuses, b_failures = bfut.result()
+                for key, items in b_res.items():
+                    if key in resources and isinstance(items, list):
+                        resources[key].extend(items)
+                        total_found += len(items)
+                scanner_statuses.extend(b_statuses)
+                coverage_failures.extend(b_failures)
+                regions_done += len(batch_regions)
+                _emit_progress("SCANNING", len(target_regions), regions_done, total_found)
         else:
-            for region in target_regions:
-                for key, fn in regional_scanners.items():
-                    future_to_task[executor.submit(fn, session, region)] = (key, region)
+            # Small region list or local/unit-test execution
+            b_res, b_statuses, b_failures = _scan_region_batch_local(
+                session,
+                target_regions,
+                is_real_boto_session=is_real_boto_session,
+                deadline_s=max(1.0, collection_deadline - time.monotonic()),
+            )
+            for key, items in b_res.items():
+                if key in resources:
+                    resources[key].extend(items)
+                    total_found += len(items)
+            scanner_statuses.extend(b_statuses)
+            coverage_failures.extend(b_failures)
+            regions_done = len(target_regions)
+            _emit_progress("SCANNING", len(target_regions), regions_done, total_found)
 
-        completed_per_region = {r: 0 for r in target_regions}
-        scanners_per_region = len(regional_scanners)
-        completed_futures = set()
-
+        # Collect global IAM + S3 tasks (which have been running concurrently the entire time)
+        completed_globals = set()
         remaining = max(1.0, collection_deadline - time.monotonic())
         try:
-            for future in concurrent.futures.as_completed(future_to_task.keys(), timeout=remaining):
-                completed_futures.add(future)
-                key, region = future_to_task[future]
+            for future in concurrent.futures.as_completed(global_futures.keys(), timeout=remaining):
+                completed_globals.add(future)
+                key, region = global_futures[future]
                 meta = SCANNER_METADATA[key]
                 try:
                     result = future.result()
@@ -519,21 +721,11 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None, progre
                         "reason": str(e),
                         "required_permission": meta["permission"],
                     })
-
-                if region in completed_per_region:
-                    completed_per_region[region] += 1
-                    if completed_per_region[region] == scanners_per_region:
-                        regions_done += 1
-
-                now = time.monotonic()
-                if progress_callback is not None and (now - last_progress_emit) >= 0.45:
-                    _emit_progress("SCANNING", len(target_regions), regions_done, total_found)
-                    last_progress_emit = now
         except concurrent.futures.TimeoutError:
             pass
 
-        for future, (key, region) in future_to_task.items():
-            if future in completed_futures:
+        for future, (key, region) in global_futures.items():
+            if future in completed_globals:
                 continue
             future.cancel()
             meta = SCANNER_METADATA[key]
@@ -547,8 +739,7 @@ def run_scan(role_arn: str, regions=None, external_id: str | None = None, progre
                 "required_permission": meta["permission"],
             })
     finally:
-        # Don't block Lambda exit waiting for any hung socket thread past deadline
-        executor.shutdown(wait=False, cancel_futures=True)
+        global_executor.shutdown(wait=False, cancel_futures=True)
 
     _emit_progress("EVALUATING", len(target_regions), len(target_regions), total_found)
 
@@ -758,6 +949,37 @@ def handle_trigger(event, context):
             "message": "Specify 'all' to scan all enabled AWS regions, or provide a valid list of region IDs.",
         })
 
+    # Fast synchronous path (1 HTTP round-trip, zero DynamoDB persistence, 8-worker map-reduce)
+    if body.get("sync") is True:
+        try:
+            fanout_arn = getattr(context, "invoked_function_arn", None)
+            result = run_scan(
+                role_arn,
+                regions_payload,
+                external_id=external_id,
+                fanout_function_arn=fanout_arn,
+            )
+            final_state = "INCOMPLETE" if result.get("partial") else "COMPLETE"
+            return _response(200, {**result, "scan_state": final_state})
+        except AssumeRoleError:
+            return _response(400, {
+                "status": "error",
+                "error_code": "ASSUME_ROLE_FAILED",
+                "message": "Could not assume the provided role. Verify the trust policy, App Account ID, and External ID.",
+            })
+        except PermissionDeniedError:
+            return _response(403, {
+                "status": "error",
+                "error_code": "PERMISSION_DENIED",
+                "message": "The role was assumed but lacks required read permissions.",
+            })
+        except Exception as e:
+            return _response(500, {
+                "status": "error",
+                "error_code": "INTERNAL_ERROR",
+                "message": str(e),
+            })
+
     table = _get_table()
     scan_id = str(uuid.uuid4())
     scan_token, token_hash = generate_scan_token()
@@ -781,6 +1003,7 @@ def handle_trigger(event, context):
                 "role_arn": role_arn,
                 "external_id": external_id,
                 "regions": regions_payload,
+                "function_arn": context.invoked_function_arn,
             }),
         )
     except Exception as e:
@@ -793,11 +1016,12 @@ def handle_trigger(event, context):
     })
 
 
-def handle_worker(event):
+def handle_worker(event, context=None):
     scan_id = event["scan_id"]
     role_arn = event["role_arn"]
     external_id = event.get("external_id")
     regions = event.get("regions", "all")
+    fanout_arn = event.get("function_arn") or getattr(context, "invoked_function_arn", None)
     table = _get_table()
     table.update_item(
         Key={"scan_id": scan_id},
@@ -821,7 +1045,13 @@ def handle_worker(event):
             pass
 
     try:
-        result = run_scan(role_arn, regions, external_id=external_id, progress_callback=_update_progress)
+        result = run_scan(
+            role_arn,
+            regions,
+            external_id=external_id,
+            progress_callback=_update_progress,
+            fanout_function_arn=fanout_arn,
+        )
         encoded = _encode_result(result)
         final_state = "INCOMPLETE" if result.get("partial") else "COMPLETE"
         table.update_item(
@@ -898,8 +1128,10 @@ def handle_status(event):
 
 
 def handler(event, context):
+    if event.get("_invocation_type") == "region_batch":
+        return handle_region_batch(event)
     if event.get("_invocation_type") == "worker":
-        return handle_worker(event)
+        return handle_worker(event, context)
     if event.get("httpMethod") == "GET" and event.get("resource") == "/scan/{scan_id}/status":
         return handle_status(event)
     return handle_trigger(event, context)
