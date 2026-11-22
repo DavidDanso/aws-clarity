@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aws-clarity"
+version = "1.0.0"
+description = "Privacy-first, local-only, strictly read-only AWS account visibility and configuration assessment CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "David Danso" }]
+dependencies = [
+  "boto3==1.42.66",
+  "botocore==1.42.66",
+]
+
+[project.scripts]
+aws-clarity = "aws_clarity_cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "backend" }
+py-modules = ["aws_clarity_cli", "local_engine", "lambda_handler", "utils", "exceptions"]
+packages = ["scanner"]

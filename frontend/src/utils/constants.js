@@ -86,9 +86,9 @@ export const SERVICE_COVERAGE_MATRIX = [
   },
   {
     service: "S3",
-    scope: "Global (with bucket region)",
+    scope: "Global (Optional — opt-in)",
     resources: ["S3 Buckets"],
-    checks: "Public bucket policies, public ACLs, Block Public Access controls & server-side encryption verification (zero object listing)",
+    checks: "Optional opt-in checks: public bucket policies, public ACLs, Block Public Access & encryption verification (zero object listing)",
   },
   {
     service: "IAM",
@@ -134,8 +134,8 @@ export const SERVICE_COVERAGE_MATRIX = [
   },
 ];
 
-// Single source of truth: exact 35 least-privilege read-only IAM actions (matches infra/iam.tf 1:1).
-export const IAM_POLICY_ACTIONS = [
+// Default zero-request-charge AWS control-plane actions (9 services, 28 actions)
+export const DEFAULT_ZERO_COST_IAM_ACTIONS = [
   "sts:GetCallerIdentity",
   "ec2:DescribeRegions",
   "ec2:DescribeInstances",
@@ -146,13 +146,6 @@ export const IAM_POLICY_ACTIONS = [
   "ec2:DescribeNatGateways",
   "ec2:DescribeVolumes",
   "ec2:DescribeSnapshots",
-  "s3:ListAllMyBuckets",
-  "s3:GetBucketLocation",
-  "s3:GetBucketPolicyStatus",
-  "s3:GetBucketAcl",
-  "s3:GetEncryptionConfiguration",
-  "s3:GetBucketPublicAccessBlock",
-  "s3:GetBucketVersioning",
   "iam:ListRoles",
   "iam:ListRolePolicies",
   "iam:GetRolePolicy",
@@ -173,15 +166,67 @@ export const IAM_POLICY_ACTIONS = [
   "cloudtrail:GetTrailStatus",
 ];
 
-// Plain-language explanation of every requested permission group (for Permission Preview & Trust Centre)
+// Optional S3 metadata actions (1 service, 6 actions — opt-in via --include-s3-checks)
+export const OPTIONAL_S3_IAM_ACTIONS = [
+  "s3:ListAllMyBuckets",
+  "s3:GetBucketLocation",
+  "s3:GetBucketPolicyStatus",
+  "s3:GetBucketAcl",
+  "s3:GetEncryptionConfiguration",
+  "s3:GetBucketPublicAccessBlock",
+];
+
+// Single source of truth: exact 34 least-privilege read-only IAM actions (matches infra/iam.tf & local_engine.py 1:1).
+export const IAM_POLICY_ACTIONS = [
+  "sts:GetCallerIdentity",
+  "ec2:DescribeRegions",
+  "ec2:DescribeInstances",
+  "ec2:DescribeAddresses",
+  "ec2:DescribeSecurityGroups",
+  "ec2:DescribeVpcs",
+  "ec2:DescribeInternetGateways",
+  "ec2:DescribeNatGateways",
+  "ec2:DescribeVolumes",
+  "ec2:DescribeSnapshots",
+  "s3:ListAllMyBuckets",
+  "s3:GetBucketLocation",
+  "s3:GetBucketPolicyStatus",
+  "s3:GetBucketAcl",
+  "s3:GetEncryptionConfiguration",
+  "s3:GetBucketPublicAccessBlock",
+  "iam:ListRoles",
+  "iam:ListRolePolicies",
+  "iam:GetRolePolicy",
+  "iam:ListAttachedRolePolicies",
+  "iam:ListUsers",
+  "iam:ListMFADevices",
+  "iam:ListAccessKeys",
+  "iam:ListAttachedUserPolicies",
+  "iam:ListUserPolicies",
+  "iam:GetUserPolicy",
+  "lambda:ListFunctions",
+  "rds:DescribeDBInstances",
+  "dynamodb:ListTables",
+  "dynamodb:DescribeTable",
+  "cloudwatch:DescribeAlarms",
+  "logs:DescribeLogGroups",
+  "cloudtrail:DescribeTrails",
+  "cloudtrail:GetTrailStatus",
+];
+
+// Plain-language explanation of every requested permission group (with API cost transparency)
 export const PERMISSION_PREVIEW_GROUPS = [
   {
     service: "Account & Regions",
-    summary: "Confirms the assumed AWS account identity and lists which AWS regions are enabled in your account.",
+    optional: false,
+    costNote: "Free AWS STS / EC2 control-plane calls",
+    summary: "Confirms your active local AWS account identity and lists enabled AWS regions.",
     actions: ["sts:GetCallerIdentity", "ec2:DescribeRegions"],
   },
   {
     service: "EC2 & EBS",
+    optional: false,
+    costNote: "Free EC2 Describe* control-plane calls",
     summary: "Reads EC2 instance metadata (state, IMDSv2), Elastic IPs, Security Group firewall rules, EBS volumes, and self-owned snapshots.",
     actions: [
       "ec2:DescribeInstances",
@@ -193,12 +238,16 @@ export const PERMISSION_PREVIEW_GROUPS = [
   },
   {
     service: "VPC",
+    optional: false,
+    costNote: "Free VPC Describe* control-plane calls",
     summary: "Reads VPCs, Internet Gateways, and NAT Gateways to check routing hygiene and ongoing NAT costs.",
     actions: ["ec2:DescribeVpcs", "ec2:DescribeInternetGateways", "ec2:DescribeNatGateways"],
   },
   {
-    service: "S3 (Metadata Only)",
-    summary: "Reads bucket names, regions, public access blocks, policy/ACL exposure, encryption, and versioning metadata. Never lists or reads S3 objects (no s3:ListBucket or s3:GetObject).",
+    service: "S3 (Optional Opt-In Metadata)",
+    optional: true,
+    costNote: "Optional (--include-s3-checks): S3 LIST ($0.005/1k) & GET ($0.0004/1k) outside S3 Free Tier",
+    summary: "Skipped by default. When enabled with explicit consent, reads bucket names, regions, public access blocks, policy/ACL exposure, and encryption config. Never lists or reads S3 objects (no s3:ListBucket or s3:GetObject).",
     actions: [
       "s3:ListAllMyBuckets",
       "s3:GetBucketLocation",
@@ -206,11 +255,12 @@ export const PERMISSION_PREVIEW_GROUPS = [
       "s3:GetBucketAcl",
       "s3:GetEncryptionConfiguration",
       "s3:GetBucketPublicAccessBlock",
-      "s3:GetBucketVersioning",
     ],
   },
   {
     service: "IAM",
+    optional: false,
+    costNote: "Free AWS IAM API calls",
     summary: "Lists roles, users, attached/inline policy documents, MFA device presence, and access key age metadata. Never reads passwords or secret access keys.",
     actions: [
       "iam:ListRoles",
@@ -227,36 +277,63 @@ export const PERMISSION_PREVIEW_GROUPS = [
   },
   {
     service: "Lambda",
+    optional: false,
+    costNote: "Free Lambda control-plane call",
     summary: "Lists function configuration metadata (runtime, memory, timeout, last modified). Never downloads Lambda source code.",
     actions: ["lambda:ListFunctions"],
   },
   {
     service: "RDS",
+    optional: false,
+    costNote: "Free RDS Describe* control-plane call",
     summary: "Reads RDS DB instance configuration (public access, encryption, deletion protection, backup retention). Never connects to or queries database rows.",
     actions: ["rds:DescribeDBInstances"],
   },
   {
     service: "DynamoDB",
+    optional: false,
+    costNote: "Free DynamoDB control-plane calls (never reads items)",
     summary: "Lists table names and reads table metadata (billing mode, encryption status, approximate item count). Never reads table items.",
     actions: ["dynamodb:ListTables", "dynamodb:DescribeTable"],
   },
   {
     service: "CloudWatch",
+    optional: false,
+    costNote: "Free DescribeAlarms / DescribeLogGroups calls (never calls GetMetricData)",
     summary: "Reads alarm state/actions and Log Group retention settings. Never reads CloudWatch log events.",
     actions: ["cloudwatch:DescribeAlarms", "logs:DescribeLogGroups"],
   },
   {
     service: "CloudTrail",
+    optional: false,
+    costNote: "Free CloudTrail control-plane calls",
     summary: "Checks trail configuration (multi-region, log validation) and whether logging is active.",
     actions: ["cloudtrail:DescribeTrails", "cloudtrail:GetTrailStatus"],
   },
 ];
+
+export const IAM_POLICY_DEFAULT_JSON = JSON.stringify(
+  {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "AWSClarityLocalZeroRequestCostReadOnly",
+        Effect: "Allow",
+        Action: DEFAULT_ZERO_COST_IAM_ACTIONS,
+        Resource: "*",
+      },
+    ],
+  },
+  null,
+  2
+);
 
 export const IAM_POLICY_JSON = JSON.stringify(
   {
     Version: "2012-10-17",
     Statement: [
       {
+        Sid: "AWSClarityLocalReadOnlyMetadata",
         Effect: "Allow",
         Action: IAM_POLICY_ACTIONS,
         Resource: "*",

@@ -4,6 +4,7 @@ function getRelativeTime(isoString) {
   if (!isoString) return "unknown";
   try {
     const date = new Date(isoString);
+    if (isNaN(date.getTime())) return "unknown";
     const diffMs = Date.now() - date.getTime();
     if (diffMs < 0) return "just now";
     const diffMins = Math.floor(diffMs / 60000);
@@ -22,16 +23,16 @@ export default function TopBar({
   accountId,
   regionsCount = 0,
   scannedAt,
+  importedFileName = "",
   isDemoMode = false,
   onExitDemo,
-  onRescan,
-  onDisconnect,
-  isLoading,
+  onTriggerImportNewer,
+  onReturnHome,
   onOpenTrust,
 }) {
   return (
     <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 py-3 w-full border-b border-slate-800/70">
-      {/* Row 1 on mobile/tablet: Brand + Connected Metadata */}
+      {/* Row 1 on mobile/tablet: Brand + Report Metadata */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between lg:justify-start gap-2.5 sm:gap-4 min-w-0">
         {/* Brand */}
         <div className="flex items-center gap-2 shrink-0">
@@ -48,36 +49,42 @@ export default function TopBar({
           <span className="text-[15px] sm:text-[14px] font-semibold text-slate-100 tracking-tight">
             AWS Clarity
           </span>
-          {isDemoMode && (
+          {isDemoMode ? (
             <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
               DEMO
+            </span>
+          ) : (
+            <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 border border-teal-500/30">
+              LOCAL ONLY
             </span>
           )}
         </div>
 
-        {/* Connected Account Metadata */}
+        {/* Report Metadata */}
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-slate-400 min-w-0">
-          {isLoading ? (
-            <div className="animate-pulse bg-slate-800 h-3.5 w-full max-w-[14rem] rounded" />
-          ) : (
+          <span className="font-mono text-slate-200 whitespace-nowrap">
+            {isDemoMode ? "Sample Demo Account" : `Account ${maskAccountId(accountId)}`}
+          </span>
+          {regionsCount > 0 && (
             <>
-              <span className="font-mono text-slate-200 whitespace-nowrap">
-                {isDemoMode ? "Sample Demo Account" : `Account ${maskAccountId(accountId)}`}
+              <span className="text-slate-700 hidden sm:inline">·</span>
+              <span className="font-mono text-[11px] text-slate-300 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 whitespace-nowrap">
+                {regionsCount} enabled region{regionsCount === 1 ? "" : "s"}
               </span>
-              {regionsCount > 0 && (
-                <>
-                  <span className="text-slate-700 hidden sm:inline">·</span>
-                  <span className="font-mono text-[11px] text-slate-300 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 whitespace-nowrap">
-                    {regionsCount} enabled region{regionsCount === 1 ? "" : "s"}
-                  </span>
-                </>
-              )}
-              {scannedAt && !isDemoMode && (
-                <>
-                  <span className="text-slate-700 hidden sm:inline">·</span>
-                  <span className="whitespace-nowrap">Scanned {getRelativeTime(scannedAt)}</span>
-                </>
-              )}
+            </>
+          )}
+          {scannedAt && !isDemoMode && (
+            <>
+              <span className="text-slate-700 hidden sm:inline">·</span>
+              <span className="whitespace-nowrap">Generated {getRelativeTime(scannedAt)}</span>
+            </>
+          )}
+          {importedFileName && !isDemoMode && (
+            <>
+              <span className="text-slate-700 hidden sm:inline">·</span>
+              <span className="font-mono text-[11px] text-slate-500 truncate max-w-[160px]" title={importedFileName}>
+                {importedFileName}
+              </span>
             </>
           )}
         </div>
@@ -101,29 +108,29 @@ export default function TopBar({
             onClick={onExitDemo}
             className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
           >
-            Connect AWS Account →
+            Import Local Report →
           </button>
         ) : (
           <>
-            {onDisconnect && (
+            {onReturnHome && (
               <button
                 type="button"
-                onClick={onDisconnect}
-                disabled={isLoading}
-                className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded-md bg-transparent transition-colors cursor-pointer disabled:opacity-40 text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
+                onClick={onReturnHome}
+                className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded-md bg-transparent transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
               >
-                Switch Account
+                Home / Guide
               </button>
             )}
-            <button
-              id="rescan-button"
-              type="button"
-              onClick={onRescan}
-              disabled={isLoading}
-              className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
-            >
-              Re-scan Account
-            </button>
+            {onTriggerImportNewer && (
+              <button
+                id="import-diff-button"
+                type="button"
+                onClick={onTriggerImportNewer}
+                className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
+              >
+                Import Newer Report (Diff)
+              </button>
+            )}
           </>
         )}
       </div>

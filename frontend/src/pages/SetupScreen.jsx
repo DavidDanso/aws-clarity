@@ -1,103 +1,69 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
+import { maskAccountId } from "../utils/formatters";
 import {
-  maskAccountId,
-  validateExternalId,
-  validateRoleArn,
-} from "../utils/formatters";
-import {
+  IAM_POLICY_DEFAULT_JSON,
   IAM_POLICY_JSON,
   PERMISSION_PREVIEW_GROUPS,
   SERVICE_COVERAGE_MATRIX,
   SUPPORTED_SERVICES,
 } from "../utils/constants";
-import {
-  buildCloudFormationTemplate,
-  downloadCloudFormationTemplate,
-} from "../utils/cloudformationTemplate";
-import {
-  extractAccountIdFromArn,
-  getStableExternalId,
-  regenerateStableExternalId,
-  saveConnectionDetails,
-} from "../utils/connectionStorage";
-import { checkPermissions } from "../services/api";
+import { parseLocalAssessmentReport } from "../utils/reportImporter";
+import { downloadLocalFile } from "../utils/reportSanitizer";
 import TrustModal from "../components/TrustModal";
 
 const FAQ_ITEMS = [
   {
-    question: "Is AWS Clarity safe to connect to a real AWS account?",
+    question: "Why does AWS Clarity run locally instead of scanning from a vendor server?",
     answer:
-      "Yes. AWS Clarity assumes a strictly read-only IAM role that you create, using temporary 1-hour AWS STS credentials and your unique External ID. It has zero permissions to create, modify, stop, or delete any AWS resources.",
+      "Because you should not have to grant a third-party backend cross-account access to your AWS environment. Running the open-source CLI on your own computer keeps your AWS credentials and account inventory entirely under your control—and means a compromise of this static website cannot expose stored customer accounts.",
   },
   {
-    question: "Does AWS Clarity scan every AWS service?",
+    question: "Does importing my JSON report upload it anywhere?",
     answer:
-      "No. v1 intentionally supports 10 core services (17 resource types): EC2, VPC, S3, IAM, Lambda, RDS, DynamoDB, EBS, CloudWatch, and CloudTrail across all enabled regions. Services outside those 10 are clearly marked as unsupported in Scan Coverage.",
+      "No. Your report file is read and parsed locally in browser memory. The production static site enforces Content-Security-Policy `connect-src 'none'`, blocking outbound network requests from the dashboard, and includes zero analytics or tracking scripts.",
   },
   {
-    question: "Is AWS Clarity free to use?",
+    question: "Will running the local scanner create AWS charges in my account?",
     answer:
-      "Yes—AWS Clarity is free to use during early access with no subscription, no credit card, and no paid AI or scanning fees. Your own AWS infrastructure charges remain your responsibility, and AWS Clarity never creates billable resources in your account.",
+      "By default, `aws-clarity scan` checks 9 AWS services using free control-plane Describe/List/Get APIs and skips S3 because S3 bills LIST/GET API requests outside an account's 12-month S3 Free Tier. S3 checks require explicit opt-in (`--include-s3-checks`) with cost disclosure and confirmation.",
   },
   {
-    question: "What happens if my role is missing a permission or a region fails?",
+    question: "Does AWS Clarity work with IAM Identity Center (AWS SSO) and existing read-only roles?",
     answer:
-      "AWS Clarity never hides errors or displays a 100/100 score on partial results. The scan is marked INCOMPLETE, the health score is withheld until complete, and Scan Coverage lists every affected service, region, reason, and missing IAM permission.",
+      "Yes. The local CLI uses the standard AWS SDK credential chain (`--profile`), supporting `aws sso login`, AWS CLI named profiles, temporary STS credentials, and optional customer-owned `--role-arn` role assumption—without ever trusting an AWS Clarity account.",
   },
   {
-    question: "How do I disconnect and revoke access?",
+    question: "Can my team use AWS Clarity without signing up for an account?",
     answer:
-      "Clear your local browser data in Trust & Privacy Centre, and delete the CloudFormation stack or IAM role in your AWS account. AWS immediately blocks all future sts:AssumeRole requests.",
+      "Yes. Each engineer runs the local CLI with their own authorized AWS profile and can export a full or sanitized (redacted) JSON/CSV report to share via your team's existing secure channels. There is no central database or account registration.",
   },
 ];
 
 export default function SetupScreen({
-  onScanStart,
+  onImportReport,
   onExploreDemo,
-  onResumeSession = null,
+  onResumeReport = null,
   resumableAccountId = "",
-  initialRoleArn = "",
-  initialExternalId = "",
-  connectionResetSeq = 0,
-  scanError,
-  setScanError,
+  importError = "",
+  setImportError,
   dataControls = null,
 }) {
-  const [roleArn, setRoleArn] = useState(initialRoleArn);
-  const [externalId, setExternalId] = useState(
-    () => initialExternalId || getStableExternalId(initialRoleArn)
-  );
-  const [localError, setLocalError] = useState("");
+  const fileInputRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
   const [openFaq, setOpenFaq] = useState(null);
   const [showMatrix, setShowMatrix] = useState(false);
   const [showPermissionPreview, setShowPermissionPreview] = useState(false);
+  const [policyVariant, setPolicyVariant] = useState("default"); // "default" (28) | "with-s3" (34)
   const [showPolicyJson, setShowPolicyJson] = useState(false);
-  const [setupMethod, setSetupMethod] = useState("cloudformation"); // "cloudformation" | "manual"
-  const [showCfnYaml, setShowCfnYaml] = useState(false);
-  const [confirmRegenerate, setConfirmRegenerate] = useState(false);
-  const [externalIdNotice, setExternalIdNotice] = useState("");
-
-  const [isVerifying, setIsVerifying] = useState(false);
-  const [verifyData, setVerifyData] = useState(null);
-  const [verifyError, setVerifyError] = useState(null);
   const [trustModalOpen, setTrustModalOpen] = useState(false);
 
-  // Sync local form state whenever Data Controls forgets/clears saved connection details
-  useEffect(() => {
-    if (connectionResetSeq === 0) return;
-    setRoleArn(initialRoleArn);
-    setExternalId(initialExternalId || getStableExternalId(""));
-    setVerifyData(null);
-    setVerifyError(null);
-    setConfirmRegenerate(false);
-    setExternalIdNotice(
-      "Saved connection details were removed from this browser (your AWS IAM role was NOT modified). A fresh External ID was generated for new roles. If you already created an IAM role in AWS, paste its existing sts:ExternalId from AWS IAM → Roles → Trust relationships above."
-    );
-  }, [connectionResetSeq, initialRoleArn, initialExternalId]);
-
-  const effectiveExternalId = externalId.trim();
-  const appAccountId = import.meta.env.VITE_APP_ACCOUNT_ID || "Set VITE_APP_ACCOUNT_ID";
+  const activePolicyJson =
+    policyVariant === "with-s3" ? IAM_POLICY_JSON : IAM_POLICY_DEFAULT_JSON;
+  const activePolicyFilename =
+    policyVariant === "with-s3"
+      ? "aws-clarity-readonly-policy-with-s3.json"
+      : "aws-clarity-readonly-policy-default.json";
 
   const handleCopy = async (key, text) => {
     try {
@@ -109,72 +75,35 @@ export default function SetupScreen({
     }
   };
 
-  const validateInputs = () => {
-    if (!roleArn.trim()) {
-      setLocalError("IAM Role ARN is required.");
-      return false;
-    }
-    if (!validateRoleArn(roleArn.trim())) {
-      setLocalError("Invalid Role ARN format. Expected: arn:aws:iam::123456789012:role/RoleName");
-      return false;
-    }
-    if (!effectiveExternalId || !validateExternalId(effectiveExternalId)) {
-      setLocalError("External ID must be 2–128 characters using letters, numbers, or +=,.@:/_-");
-      return false;
-    }
-    return true;
-  };
-
-  const handleVerify = async () => {
-    setLocalError("");
-    setScanError("");
-    setVerifyError(null);
-    if (!validateInputs()) return;
-
-    saveConnectionDetails(roleArn.trim(), effectiveExternalId);
-    setIsVerifying(true);
+  const processSelectedFile = async (file) => {
+    if (!file) return;
+    if (setImportError) setImportError("");
     try {
-      const resp = await checkPermissions(roleArn.trim(), effectiveExternalId);
-      setVerifyData(resp);
+      const text = await file.text();
+      const parsed = parseLocalAssessmentReport(text, file.size);
+      onImportReport(parsed, file.name);
     } catch (err) {
-      setVerifyData(null);
-      setVerifyError(err.message || "Failed to verify account connection.");
+      if (setImportError) {
+        setImportError(err.message || "Could not import the selected report file.");
+      }
     } finally {
-      setIsVerifying(false);
-    }
-  };
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    setLocalError("");
-    setScanError("");
-    if (!validateInputs()) return;
-    saveConnectionDetails(roleArn.trim(), effectiveExternalId);
-    onScanStart(roleArn.trim(), effectiveExternalId);
-  };
-
-  const handleRoleArnChange = (nextArn) => {
-    setRoleArn(nextArn);
-    if (localError) setLocalError("");
-    if (scanError) setScanError("");
-    if (verifyData) setVerifyData(null);
-    if (verifyError) setVerifyError(null);
-
-    // If the user enters an AWS account ID we already have a saved stable External ID for, restore it
-    const acct = extractAccountIdFromArn(nextArn);
-    if (acct) {
-      const savedForAcct = getStableExternalId(nextArn);
-      if (savedForAcct && savedForAcct !== externalId) {
-        setExternalId(savedForAcct);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
       }
     }
   };
 
-  const activeError = localError || scanError;
-  const cfnYaml = buildCloudFormationTemplate({ appAccountId, externalId: effectiveExternalId });
-  const missingPermEntries = Object.values(verifyData?.permission_checks || {}).filter(
-    (i) => i.status !== "PASSED"
-  );
+  const handleFileInputChange = (e) => {
+    const file = e.target.files?.[0];
+    processSelectedFile(file);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer?.files?.[0];
+    processSelectedFile(file);
+  };
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-start px-3.5 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-12 pb-20 sm:pb-16 text-slate-100">
@@ -188,6 +117,9 @@ export default function SetupScreen({
               </svg>
             </span>
             <span>AWS Clarity</span>
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-500/10 border border-teal-500/25 text-teal-300">
+              Local-First
+            </span>
           </div>
           <button
             type="button"
@@ -202,47 +134,66 @@ export default function SetupScreen({
         {/* Hero */}
         <header className="flex flex-col items-center text-center space-y-3.5">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-[11px] sm:text-xs font-medium max-w-full">
-            <span className="truncate">Read-Only AWS Visibility · Free Early Access · No Credit Card</span>
+            <span className="truncate">Free · Local-Only Scanner · Zero Backend Data Collection</span>
           </div>
           <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight max-w-2xl leading-tight">
-            Understand Your AWS Account Without Guesswork or Write Access
+            Your AWS Account. Your Credentials. Your Data. Your Control.
           </h1>
           <p className="text-xs sm:text-sm text-slate-400 max-w-xl leading-relaxed">
-            Inspect your real AWS inventory across <strong>10 core services</strong> and all enabled regions. Surface
-            security risks, operational concerns, and potential cost waste with exact AWS API evidence and safe manual fix steps.
+            Run the open-source, strictly read-only <code className="text-teal-300">aws-clarity</code> CLI locally using
+            your own AWS CLI or IAM Identity Center profile, then inspect the generated JSON report locally in this
+            browser. AWS Clarity minimizes what it collects, never stores customer inventories centrally, never modifies
+            AWS resources, and requires no payment.
           </p>
 
-          {/* Explore Demo CTA */}
-          {onExploreDemo && (
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1 w-full sm:w-auto">
+          {/* Key Privacy Facts Strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full pt-1 text-left">
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
+              <p className="text-[11px] font-semibold text-teal-300">No Central Credentials</p>
+              <p className="text-[11px] text-slate-400">Uses your local AWS CLI / SSO session. Never asks for AWS keys or cross-account vendor roles.</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
+              <p className="text-[11px] font-semibold text-teal-300">No Report Upload</p>
+              <p className="text-[11px] text-slate-400">Imported reports are parsed in browser memory only. Static site enforces <code className="text-slate-300">connect-src &apos;none&apos;</code>.</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
+              <p className="text-[11px] font-semibold text-teal-300">Free &amp; Cost-Conscious</p>
+              <p className="text-[11px] text-slate-400">$0 subscription. Default scan uses 9 free control-plane services; S3 checks require explicit opt-in.</p>
+            </div>
+          </div>
+
+          {/* Primary CTAs */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1 w-full sm:w-auto">
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-semibold transition-colors shadow-lg shadow-teal-500/10 cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Import Assessment Report (.json)</span>
+            </button>
+            {onExploreDemo && (
               <button
                 type="button"
                 onClick={onExploreDemo}
-                className="w-full sm:w-auto min-h-[42px] px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-teal-500/40 text-teal-300 hover:text-teal-200 text-xs sm:text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2"
+                className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-teal-500/40 text-teal-300 hover:text-teal-200 text-xs sm:text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2"
               >
                 <span>Explore Demo</span>
-                <span className="text-[11px] font-normal text-slate-400">(No AWS account needed)</span>
+                <span className="text-[11px] font-normal text-slate-400">(No AWS needed)</span>
               </button>
-              <a
-                href="#connect-form"
-                className="w-full sm:w-auto min-h-[42px] px-4 py-2.5 rounded-lg border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-xs sm:text-sm font-medium transition-colors flex items-center justify-center"
-              >
-                Connect Your AWS Account ↓
-              </a>
-            </div>
-          )}
+            )}
+          </div>
         </header>
 
-        {/* Resume Current Tab Scan */}
-        {onResumeSession && (
+        {/* Resume Current In-Memory Report */}
+        {onResumeReport && (
           <div className="rounded-xl border border-teal-500/30 bg-teal-950/20 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
             <span className="text-teal-200">
-              You have an active scan in this browser tab for{" "}
+              You have an imported report open in memory for{" "}
               <span className="font-mono font-semibold">Account {maskAccountId(resumableAccountId)}</span>.
             </span>
             <button
               type="button"
-              onClick={onResumeSession}
+              onClick={onResumeReport}
               className="text-xs font-semibold text-teal-300 hover:text-teal-200 underline underline-offset-2 cursor-pointer bg-transparent border-none p-0 self-start sm:self-auto"
             >
               Return to Dashboard →
@@ -250,15 +201,68 @@ export default function SetupScreen({
           </div>
         )}
 
-        {/* 10 Supported AWS Services + Explicit Coverage Matrix */}
+        {/* Local Report Dropzone */}
+        <section
+          id="import-report"
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          className={`rounded-xl border-2 border-dashed p-5 sm:p-6 text-center transition-colors ${
+            isDragging
+              ? "border-teal-400 bg-teal-950/25"
+              : "border-slate-700/80 bg-slate-900/50 hover:border-slate-600"
+          }`}
+        >
+          <input
+            ref={fileInputRef}
+            id="report-file-input"
+            type="file"
+            accept=".json,application/json"
+            onChange={handleFileInputChange}
+            className="hidden"
+          />
+          <div className="space-y-2 max-w-md mx-auto">
+            <p className="text-sm font-semibold text-white">
+              Import Local Assessment JSON
+            </p>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Drag and drop <code className="text-teal-300">aws-clarity-report.json</code> here, or select it from your
+              computer. Processed 100% locally in browser memory—never uploaded to any server.
+            </p>
+            <div className="pt-1.5">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Choose Local JSON File
+              </button>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Max 25 MB · Strict schema &amp; credential-leak validation · Never executes imported content
+            </p>
+          </div>
+
+          {importError && (
+            <div className="mt-4 flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30 text-left break-words">
+              <span className="text-red-400 font-bold shrink-0">⚠</span>
+              <span className="min-w-0">{importError}</span>
+            </div>
+          )}
+        </section>
+
+        {/* 10 Supported AWS Services + Clear Default (9) vs Optional S3 (1) Breakdown */}
         <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5 space-y-3.5">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                10 Supported AWS Services · 17 Resource Types (v1 Scope)
+                AWS Clarity Supports 10 AWS Services · 17 Resource Types · 43 Rules (v1)
               </p>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Scans only the 10 services below across enabled regions—other AWS services are explicitly outside v1 scope.
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                A normal default scan assesses <strong className="text-slate-200">9 services</strong>; S3 is excluded by default unless you explicitly opt in.
               </p>
             </div>
             <button
@@ -270,15 +274,44 @@ export default function SetupScreen({
             </button>
           </div>
 
-          <div className="flex flex-wrap gap-1.5">
-            {SUPPORTED_SERVICES.map((svc) => (
-              <span
-                key={svc}
-                className="text-xs font-medium px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-800 text-slate-200"
-              >
-                {svc}
-              </span>
-            ))}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-emerald-300">Default Assessment: 9 Services</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                  Zero Request Charges
+                </span>
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                Uses 28 free AWS control-plane read APIs across:
+              </p>
+              <div className="flex flex-wrap gap-1">
+                {SUPPORTED_SERVICES.filter((svc) => svc !== "S3").map((svc) => (
+                  <span
+                    key={svc}
+                    className="text-[11px] font-medium px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
+                  >
+                    {svc}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-slate-950 border border-sky-500/30 space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold text-sky-300">Optional S3 Assessment: 1 Service</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                  Requires Consent
+                </span>
+              </div>
+              <p className="text-slate-400 leading-relaxed">
+                <strong className="text-slate-200">Excluded by default:</strong> S3 public policy (<code className="text-slate-300">S3-002</code>),
+                public ACL (<code className="text-slate-300">S3-003</code>), encryption (<code className="text-slate-300">S3-004</code>), and Block Public Access (<code className="text-slate-300">S3-005</code>).
+              </p>
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                <strong className="text-slate-300">Why optional:</strong> Outside an account&apos;s 12-month S3 Free Tier, AWS S3 bills <code className="text-slate-300">ListBuckets</code> ($0.005/1k LIST) and <code className="text-slate-300">GetBucket*</code> ($0.0004/1k GET). Opt in with <code className="text-sky-300">--include-s3-checks</code>; skipped S3 checks are marked <code className="text-sky-300">SKIPPED_OPTIONAL</code>, never Healthy.
+              </p>
+            </div>
           </div>
 
           {showMatrix && (
@@ -296,23 +329,19 @@ export default function SetupScreen({
                 ))}
               </div>
               <p className="text-[10px] text-slate-500">
-                Not covered in v1: Cost Explorer APIs (paid), GuardDuty/Config/Security Hub (paid), AWS services outside the 10 listed above, and customer data contents.
+                Intentionally out of scope in v1: Cost Explorer/Billing APIs (paid), GuardDuty/Config/Security Hub (paid), AWS services outside these 10, and customer data contents.
               </p>
             </div>
           )}
         </section>
 
-        {/* Guided 3-Step Connect Account Form */}
-        <form
-          id="connect-form"
-          onSubmit={handleSubmit}
-          className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-6 scroll-mt-6"
-        >
+        {/* Getting Started: Local Scanner Guide */}
+        <section id="getting-started" className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-white">Connect Your AWS Account (3 Guided Steps)</h2>
+              <h2 className="text-sm font-semibold text-white">Getting Started — Run Locally in 3 Steps</h2>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Free during early access · No subscription or paid AI · Your existing AWS infrastructure charges remain yours.
+                Works on macOS, Linux, and Windows with Python 3.10+ and your existing AWS CLI / IAM Identity Center profile.
               </p>
             </div>
             <button
@@ -320,20 +349,20 @@ export default function SetupScreen({
               onClick={() => setTrustModalOpen(true)}
               className="text-xs text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0 shrink-0"
             >
-              Trust &amp; Privacy Details →
+              Security &amp; Privacy Boundaries →
             </button>
           </div>
 
-          {/* STEP 1 — Review Permissions (Permission Preview) */}
+          {/* STEP 1 — Review & Attach Read-Only IAM Policy (Customer-Owned) */}
           <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-xs font-semibold text-slate-100">
                   <span className="text-teal-400 mr-1.5">Step 1.</span>
-                  Review Requested Read-Only Permissions (35 Actions)
+                  Review Read-Only Permissions (28 Default Free / 34 With Optional S3)
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Inspect every permission before creating the role. Zero write, delete, object-listing, or data-read actions.
+                  Attach to your own IAM Identity Center permission set or read-only IAM role. No vendor cross-account trust required.
                 </p>
               </div>
               <button
@@ -341,7 +370,7 @@ export default function SetupScreen({
                 onClick={() => setShowPermissionPreview((prev) => !prev)}
                 className="text-xs font-medium text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 shrink-0"
               >
-                {showPermissionPreview ? "Hide permission preview ▲" : "Preview all 35 permissions ▼"}
+                {showPermissionPreview ? "Hide permission preview ▲" : "Preview all permissions & costs ▼"}
               </button>
             </div>
 
@@ -350,7 +379,15 @@ export default function SetupScreen({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {PERMISSION_PREVIEW_GROUPS.map((grp) => (
                     <div key={grp.service} className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800/80 space-y-1">
-                      <p className="text-[11px] font-semibold text-slate-200">{grp.service}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold text-slate-200">{grp.service}</p>
+                        {grp.optional && (
+                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                            Optional
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-teal-300/90">{grp.costNote}</p>
                       <p className="text-[10px] text-slate-400 leading-relaxed">{grp.summary}</p>
                       <p className="text-[10px] font-mono text-slate-500 break-all">
                         {grp.actions.join(", ")}
@@ -359,415 +396,162 @@ export default function SetupScreen({
                   ))}
                 </div>
 
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowPolicyJson((prev) => !prev)}
-                    className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0"
-                  >
-                    {showPolicyJson ? "Hide raw JSON policy ▲" : "View raw JSON policy ▼"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("policy", IAM_POLICY_JSON)}
-                    className="text-[11px] text-slate-300 hover:text-white font-medium cursor-pointer bg-slate-800/70 border border-slate-700 px-2.5 py-1 rounded"
-                  >
-                    {copiedKey === "policy" ? "Copied Policy JSON ✓" : "Copy Policy JSON"}
-                  </button>
-                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setPolicyVariant("default")}
+                      className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
+                        policyVariant === "default"
+                          ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
+                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      28 Actions (Default Zero-Cost)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPolicyVariant("with-s3")}
+                      className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
+                        policyVariant === "with-s3"
+                          ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
+                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      34 Actions (With Optional S3)
+                    </button>
+                  </div>
 
-                {showPolicyJson && (
-                  <pre className="text-[10px] text-slate-300 p-2.5 overflow-x-auto max-h-44 font-mono leading-relaxed bg-slate-950 rounded border border-slate-800">
-                    {IAM_POLICY_JSON}
-                  </pre>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* STEP 2 — Create the Read-Only IAM Role (CloudFormation or Manual) */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-4">
-            <div>
-              <p className="text-xs font-semibold text-slate-100">
-                <span className="text-teal-400 mr-1.5">Step 2.</span>
-                Create the Read-Only IAM Role in Your AWS Account
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                AWS Clarity never deploys into your account automatically. Download and review the CloudFormation template
-                or create the role manually in AWS IAM.
-              </p>
-            </div>
-
-            {/* Stable Per-Connection External ID */}
-            <div className="space-y-1.5">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2">
-                <label htmlFor="external-id-input" className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Connection External ID (Stable per account)
-                </label>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("extid", effectiveExternalId)}
-                    className="text-[11px] text-slate-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none py-0.5 px-0"
-                  >
-                    {copiedKey === "extid" ? "Copied ✓" : "Copy"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setExternalId("aws-clarity-scan");
-                      saveConnectionDetails(roleArn, "aws-clarity-scan");
-                      setVerifyData(null);
-                      setConfirmRegenerate(false);
-                      setExternalIdNotice(
-                        "Switched to legacy value 'aws-clarity-scan'. Only use this if your existing IAM role already trusts it—for new roles, prefer a unique random External ID."
-                      );
-                    }}
-                    className="text-[11px] text-slate-400 hover:text-slate-200 font-medium cursor-pointer bg-transparent border-none py-0.5 px-0"
-                  >
-                    Use legacy default
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConfirmRegenerate((prev) => !prev);
-                    }}
-                    className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none py-0.5 px-0"
-                  >
-                    Regenerate ID
-                  </button>
-                </div>
-              </div>
-              <input
-                id="external-id-input"
-                type="text"
-                value={externalId}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  setExternalId(next);
-                  saveConnectionDetails(roleArn, next);
-                  if (localError) setLocalError("");
-                  if (verifyData) setVerifyData(null);
-                  if (confirmRegenerate) setConfirmRegenerate(false);
-                  if (externalIdNotice) setExternalIdNotice("");
-                }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 sm:py-2 text-base sm:text-xs text-teal-300 placeholder-slate-600 focus:outline-none focus:border-teal-500/60 transition-colors font-mono"
-              />
-
-              {confirmRegenerate && (
-                <div className="p-2.5 rounded-lg bg-amber-950/35 border border-amber-500/40 text-[11px] text-amber-200 space-y-2">
-                  <p className="leading-relaxed">
-                    <strong>Warning:</strong> Generating a new External ID will break any existing IAM role that still
-                    trusts <code className="font-mono text-amber-100">{effectiveExternalId}</code>. You must also update{" "}
-                    <code className="font-mono text-amber-100">sts:ExternalId</code> in your IAM role&apos;s{" "}
-                    <strong>Trust relationships</strong> tab (or update your CloudFormation stack) to match the new value.
-                  </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => {
-                        const fresh = regenerateStableExternalId(roleArn);
-                        setExternalId(fresh);
-                        setVerifyData(null);
-                        setConfirmRegenerate(false);
-                        setExternalIdNotice(
-                          "Generated a new External ID. Remember to update sts:ExternalId in your IAM role's Trust relationships tab (or re-upload the CloudFormation template) before scanning."
-                        );
-                      }}
-                      className="px-2.5 py-1 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-100 font-semibold cursor-pointer"
+                      onClick={() => setShowPolicyJson((prev) => !prev)}
+                      className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0"
                     >
-                      Confirm Regenerate ID
+                      {showPolicyJson ? "Hide JSON ▲" : "View JSON ▼"}
                     </button>
                     <button
                       type="button"
-                      onClick={() => setConfirmRegenerate(false)}
-                      className="px-2.5 py-1 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 cursor-pointer"
+                      onClick={() => handleCopy("policy", activePolicyJson)}
+                      className="text-[11px] text-slate-300 hover:text-white font-medium cursor-pointer bg-slate-800/70 border border-slate-700 px-2.5 py-1 rounded"
                     >
-                      Cancel
+                      {copiedKey === "policy" ? "Copied ✓" : "Copy Policy JSON"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadLocalFile(activePolicyFilename, `${activePolicyJson}\n`, "application/json;charset=utf-8;")
+                      }
+                      className="text-[11px] text-teal-300 hover:text-teal-200 font-medium cursor-pointer bg-teal-500/10 border border-teal-500/30 px-2.5 py-1 rounded"
+                    >
+                      Download JSON
                     </button>
                   </div>
                 </div>
-              )}
 
-              {externalIdNotice && (
-                <div className="p-2.5 rounded-lg bg-sky-950/35 border border-sky-500/30 text-[11px] text-sky-200 leading-relaxed flex items-start justify-between gap-2">
-                  <span>{externalIdNotice}</span>
-                  <button
-                    type="button"
-                    onClick={() => setExternalIdNotice("")}
-                    className="text-sky-300 hover:text-white shrink-0 bg-transparent border-none p-0 cursor-pointer"
-                    aria-label="Dismiss External ID notice"
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                Saved stably across sessions in this browser for your account connection. An External ID provides{" "}
-                <strong className="text-slate-400">confused-deputy protection</strong>—it is <strong>not</strong> an AWS
-                password or authentication credential. Avoid predictable values (like <code className="text-slate-400">aws-clarity-scan</code>) on real accounts.
-              </p>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
-                <strong className="text-slate-400">Already created a role or cleared browser storage?</strong> You do not
-                need to guess—open <strong>AWS IAM → Roles → [Your Role] → Trust relationships</strong>, copy the{" "}
-                <code className="text-slate-400">sts:ExternalId</code> value shown there, and paste it above.
-              </p>
-            </div>
-
-            {/* Setup Method Switcher: CloudFormation vs Manual */}
-            <div className="flex items-center gap-1.5 border-b border-slate-800 pb-2.5">
-              <button
-                type="button"
-                onClick={() => setSetupMethod("cloudformation")}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
-                  setupMethod === "cloudformation"
-                    ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
-                    : "bg-transparent border-transparent text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                CloudFormation Template (Recommended)
-              </button>
-              <button
-                type="button"
-                onClick={() => setSetupMethod("manual")}
-                className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-colors cursor-pointer ${
-                  setupMethod === "manual"
-                    ? "bg-teal-500/15 border-teal-500/40 text-teal-300"
-                    : "bg-transparent border-transparent text-slate-400 hover:text-slate-200"
-                }`}
-              >
-                Manual IAM Console
-              </button>
-            </div>
-
-            {setupMethod === "cloudformation" ? (
-              <div className="space-y-3 text-xs">
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Creates <strong>only one</strong> read-only <code className="text-slate-300">AWS::IAM::Role</code> with
-                  the exact 35 read-only actions above, pre-configured with App Account ID{" "}
-                  <code className="text-teal-300">{appAccountId}</code> and your External ID. Creates zero chargeable resources.
-                </p>
-
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      downloadCloudFormationTemplate({
-                        appAccountId,
-                        externalId: effectiveExternalId,
-                      })
-                    }
-                    className="px-3.5 py-2 rounded-lg bg-teal-600/20 hover:bg-teal-600/30 border border-teal-500/40 text-teal-300 text-xs font-semibold cursor-pointer transition-colors"
-                  >
-                    Download CloudFormation YAML
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("cfn", cfnYaml)}
-                    className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 text-xs font-medium cursor-pointer transition-colors"
-                  >
-                    {copiedKey === "cfn" ? "Copied YAML ✓" : "Copy YAML"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowCfnYaml((prev) => !prev)}
-                    className="text-xs text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none px-1 py-1"
-                  >
-                    {showCfnYaml ? "Hide template ▲" : "Inspect template ▼"}
-                  </button>
-                </div>
-
-                {showCfnYaml && (
-                  <pre className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-52 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
-                    {cfnYaml}
+                {showPolicyJson && (
+                  <pre className="text-[10px] text-slate-300 p-2.5 overflow-x-auto max-h-48 font-mono leading-relaxed bg-slate-950 rounded border border-slate-800">
+                    {activePolicyJson}
                   </pre>
                 )}
-
-                <ol className="list-decimal pl-4 space-y-1 text-[11px] text-slate-400">
-                  <li>Open <strong>AWS CloudFormation → Stacks → Create stack (With new resources)</strong>.</li>
-                  <li>Choose <strong>Upload a template file</strong> and select <code className="text-slate-300">aws-clarity-readonly-role.yaml</code>.</li>
-                  <li>Review the parameters (Account ID &amp; External ID are pre-filled), acknowledge IAM resource creation, and click <strong>Submit</strong>.</li>
-                  <li>Open the stack&apos;s <strong>Outputs</strong> tab, copy <code className="text-teal-300">RoleArn</code>, and paste it in Step 3 below.</li>
-                </ol>
-              </div>
-            ) : (
-              <div className="space-y-3 text-xs">
-                <p className="text-slate-400 leading-relaxed text-[11px]">
-                  In <strong className="text-slate-200">AWS IAM → Roles → Create role</strong>, select{" "}
-                  <strong className="text-slate-200">AWS account (Another AWS account)</strong> and enable{" "}
-                  <strong className="text-slate-200">Require external ID</strong> with:
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 font-mono text-[11px]">
-                  <div className="flex items-center justify-between gap-2 bg-slate-950 px-3 py-2 sm:py-1.5 rounded border border-slate-800 min-w-0">
-                    <span className="text-slate-500 shrink-0">Account ID:</span>
-                    <button
-                      type="button"
-                      onClick={() => handleCopy("acct", appAccountId)}
-                      className="text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 truncate"
-                    >
-                      {copiedKey === "acct" ? "Copied ✓" : appAccountId}
-                    </button>
-                  </div>
-                  <div className="flex items-center justify-between gap-2 bg-slate-950 px-3 py-2 sm:py-1.5 rounded border border-slate-800 min-w-0">
-                    <span className="text-slate-500 shrink-0">External ID:</span>
-                    <span className="text-teal-400 truncate" title={effectiveExternalId}>
-                      {effectiveExternalId}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[11px] text-slate-400">
-                    Attach the exact 35-action read-only inline policy from Step 1:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy("policy-manual", IAM_POLICY_JSON)}
-                    className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0 shrink-0"
-                  >
-                    {copiedKey === "policy-manual" ? "Copied ✓" : "Copy Policy JSON"}
-                  </button>
-                </div>
               </div>
             )}
           </div>
 
-          {/* STEP 3 — Verify Connection & Start Scan */}
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-              <label htmlFor="role-arn-input" className="text-xs font-semibold text-slate-100">
-                <span className="text-teal-400 mr-1.5">Step 3.</span>
-                Paste Your IAM Role ARN &amp; Verify Connection
-              </label>
+          {/* STEP 2 — Authenticate & Run Local Scanner */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold text-slate-100">
+                  <span className="text-teal-400 mr-1.5">Step 2.</span>
+                  Install &amp; Run the Local Scanner Using Your AWS CLI Profile
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Verify your active AWS identity locally, check permissions, and generate your report JSON.
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={handleVerify}
-                disabled={isVerifying || !roleArn.trim()}
-                className={`w-full sm:w-auto justify-center text-xs font-medium px-3 py-2 sm:py-1 rounded-lg sm:rounded transition-colors flex items-center gap-1.5 min-h-[38px] sm:min-h-[30px] ${
-                  isVerifying || !roleArn.trim()
-                    ? "text-slate-600 bg-slate-800/40 cursor-not-allowed"
-                    : "text-teal-400 hover:text-teal-300 bg-teal-500/10 border border-teal-500/20 cursor-pointer"
-                }`}
+                onClick={() =>
+                  handleCopy(
+                    "cli-quickstart",
+                    [
+                      "# 1. Install locally from verified public source",
+                      "git clone https://github.com/DavidDanso/aws-clarity.git && cd aws-clarity",
+                      "python3 -m venv .venv && source .venv/bin/activate && pip install .",
+                      "",
+                      "# 2. Sign in with your AWS CLI / IAM Identity Center profile",
+                      "aws sso login --profile my-profile",
+                      "aws sts get-caller-identity --profile my-profile",
+                      "",
+                      "# 3. Verify permissions & run local read-only scan",
+                      "aws-clarity doctor --profile my-profile",
+                      "aws-clarity scan --profile my-profile --output aws-clarity-report.json",
+                    ].join("\n")
+                  )
+                }
+                className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0 shrink-0"
               >
-                {isVerifying ? (
-                  <>
-                    <svg className="animate-spin w-3 h-3 text-teal-400" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                    </svg>
-                    <span>Verifying…</span>
-                  </>
-                ) : (
-                  <>
-                    <span>⚡</span> Verify Account &amp; Permissions
-                  </>
-                )}
+                {copiedKey === "cli-quickstart" ? "Copied Commands ✓" : "Copy Commands"}
               </button>
             </div>
 
-            <input
-              id="role-arn-input"
-              type="text"
-              value={roleArn}
-              onChange={(e) => handleRoleArnChange(e.target.value)}
-              placeholder="arn:aws:iam::123456789012:role/AWSClarityReadOnly"
-              className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2.5 text-base sm:text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:border-teal-500/60 focus:ring-1 focus:ring-teal-500/30 transition-colors font-mono"
-            />
-          </div>
+            <pre className="text-[11px] text-slate-200 p-3 overflow-x-auto font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
+{`# 1. Authenticate with your existing AWS CLI / IAM Identity Center profile
+aws sso login --profile my-profile
+aws sts get-caller-identity --profile my-profile
 
-          {/* Account Verification & 10-Service Permission Check Output */}
-          {verifyError && (
-            <div className="border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30 break-words space-y-1">
-              <div className="flex items-start gap-2">
-                <span className="text-red-400 font-bold shrink-0">⚠</span>
-                <span className="min-w-0">{verifyError}</span>
-              </div>
-              {/assume|external/i.test(verifyError) && (
-                <p className="text-[11px] text-red-200/80 pl-5 leading-relaxed">
-                  Recovery tip: Open <strong>AWS IAM → Roles → [Your Role] → Trust relationships</strong> and confirm
-                  the <code className="font-mono">sts:ExternalId</code> matches Step 2 above (especially if you cleared
-                  browser storage or regenerated your External ID).
-                </p>
-              )}
-            </div>
-          )}
+# 2. Verify identity, enabled regions, and read-only permissions locally
+aws-clarity doctor --profile my-profile
 
-          {verifyData && (
-            <div className="rounded-lg bg-slate-950 border border-teal-500/30 p-3.5 space-y-2.5 text-xs">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <span className="text-emerald-400 font-bold">✓</span>
-                  <span className="font-semibold text-slate-100">
-                    Role Assumed: Account <span className="font-mono text-teal-300">{verifyData.account_id}</span>
-                  </span>
-                </div>
-                <span className="text-[11px] font-mono text-slate-400">
-                  {verifyData.enabled_regions?.length || 0} enabled regions detected
-                </span>
-              </div>
+# 3. Generate local JSON report (9 zero-request-charge services by default)
+aws-clarity scan --profile my-profile --output aws-clarity-report.json
 
-              {verifyData.region_discovery?.status === "INCOMPLETE" && (
-                <p className="text-[11px] text-orange-300 bg-orange-950/30 border border-orange-500/30 rounded px-2.5 py-1.5">
-                  ⚠ {verifyData.region_discovery.reason}
-                </p>
-              )}
+# Optional: include S3 bucket configuration checks (prompts for cost consent)
+aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-report.json`}
+            </pre>
 
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {SUPPORTED_SERVICES.map((svc) => {
-                  const info = verifyData.permission_checks?.[svc];
-                  const isOk = info?.status === "PASSED";
-                  return (
-                    <div key={svc} className="flex items-center gap-1.5 text-[11px] min-w-0">
-                      <span className={isOk ? "text-emerald-400 font-bold shrink-0" : "text-orange-400 font-bold shrink-0"}>
-                        {isOk ? "✓" : "⚠"}
-                      </span>
-                      <span className="text-slate-300 truncate">{svc}</span>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {missingPermEntries.length > 0 && (
-                <div className="pt-2 border-t border-slate-800 text-[11px] space-y-1.5 break-words">
-                  <p className="text-orange-200 font-medium">
-                    Missing permissions will mark scan coverage as INCOMPLETE and withhold the account health score:
-                  </p>
-                  {missingPermEntries.map((i) => (
-                    <p key={i.service} className="text-orange-300 leading-relaxed">
-                      <span className="font-semibold">⚠ {i.service}:</span> Missing{" "}
-                      <code className="font-mono text-[10px] bg-orange-950/60 px-1 py-0.5 rounded break-all">
-                        {i.required_permission}
-                      </code>
-                    </p>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeError && (
-            <div className="flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30 break-words">
-              <span className="text-red-400 font-bold shrink-0">⚠</span>
-              <span className="min-w-0">{activeError}</span>
-            </div>
-          )}
-
-          {/* Start Scan CTA */}
-          <div className="pt-1 space-y-2">
-            <button
-              type="submit"
-              className="w-full min-h-[44px] flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-500 text-white text-sm font-semibold py-2.5 px-4 rounded-lg transition-colors shadow-lg shadow-teal-500/10 cursor-pointer"
-            >
-              <span>Connect &amp; Scan All Enabled Regions</span>
-              <svg className="shrink-0" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="9 18 15 12 9 6" />
-              </svg>
-            </button>
-            <p className="text-[11px] text-slate-500 text-center leading-relaxed">
-              Strictly read-only · Temporary 1-hour STS session · Zero modifications to your AWS account
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Inspect source code and verify release SHA-256 checksums on{" "}
+              <a
+                href="https://github.com/DavidDanso/aws-clarity"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
+              >
+                GitHub (DavidDanso/aws-clarity)
+              </a>
+              . Reports are written locally with owner-only permissions (<code className="text-slate-400">0600</code>) and never contain AWS credentials.
             </p>
           </div>
-        </form>
+
+          {/* STEP 3 — Import, Compare & Export Safely */}
+          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-2">
+            <p className="text-xs font-semibold text-slate-100">
+              <span className="text-teal-400 mr-1.5">Step 3.</span>
+              Import Locally, Compare Fixes &amp; Share Sanitized Reports
+            </p>
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Import <code className="text-teal-300">aws-clarity-report.json</code> above to explore findings, AWS API
+              evidence, and manual remediation steps. After applying fixes in AWS and re-running the CLI, click{" "}
+              <strong className="text-slate-200">Import Newer Report (Diff)</strong> in the dashboard to see{" "}
+              <strong className="text-slate-200">New</strong>, <strong className="text-slate-200">Resolved</strong>, and{" "}
+              <strong className="text-slate-200">Unchanged</strong> findings—or export a{" "}
+              <strong className="text-slate-200">Sanitized Report</strong> with account IDs, ARNs, and IPs redacted for team review.
+            </p>
+          </div>
+        </section>
+
+        {/* Honest Security Boundary Callout */}
+        <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-[11px] text-slate-400 leading-relaxed space-y-1">
+          <p className="font-semibold text-slate-200">Honest Security Boundaries</p>
+          <p>
+            Local-first architecture eliminates central credential handling and central inventory storage, significantly
+            reducing what an attacker could gain by compromising this static website. However, no software can guarantee
+            zero breach risk: you should still inspect open-source updates, verify release checksums, and protect your
+            workstation and local report files.
+          </p>
+        </section>
 
         {/* FAQ */}
         <div className="px-1 space-y-1">
@@ -806,7 +590,14 @@ export default function SetupScreen({
               David Danso
             </a>
             <span>·</span>
-            <span>AWS Cloud Engineer</span>
+            <a
+              href="https://github.com/DavidDanso/aws-clarity"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-slate-300 hover:text-teal-400 transition-colors font-medium"
+            >
+              Open Source on GitHub
+            </a>
             <span>·</span>
             <button
               type="button"
@@ -817,7 +608,7 @@ export default function SetupScreen({
             </button>
           </div>
           <p className="text-[11px] text-slate-600 text-center">
-            Free early access · Strictly read-only · 10 supported AWS services · No paid scanning APIs
+            Free · Privacy-first local execution · Strictly read-only · Zero backend data collection
           </p>
         </footer>
       </div>

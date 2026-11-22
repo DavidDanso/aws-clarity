@@ -73,9 +73,19 @@ export const SECURITY_CHECKS = [
 
 /**
  * Evaluate the live scan status of a deterministic check against scanned resources.
- * Status values: VIOLATED | REVIEW | PASSED | CHECK_FAILED | NOT_APPLICABLE
+ * Status values: VIOLATED | REVIEW | PASSED | CHECK_FAILED | SKIPPED_OPTIONAL | NOT_APPLICABLE
  */
-export function evaluateCheckStatus(check, allResources = []) {
+export function evaluateCheckStatus(check, allResources = [], skippedOptionalServices = []) {
+  if (Array.isArray(skippedOptionalServices) && skippedOptionalServices.includes(check.service)) {
+    return {
+      status: "SKIPPED_OPTIONAL",
+      flaggedCount: 0,
+      failedCount: 0,
+      flaggedResources: [],
+      label: "Skipped (Optional — opt-in)",
+    };
+  }
+
   const applicableResources = allResources.filter((r) => r.type === check.resourceType);
 
   if (applicableResources.length === 0) {

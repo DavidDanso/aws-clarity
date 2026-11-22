@@ -86,7 +86,6 @@ resource "aws_iam_role_policy" "clarity_read_only_policy" {
           "s3:GetBucketAcl",
           "s3:GetEncryptionConfiguration",
           "s3:GetBucketPublicAccessBlock",
-          "s3:GetBucketVersioning",
           "iam:ListRoles",
           "iam:ListRolePolicies",
           "iam:GetRolePolicy",

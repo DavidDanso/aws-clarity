@@ -19,6 +19,8 @@ export default function CoverageModal({
   const isIncomplete = coverage?.status === "INCOMPLETE" || coverage?.is_partial;
   const failures = coverage?.failures || [];
   const serviceSummary = coverage?.service_summary || [];
+  const optionalChecks = Array.isArray(coverage?.optional_checks) ? coverage.optional_checks : [];
+  const skippedOptionalChecks = optionalChecks.filter((item) => item?.status === "SKIPPED_OPTIONAL");
   const regionsScanned = coverage?.regions_scanned || [];
   const regionsFailed =
     coverage?.regions_failed ||
@@ -27,6 +29,8 @@ export default function CoverageModal({
     coverage?.regions_succeeded ||
     regionsScanned.filter((r) => !regionsFailed.includes(r));
   const servicesCompleteCount = serviceSummary.filter((s) => s.status === "COMPLETE").length;
+  const servicesSkippedCount = serviceSummary.filter((s) => s.status === "SKIPPED_OPTIONAL").length;
+  const servicesAssessedTotal = Math.max(1, (serviceSummary.length || 10) - servicesSkippedCount);
 
   return (
     <div
@@ -77,7 +81,7 @@ export default function CoverageModal({
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
               <p className="text-[10px] uppercase font-semibold text-slate-500">Services Complete</p>
               <p className="text-sm font-bold text-teal-400 mt-0.5">
-                {serviceSummary.length > 0 ? `${servicesCompleteCount} / 10` : "10 / 10"}
+                {serviceSummary.length > 0 ? `${servicesCompleteCount} / ${servicesAssessedTotal}` : "10 / 10"}
               </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
@@ -123,6 +127,33 @@ export default function CoverageModal({
             </div>
           )}
 
+          {/* Intentionally Skipped Optional Checks (distinct from failures and healthy) */}
+          {skippedOptionalChecks.length > 0 && (
+            <div>
+              <h4 className="text-[11px] font-semibold uppercase tracking-wider text-sky-300 mb-2">
+                Skipped Optional Checks — Not Marked Healthy ({skippedOptionalChecks.length})
+              </h4>
+              <div className="rounded-lg bg-sky-950/20 border border-sky-500/30 divide-y divide-sky-500/20">
+                {skippedOptionalChecks.map((opt, idx) => (
+                  <div key={idx} className="p-2.5 space-y-1 text-[11px]">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="font-semibold text-sky-200">{opt.service}</span>
+                      <span className="font-mono text-[10px] text-sky-300 bg-sky-950/60 px-1.5 py-0.5 rounded">
+                        SKIPPED_OPTIONAL
+                      </span>
+                    </div>
+                    <p className="text-sky-200/80 leading-relaxed">{opt.reason}</p>
+                    {opt.opt_in_command && (
+                      <p className="text-[10px] font-mono text-slate-400 break-all">
+                        Opt in: {opt.opt_in_command}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 10-Service Resource Coverage Matrix */}
           <div>
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
@@ -141,12 +172,13 @@ export default function CoverageModal({
                   }))
               ).map((svc) => {
                 const ok = svc.status === "COMPLETE";
+                const skipped = svc.status === "SKIPPED_OPTIONAL";
                 return (
                   <div key={svc.service} className="p-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-[11px]">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className={ok ? "text-emerald-400 font-bold" : "text-orange-400 font-bold"}>
-                          {ok ? "✓" : "⚠"}
+                        <span className={ok ? "text-emerald-400 font-bold" : skipped ? "text-sky-300 font-bold" : "text-orange-400 font-bold"}>
+                          {ok ? "✓" : skipped ? "○" : "⚠"}
                         </span>
                         <span className="font-semibold text-slate-200">{svc.service}</span>
                         <span className="text-[10px] text-slate-500">({svc.scope})</span>
@@ -156,11 +188,15 @@ export default function CoverageModal({
                       </p>
                     </div>
                     <div className="flex items-center gap-2 pl-5 sm:pl-0 shrink-0">
-                      <span className="text-slate-400 font-mono">{svc.resource_count} found</span>
+                      <span className="text-slate-400 font-mono">{skipped ? "skipped" : `${svc.resource_count} found`}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
-                        ok ? "text-emerald-400 bg-emerald-500/10" : "text-orange-300 bg-orange-500/15"
+                        ok
+                          ? "text-emerald-400 bg-emerald-500/10"
+                          : skipped
+                          ? "text-sky-300 bg-sky-500/15"
+                          : "text-orange-300 bg-orange-500/15"
                       }`}>
-                        {svc.status}
+                        {skipped ? "SKIPPED (OPTIONAL)" : svc.status}
                       </span>
                     </div>
                   </div>

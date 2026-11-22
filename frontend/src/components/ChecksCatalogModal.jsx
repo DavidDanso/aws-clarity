@@ -18,6 +18,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
     review: evaluatedChecks.filter((c) => c.eval.status === "REVIEW").length,
     passed: evaluatedChecks.filter((c) => c.eval.status === "PASSED").length,
     failed: evaluatedChecks.filter((c) => c.eval.status === "CHECK_FAILED").length,
+    skippedOptional: evaluatedChecks.filter((c) => c.eval.status === "SKIPPED_OPTIONAL").length,
     na: evaluatedChecks.filter((c) => c.eval.status === "NOT_APPLICABLE").length,
   }), [evaluatedChecks]);
 
@@ -27,6 +28,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
     else if (catalogFilter === "review") list = list.filter((c) => c.eval.status === "REVIEW");
     else if (catalogFilter === "passed") list = list.filter((c) => c.eval.status === "PASSED");
     else if (catalogFilter === "failed") list = list.filter((c) => c.eval.status === "CHECK_FAILED");
+    else if (catalogFilter === "skippedOptional") list = list.filter((c) => c.eval.status === "SKIPPED_OPTIONAL");
     else if (catalogFilter === "na") list = list.filter((c) => c.eval.status === "NOT_APPLICABLE");
 
     if (catalogSearch.trim()) {
@@ -93,6 +95,9 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
               ...(checkCounts.failed > 0
                 ? [{ key: "failed", label: "Check Failed", count: checkCounts.failed, activeClass: "text-orange-300 bg-orange-500/10 border-orange-500/20" }]
                 : []),
+              ...(checkCounts.skippedOptional > 0
+                ? [{ key: "skippedOptional", label: "Skipped (Optional)", count: checkCounts.skippedOptional, activeClass: "text-sky-300 bg-sky-500/10 border-sky-500/20" }]
+                : []),
               { key: "na", label: "No Resources", count: checkCounts.na, activeClass: "text-slate-300 bg-slate-500/10 border-slate-500/20" },
             ].map((tab) => (
               <button
@@ -124,6 +129,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
               const isReview = status === "REVIEW";
               const isPassed = status === "PASSED";
               const isFailed = status === "CHECK_FAILED";
+              const isSkippedOptional = status === "SKIPPED_OPTIONAL";
 
               return (
                 <div
@@ -190,7 +196,13 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                           <span className="font-mono text-[10px] text-orange-200">({check.eval.label})</span>
                         </span>
                       )}
-                      {!isViolated && !isReview && !isPassed && !isFailed && (
+                      {isSkippedOptional && (
+                        <span className="font-medium text-sky-300 flex items-center gap-1">
+                          <span>○ Skipped (Optional)</span>
+                          <span className="font-mono text-[10px] text-sky-200/80">(not evaluated)</span>
+                        </span>
+                      )}
+                      {!isViolated && !isReview && !isPassed && !isFailed && !isSkippedOptional && (
                         <span className="text-slate-500 font-mono text-[10px]">— No resources in account</span>
                       )}
                     </div>

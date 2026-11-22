@@ -258,7 +258,7 @@ export function buildDemoScanData() {
             { rule_id: "S3-005", status: "VIOLATED" },
           ],
         },
-        raw: { name: "demo-app-assets-public-2026", versioning: "Enabled" },
+        raw: { name: "demo-app-assets-public-2026" },
       },
       {
         id: "demo-archive-logs-eu",
@@ -277,7 +277,7 @@ export function buildDemoScanData() {
             { rule_id: "S3-005", status: "PASSED" },
           ],
         },
-        raw: { name: "demo-archive-logs-eu", versioning: "Enabled" },
+        raw: { name: "demo-archive-logs-eu" },
       },
     ],
 
@@ -634,6 +634,9 @@ export function buildDemoScanData() {
   const allItems = Object.values(resources).flat();
 
   return {
+    schema_version: "aws-clarity-report/v1",
+    scanner_version: "1.0.0",
+    execution_mode: "demo-static",
     is_demo: true,
     status: "INCOMPLETE",
     scan_state: "INCOMPLETE",

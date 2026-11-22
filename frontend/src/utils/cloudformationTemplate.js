@@ -4,7 +4,7 @@ import { IAM_POLICY_ACTIONS } from "./constants.js";
  * Generates an inspectable, least-privilege AWS CloudFormation YAML template that
  * creates ONLY a single read-only IAM Role (zero chargeable AWS resources).
  *
- * Uses the exact same 35 IAM actions from IAM_POLICY_ACTIONS (matching infra/iam.tf 1:1).
+ * Uses the exact same 34 IAM actions from IAM_POLICY_ACTIONS (matching infra/iam.tf 1:1).
  */
 export function buildCloudFormationTemplate({ appAccountId, externalId }) {
   const safeAccountId = /^\d{12}$/.test(String(appAccountId || "").trim())
@@ -19,7 +19,7 @@ export function buildCloudFormationTemplate({ appAccountId, externalId }) {
   return `AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   AWS Clarity Read-Only Visibility Role. Creates ONLY a single least-privilege
-  read-only IAM Role (35 Describe/List/Get actions across 10 AWS services)
+  read-only IAM Role (34 Describe/List/Get actions across 10 AWS services)
   with ExternalId protection. Creates zero billable AWS resources.
 
 Parameters:

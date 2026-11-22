@@ -157,7 +157,7 @@ SCANNER_METADATA = {
     "vpcs": {"service": "VPC", "label": "VPCs", "permission": "ec2:DescribeVpcs", "capability": "Virtual private clouds"},
     "internet_gateways": {"service": "VPC", "label": "Internet Gateways", "permission": "ec2:DescribeInternetGateways", "capability": "VPC internet gateways"},
     "nat_gateways": {"service": "VPC", "label": "NAT Gateways", "permission": "ec2:DescribeNatGateways", "capability": "Outbound routing & ongoing spend risk"},
-    "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketPolicyStatus, s3:GetBucketAcl, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock, s3:GetBucketVersioning", "capability": "S3 buckets & public exposure"},
+    "s3_buckets": {"service": "S3", "label": "S3 Buckets", "permission": "s3:ListAllMyBuckets, s3:GetBucketLocation, s3:GetBucketPolicyStatus, s3:GetBucketAcl, s3:GetEncryptionConfiguration, s3:GetBucketPublicAccessBlock", "capability": "S3 buckets & public exposure"},
     "iam_roles": {"service": "IAM", "label": "IAM Roles", "permission": "iam:ListRoles, iam:ListRolePolicies, iam:GetRolePolicy, iam:ListAttachedRolePolicies", "capability": "IAM roles, policies & trust relationships"},
     "iam_users": {"service": "IAM", "label": "IAM Users", "permission": "iam:ListUsers, iam:ListMFADevices, iam:ListAccessKeys, iam:ListAttachedUserPolicies, iam:ListUserPolicies, iam:GetUserPolicy", "capability": "IAM users, MFA & access key age"},
     "lambda_functions": {"service": "Lambda", "label": "Lambda Functions", "permission": "lambda:ListFunctions", "capability": "Serverless functions & runtimes"},

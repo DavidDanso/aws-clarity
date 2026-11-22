@@ -29,12 +29,12 @@ class TestS3RegionFilter(unittest.TestCase):
             return {"LocationConstraint": "eu-west-1"}
 
         mock_s3.get_bucket_location.side_effect = mock_get_bucket_location
-        mock_s3.get_bucket_versioning.return_value = {"Status": "Enabled"}
 
         # Default global scan (selected_regions=None) discovers ALL buckets
         all_results = scan(mock_session)
         self.assertEqual(len(all_results), 3)
         mock_s3.list_objects_v2.assert_not_called()
+        mock_s3.get_bucket_versioning.assert_not_called()
 
         # Region-filtered scan discovers only matching region
         us_results = scan(mock_session, selected_regions=["us-east-1"])

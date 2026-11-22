@@ -1,6 +1,12 @@
 import { useEffect } from "react";
 
-export default function ScoreModal({ isOpen, onClose, scoreData, coverageFailuresCount = 0 }) {
+export default function ScoreModal({
+  isOpen,
+  onClose,
+  scoreData,
+  coverageFailuresCount = 0,
+  skippedOptionalServices = [],
+}) {
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e) => { if (e.key === "Escape") onClose(); };
@@ -125,9 +131,16 @@ export default function ScoreModal({ isOpen, onClose, scoreData, coverageFailure
             </div>
           </div>
 
-          <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed">
-            <p className="font-semibold text-slate-300 mb-0.5">Important Clarification</p>
-            This score is an operational visibility indicator derived strictly from deterministic checks across the 10 supported v1 services. It is not a formal compliance certification.
+          <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed space-y-1.5">
+            <p className="font-semibold text-slate-300">Important Clarification</p>
+            <p>
+              This score is an operational visibility metric derived strictly from deterministic checks across executed services. It is not a security certification or compliance audit.
+            </p>
+            {skippedOptionalServices.length > 0 && (
+              <p className="text-sky-300">
+                Note: Optional service(s) ({skippedOptionalServices.join(", ")}) were skipped by default to avoid potential AWS API request charges and are <strong>not</strong> treated as healthy.
+              </p>
+            )}
           </div>
         </div>
 

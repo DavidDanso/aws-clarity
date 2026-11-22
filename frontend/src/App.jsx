@@ -1,56 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import SetupScreen from "./pages/SetupScreen";
 import DashboardScreen from "./pages/DashboardScreen";
-import { scanAccount } from "./services/api";
 import { buildDemoScanData } from "./data/demoScanData";
-import {
-  clearAllBrowserData,
-  clearConnectionPreferencesStorage,
-  clearScanSessionStorage,
-  getRememberedRoleArn,
-  getStableExternalId,
-  loadRealScanSession,
-  saveConnectionDetails,
-  saveRealScanSession,
-} from "./utils/connectionStorage";
+import { clearAllBrowserData } from "./utils/connectionStorage";
 
 function App() {
-  const initialSession = loadRealScanSession();
-
-  // Always start on the landing & account connection screen (never bypass straight to dashboard)
+  // Always start on the privacy-first landing & report import screen.
+  // Imported customer reports stay strictly in-memory by default (zero server upload,
+  // zero automatic persistence to localStorage/sessionStorage).
   const [view, setView] = useState("setup");
   const [isDemoMode, setIsDemoMode] = useState(false);
-  const [scanResults, setScanResults] = useState(() => initialSession?.scanResults || null);
-  const [previousScanResults, setPreviousScanResults] = useState(
-    () => initialSession?.previousScanResults || null
-  );
-  const [isLoading, setIsLoading] = useState(false);
-  const [scanError, setScanError] = useState("");
-  const [scanStatus, setScanStatus] = useState("");
-  const [scanProgress, setScanProgress] = useState(null);
-  const [storedRoleArn, setStoredRoleArn] = useState(
-    () => initialSession?.storedRoleArn || getRememberedRoleArn()
-  );
-  const [storedExternalId, setStoredExternalId] = useState(() =>
-    initialSession?.storedExternalId || getStableExternalId(initialSession?.storedRoleArn || getRememberedRoleArn())
-  );
-  const [connectionResetSeq, setConnectionResetSeq] = useState(0);
+  const [scanResults, setScanResults] = useState(null);
+  const [previousScanResults, setPreviousScanResults] = useState(null);
+  const [importedFileName, setImportedFileName] = useState("");
+  const [importError, setImportError] = useState("");
 
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const feedbackRef = useRef(null);
-
-  // Persist ONLY real (non-demo) scan results in sessionStorage
-  useEffect(() => {
-    if (!isDemoMode && scanResults && scanResults.resources && scanResults.is_demo !== true) {
-      saveRealScanSession({
-        scanResults,
-        previousScanResults:
-          previousScanResults && previousScanResults.is_demo !== true ? previousScanResults : null,
-        storedRoleArn,
-        storedExternalId,
-      });
-    }
-  }, [isDemoMode, scanResults, previousScanResults, storedRoleArn, storedExternalId]);
 
   useEffect(() => {
     if (!feedbackOpen) return;
@@ -65,10 +31,7 @@ function App() {
 
   const handleExploreDemo = () => {
     setIsDemoMode(true);
-    setIsLoading(false);
-    setScanError("");
-    setScanStatus("");
-    setScanProgress(null);
+    setImportError("");
     setView("dashboard");
   };
 
@@ -77,157 +40,86 @@ function App() {
     setView("setup");
   };
 
-  const handleScanStart = async (roleArn, externalId) => {
+  const handleImportReport = (report, fileName = "") => {
     setIsDemoMode(false);
+    setImportError("");
     if (scanResults && scanResults.resources && scanResults.is_demo !== true) {
       setPreviousScanResults(scanResults);
     }
-    const resolvedExternalId = externalId?.trim() || getStableExternalId(roleArn);
-    saveConnectionDetails(roleArn, resolvedExternalId);
-
-    setIsLoading(true);
-    setScanStatus("STARTING");
-    setScanProgress(null);
-    setScanError("");
-    setScanResults(null);
-    setStoredRoleArn(roleArn);
-    setStoredExternalId(resolvedExternalId);
+    setScanResults(report);
+    setImportedFileName(fileName);
     setView("dashboard");
-
-    try {
-      // Always scan ALL enabled AWS regions for complete account inventory
-      const results = await scanAccount(
-        roleArn,
-        "all",
-        (status, progress) => {
-          setScanStatus(status);
-          if (progress) setScanProgress(progress);
-        },
-        resolvedExternalId
-      );
-      setScanResults(results);
-    } catch (err) {
-      setScanError(err.message || "An unexpected error occurred.");
-    } finally {
-      setIsLoading(false);
-    }
   };
 
-  const handleDisconnect = () => {
+  const handleReturnHome = () => {
     setIsDemoMode(false);
-    setScanError("");
-    setScanStatus("");
-    setScanProgress(null);
+    setImportError("");
     setView("setup");
   };
 
-  const handleClearCurrentResults = () => {
+  const handleClearCurrentReport = () => {
     setIsDemoMode(false);
     setScanResults(null);
     setPreviousScanResults(null);
-    setScanError("");
-    setScanStatus("");
-    setScanProgress(null);
-    clearScanSessionStorage();
+    setImportedFileName("");
+    setImportError("");
     setView("setup");
   };
 
-  const handleClearScanHistory = () => {
+  const handleClearDiffHistory = () => {
     setPreviousScanResults(null);
-    clearScanSessionStorage();
-    if (!isDemoMode && scanResults && scanResults.is_demo !== true) {
-      saveRealScanSession({
-        scanResults,
-        previousScanResults: null,
-        storedRoleArn,
-        storedExternalId,
-      });
-    }
-  };
-
-  const handleForgetConnectionDetails = () => {
-    clearConnectionPreferencesStorage();
-    const freshId = getStableExternalId("");
-    setStoredRoleArn("");
-    setStoredExternalId(freshId);
-    setConnectionResetSeq((n) => n + 1);
   };
 
   const handleClearAllLocalData = () => {
     clearAllBrowserData();
-    const freshId = getStableExternalId("");
     setIsDemoMode(false);
     setScanResults(null);
     setPreviousScanResults(null);
-    setScanError("");
-    setScanStatus("");
-    setScanProgress(null);
-    setStoredRoleArn("");
-    setStoredExternalId(freshId);
-    setConnectionResetSeq((n) => n + 1);
+    setImportedFileName("");
+    setImportError("");
     setView("setup");
   };
 
   const dataControls = {
-    hasCurrentScan: Boolean(!isDemoMode && scanResults && scanResults.is_demo !== true),
-    hasHistory: Boolean(!isDemoMode && previousScanResults && previousScanResults.is_demo !== true),
-    hasConnectionDetails: Boolean(storedRoleArn),
-    onClearCurrentResults: handleClearCurrentResults,
-    onClearScanHistory: handleClearScanHistory,
-    onForgetConnectionDetails: handleForgetConnectionDetails,
+    hasCurrentReport: Boolean(!isDemoMode && scanResults && scanResults.is_demo !== true),
+    hasDiffHistory: Boolean(!isDemoMode && previousScanResults && previousScanResults.is_demo !== true),
+    onClearCurrentReport: handleClearCurrentReport,
+    onClearDiffHistory: handleClearDiffHistory,
     onClearAllLocalData: handleClearAllLocalData,
-  };
-
-  const handleRescan = () => {
-    if (isDemoMode) {
-      handleExitDemo();
-      return;
-    }
-    if (storedRoleArn) {
-      handleScanStart(storedRoleArn, storedExternalId);
-    } else {
-      handleDisconnect();
-    }
   };
 
   const activeDashboardResults = isDemoMode ? buildDemoScanData() : scanResults;
   const activePreviousResults = isDemoMode ? null : previousScanResults;
-  const hasResumableRealScan = Boolean(scanResults && scanResults.is_demo !== true);
+  const hasResumableRealReport = Boolean(scanResults && scanResults.is_demo !== true);
 
   return (
     <>
       {view === "setup" ? (
         <SetupScreen
-          onScanStart={handleScanStart}
+          onImportReport={handleImportReport}
           onExploreDemo={handleExploreDemo}
-          onResumeSession={
-            hasResumableRealScan
+          onResumeReport={
+            hasResumableRealReport
               ? () => {
                   setIsDemoMode(false);
                   setView("dashboard");
                 }
               : null
           }
-          resumableAccountId={hasResumableRealScan ? scanResults?.account_id || "" : ""}
-          initialRoleArn={storedRoleArn}
-          initialExternalId={storedExternalId}
-          connectionResetSeq={connectionResetSeq}
-          scanError={scanError}
-          setScanError={setScanError}
+          resumableAccountId={hasResumableRealReport ? scanResults?.account_id || "" : ""}
+          importError={importError}
+          setImportError={setImportError}
           dataControls={dataControls}
         />
       ) : (
         <DashboardScreen
           scanResults={activeDashboardResults}
           previousScanResults={activePreviousResults}
+          importedFileName={isDemoMode ? "" : importedFileName}
           isDemoMode={isDemoMode}
           onExitDemo={handleExitDemo}
-          onRescan={handleRescan}
-          onDisconnect={handleDisconnect}
-          isLoading={isDemoMode ? false : isLoading}
-          scanStatus={scanStatus}
-          scanProgress={scanProgress}
-          scanError={isDemoMode ? "" : scanError}
+          onImportNewerReport={handleImportReport}
+          onReturnHome={handleReturnHome}
           dataControls={dataControls}
         />
       )}
@@ -238,9 +130,9 @@ function App() {
         className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-40 flex flex-col items-end"
       >
         {feedbackOpen && (
-          <div className="mb-2.5 w-52 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+          <div className="mb-2.5 w-56 max-w-[calc(100vw-2rem)] bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
             <div className="px-3 py-2 border-b border-slate-800">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Send Feedback</p>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Feedback &amp; Security</p>
             </div>
             <div className="p-1">
               <a
@@ -273,6 +165,21 @@ function App() {
                 <div>
                   <p className="text-xs font-medium text-slate-200 group-hover:text-white">Request a Feature</p>
                   <p className="text-xs text-slate-500">Share an idea</p>
+                </div>
+              </a>
+              <a
+                href="https://github.com/DavidDanso/aws-clarity/security/advisories/new"
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setFeedbackOpen(false)}
+                className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg hover:bg-slate-800 transition-colors group"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-amber-400 shrink-0">
+                  <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                </svg>
+                <div>
+                  <p className="text-xs font-medium text-slate-200 group-hover:text-white">Report Security Issue</p>
+                  <p className="text-xs text-slate-500">Private GitHub advisory</p>
                 </div>
               </a>
             </div>

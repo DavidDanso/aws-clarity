@@ -631,9 +631,10 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
         js_block = const_js.split("IAM_POLICY_ACTIONS = [")[1].split("];")[0]
         js_actions = re.findall(r'"([a-z0-9]+:[A-Za-z0-9]+)"', js_block)
 
-        self.assertEqual(len(tf_actions), 35)
+        self.assertEqual(len(tf_actions), 34)
         self.assertEqual(tf_actions, js_actions)
         self.assertNotIn("s3:ListBucket", tf_actions)
+        self.assertNotIn("s3:GetBucketVersioning", tf_actions)
         # Ensure zero write/delete/data-read/paid billing actions
         forbidden_prefixes = ("create", "delete", "put", "update", "modify", "terminate", "stop", "start", "attach", "detach")
         for action in tf_actions:

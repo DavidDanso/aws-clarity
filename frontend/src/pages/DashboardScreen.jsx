@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef } from "react";
 import TopBar from "../components/TopBar";
 import DetailDrawer from "../components/DetailDrawer";
 import ResourceTable from "../components/ResourceTable";
@@ -15,6 +15,12 @@ import {
 import { computeScore } from "../utils/securityScore";
 import { compareScans, getStableResourceId } from "../utils/scanComparison";
 import { SECURITY_CHECKS, evaluateCheckStatus } from "../utils/securityChecksCatalog";
+import { parseLocalAssessmentReport } from "../utils/reportImporter";
+import {
+  buildInventoryCSV,
+  downloadLocalFile,
+  sanitizeReportForSharing,
+} from "../utils/reportSanitizer";
 
 function ScoreRing({ score, label, labelColor }) {
   const r = 34;
@@ -71,26 +77,14 @@ function ChevronIcon({ open }) {
   );
 }
 
-const SCAN_STAGE_LABELS = {
-  STARTING: "Verifying AWS identity via STS AssumeRole…",
-  PENDING: "Starting parallel read-only scan worker…",
-  DISCOVERING: "Discovering enabled AWS regions & global services…",
-  SCANNING: "Scanning all 10 AWS services across enabled regions…",
-  EVALUATING: "Running deterministic security & cost rules…",
-  RUNNING: "Discovering enabled regions & scanning all 10 AWS services…",
-};
-
 export default function DashboardScreen({
   scanResults,
   previousScanResults,
+  importedFileName = "",
   isDemoMode = false,
   onExitDemo,
-  onRescan,
-  onDisconnect,
-  isLoading,
-  scanStatus,
-  scanProgress,
-  scanError,
+  onImportNewerReport,
+  onReturnHome,
   dataControls = null,
 }) {
   const [selectedResource, setSelectedResource] = useState(null);
@@ -98,46 +92,51 @@ export default function DashboardScreen({
   const [scoreModalOpen, setScoreModalOpen] = useState(false);
   const [catalogModalOpen, setCatalogModalOpen] = useState(false);
   const [trustModalOpen, setTrustModalOpen] = useState(false);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
+  const [diffImportError, setDiffImportError] = useState("");
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState("resolved");
   const [tableStatusFilter, setTableStatusFilter] = useState("ALL");
   const [tableCategoryFilter, setTableCategoryFilter] = useState("ALL");
-  const [elapsedMs, setElapsedMs] = useState(0);
-
-  useEffect(() => {
-    if (!isLoading) return undefined;
-    const startedAt = Date.now();
-    const timer = setInterval(() => {
-      setElapsedMs(Date.now() - startedAt);
-    }, 100);
-    return () => {
-      clearInterval(timer);
-      setElapsedMs(0);
-    };
-  }, [isLoading]);
-
-  const progressRegionsTotal = scanProgress?.regions_total || 0;
-  const progressRegionsDone = scanProgress?.regions_done || 0;
-  const progressResourcesFound = scanProgress?.resources_found || 0;
-  const progressStage = scanProgress?.stage || scanStatus;
-  const smoothElapsedPct = Math.min(88, Math.round(14 + (1 - Math.exp(-elapsedMs / 2200)) * 74));
-  const progressPct =
-    progressStage === "EVALUATING"
-      ? 96
-      : progressRegionsTotal > 0
-      ? Math.min(92, Math.max(12, Math.round((progressRegionsDone / progressRegionsTotal) * 90)))
-      : smoothElapsedPct;
 
   const inventorySectionRef = useRef(null);
+  const diffFileInputRef = useRef(null);
 
-  const coverage = scanResults?.coverage || {};
+  const coverage = useMemo(() => scanResults?.coverage || {}, [scanResults]);
   const coverageFailures = coverage?.failures || [];
+  const skippedOptionalServices = useMemo(
+    () =>
+      Array.isArray(coverage?.services_skipped_optional)
+        ? coverage.services_skipped_optional
+        : (coverage?.service_summary || [])
+            .filter((s) => s.status === "SKIPPED_OPTIONAL")
+            .map((s) => s.service),
+    [coverage]
+  );
   const isIncompleteScan =
     coverage?.status === "INCOMPLETE" ||
     scanResults?.partial === true ||
     coverageFailures.length > 0;
   const regionsScanned = coverage?.regions_scanned || scanResults?.regions || [];
   const accountAdvisories = scanResults?.account_advisories || [];
+
+  const handleDiffFileSelected = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setDiffImportError("");
+    try {
+      const text = await file.text();
+      const parsed = parseLocalAssessmentReport(text, file.size);
+      if (typeof onImportNewerReport === "function") {
+        onImportNewerReport(parsed, file.name);
+        setComparisonExpanded(true);
+      }
+    } catch (err) {
+      setDiffImportError(err.message || "Could not import comparison report.");
+    } finally {
+      if (diffFileInputRef.current) diffFileInputRef.current.value = "";
+    }
+  };
 
   const jumpToInventory = (statusFilter, categoryFilter = "ALL") => {
     setTableStatusFilter(statusFilter);
@@ -182,9 +181,9 @@ export default function DashboardScreen({
     () =>
       activeCatalog.map((check) => ({
         ...check,
-        eval: evaluateCheckStatus(check, allResources),
+        eval: evaluateCheckStatus(check, allResources, skippedOptionalServices),
       })),
-    [activeCatalog, allResources]
+    [activeCatalog, allResources, skippedOptionalServices]
   );
 
   // Prioritized "Needs Attention" list: critical security risks + top cost/unused items
@@ -223,88 +222,32 @@ export default function DashboardScreen({
     return items.slice(0, 4);
   }, [allResources]);
 
-  const handleExportCSV = () => {
-    const escape = (val) => `"${String(val ?? "").replace(/"/g, '""')}"`;
-    const headers = [
-      "Service",
-      "Resource Name",
-      "Resource ID",
-      "Resource Type",
-      "Region",
-      "Health Status",
-      "Category",
-      "Rule ID",
-      "Severity",
-      "Finding",
-      "Evidence",
-      "Recommended Fix",
-      "How to Verify",
-    ];
-    const rows = [];
-    for (const r of allResources) {
-      const issues = r.issues || [];
-      const displayedStatus =
-        r.status === "HEALTHY" && r.assessment?.status !== "COMPLETE"
-          ? "INCOMPLETE"
-          : r.status || "INCOMPLETE";
-
-      if (issues.length === 0) {
-        rows.push(
-          [
-            escape(r.service || ""),
-            escape(r.name),
-            escape(r.id),
-            escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
-            escape(r.region || "global"),
-            escape(displayedStatus),
-            escape(""),
-            escape(""),
-            escape(displayedStatus),
-            escape(displayedStatus === "HEALTHY" ? "All applicable checks passed" : "Check blocked by API/IAM error"),
-            escape(""),
-            escape(""),
-            escape(""),
-          ].join(",")
-        );
-      } else {
-        for (const issue of issues) {
-          const evidenceStr = issue.evidence
-            ? Object.entries(issue.evidence)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(" | ")
-            : "";
-          rows.push(
-            [
-              escape(r.service || ""),
-              escape(r.name),
-              escape(r.id),
-              escape(RESOURCE_TYPE_LABELS[r.type] || r.type),
-              escape(r.region || "global"),
-              escape(displayedStatus),
-              escape(issue.category || ""),
-              escape(issue.rule_id || ""),
-              escape(issue.severity || ""),
-              escape(issue.title || issue.message || ""),
-              escape(evidenceStr),
-              escape(issue.fix || ""),
-              escape(issue.verify || ""),
-            ].join(",")
-          );
-        }
-      }
-    }
-    const csvString = [headers.map(escape).join(","), ...rows].join("\n");
+  const handleDownloadFullJSON = () => {
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `aws-clarity-scan-${scanResults?.account_id || "account"}-${date}.csv`;
-    const blob = new Blob([csvString], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", filename);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    const filename = `aws-clarity-report-${scanResults?.account_id || "account"}-${date}.json`;
+    downloadLocalFile(filename, `${JSON.stringify(scanResults, null, 2)}\n`, "application/json;charset=utf-8;");
+    setExportModalOpen(false);
+  };
+
+  const handleDownloadSanitizedJSON = () => {
+    const sanitized = sanitizeReportForSharing(scanResults);
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `aws-clarity-report-sanitized-${date}.json`;
+    downloadLocalFile(filename, `${JSON.stringify(sanitized, null, 2)}\n`, "application/json;charset=utf-8;");
+    setExportModalOpen(false);
+  };
+
+  const handleExportCSV = (sanitized = false) => {
+    const sourceResources = sanitized
+      ? RESOURCE_COLLECTION_KEYS.flatMap((key) => sanitizeReportForSharing(scanResults)?.resources?.[key] || [])
+      : allResources;
+    const csvString = buildInventoryCSV(sourceResources, { sanitized });
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = sanitized
+      ? `aws-clarity-inventory-sanitized-${date}.csv`
+      : `aws-clarity-inventory-${scanResults?.account_id || "account"}-${date}.csv`;
+    downloadLocalFile(filename, csvString, "text/csv;charset=utf-8;");
+    setExportModalOpen(false);
   };
 
   const deltaLabel =
@@ -323,19 +266,39 @@ export default function DashboardScreen({
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white">
       <div className="px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-20 sm:pb-16 max-w-7xl mx-auto w-full">
+        <input
+          ref={diffFileInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={handleDiffFileSelected}
+          className="hidden"
+        />
         <TopBar
           accountId={scanResults?.account_id || ""}
           regionsCount={regionsScanned.length}
           scannedAt={scanResults?.scanned_at || ""}
+          importedFileName={importedFileName}
           isDemoMode={isDemoMode}
           onExitDemo={onExitDemo}
-          onRescan={onRescan}
-          onDisconnect={onDisconnect}
-          isLoading={isLoading}
+          onTriggerImportNewer={() => diffFileInputRef.current?.click()}
+          onReturnHome={onReturnHome}
           onOpenTrust={() => setTrustModalOpen(true)}
         />
 
         <main className="mt-6 sm:mt-9">
+          {diffImportError && (
+            <div className="mb-5 flex items-start justify-between gap-3 border border-red-800/40 rounded-xl px-3.5 py-2.5 text-xs text-red-300 bg-red-950/30">
+              <span>⚠ {diffImportError}</span>
+              <button
+                type="button"
+                onClick={() => setDiffImportError("")}
+                className="text-red-300 hover:text-white bg-transparent border-none p-0 cursor-pointer shrink-0"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
           {/* Unmistakable Demonstration Mode Banner */}
           {isDemoMode && (
             <div className="mb-6 rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
@@ -344,8 +307,8 @@ export default function DashboardScreen({
                   Demonstration Account — Sample AWS Assessment Data Only
                 </p>
                 <p className="text-indigo-200/80 text-[11px] leading-relaxed">
-                  You are viewing static fixture data covering CRITICAL, WARNING, UNUSED, INFO, HEALTHY, and INCOMPLETE
-                  states across all 10 supported services. Demo data is never stored or mixed with real AWS scans.
+                  You are viewing static synthetic data covering CRITICAL, WARNING, UNUSED, INFO, HEALTHY, and INCOMPLETE
+                  states across all 10 supported services. Demo data never mixes with real imported reports.
                 </p>
               </div>
               <button
@@ -353,81 +316,13 @@ export default function DashboardScreen({
                 onClick={onExitDemo}
                 className="self-start sm:self-auto shrink-0 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold cursor-pointer transition-colors"
               >
-                Connect Your AWS Account →
+                Import Your Local Report →
               </button>
             </div>
           )}
-          {/* Active Scan Progress */}
-          {isLoading && (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5 sm:p-8 flex flex-col items-center text-center gap-5">
-              <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
-                <svg className="animate-spin w-6 h-6 text-teal-400 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-                </svg>
-                <p className="text-sm sm:text-base font-semibold text-slate-100">
-                  {SCAN_STAGE_LABELS[progressStage] || "Running parallel multi-region read-only AWS scan…"}
-                </p>
-              </div>
 
-              <div className="w-full max-w-md space-y-2.5">
-                <div
-                  role="progressbar"
-                  aria-label="AWS account scan progress"
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={progressPct}
-                  className="w-full h-2 rounded-full bg-slate-800 overflow-hidden"
-                >
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-teal-500 to-emerald-400 transition-[width] duration-300 ease-out"
-                    style={{ width: `${progressPct}%` }}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] sm:text-xs font-mono text-slate-400 tabular-nums">
-                  <span className="text-left">
-                    {progressRegionsTotal > 0
-                      ? `${progressRegionsDone} / ${progressRegionsTotal} regions · ${progressResourcesFound} resources`
-                      : "Parallel multi-region scan across all enabled AWS regions…"}
-                  </span>
-                  <span className="text-teal-400 shrink-0">{(elapsedMs / 1000).toFixed(1)}s</span>
-                </div>
-              </div>
-
-              <p className="text-[11px] sm:text-xs text-slate-500 leading-relaxed">
-                EC2 · VPC · S3 · IAM · Lambda · RDS · DynamoDB · EBS · CloudWatch · CloudTrail
-              </p>
-            </div>
-          )}
-
-          {/* Scan Failed State */}
-          {!isLoading && scanError && (
-            <div className="rounded-2xl border border-red-800/50 bg-red-950/20 p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1 min-w-0">
-                <p className="text-sm font-semibold text-red-300">Unable to complete account scan</p>
-                <p className="text-xs text-red-200/80 leading-relaxed break-words">{scanError}</p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={onDisconnect}
-                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs rounded-lg border border-slate-700 text-slate-300 hover:text-white cursor-pointer bg-transparent text-center"
-                >
-                  Back to Connection Setup
-                </button>
-                <button
-                  type="button"
-                  onClick={onRescan}
-                  className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 text-xs rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold cursor-pointer text-center"
-                >
-                  Retry Scan
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Connected Account Dashboard */}
-          {!isLoading && !scanError && scanResults && (
+          {/* Loaded Report Dashboard */}
+          {scanResults && (
             <div className="flex flex-col space-y-8 sm:space-y-11">
               {/* SEPARATE INVENTORY COVERAGE STATUS BANNER */}
               <div
@@ -446,6 +341,8 @@ export default function DashboardScreen({
                   <span className="font-semibold text-slate-100">
                     {isIncompleteScan
                       ? `Incomplete Scan Coverage (${coverageFailures.length} failure${coverageFailures.length === 1 ? "" : "s"} reported)`
+                      : skippedOptionalServices.length > 0
+                      ? `Complete Coverage (${10 - skippedOptionalServices.length} of 10 Services · Optional ${skippedOptionalServices.join(", ")} Skipped)`
                       : "Complete Scan Coverage"}
                   </span>
                   <span className="text-slate-600">·</span>
@@ -871,14 +768,16 @@ export default function DashboardScreen({
                       {allResources.length} actual resources discovered across {regionsScanned.length} enabled region{regionsScanned.length === 1 ? "" : "s"}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleExportCSV}
-                    disabled={allResources.length === 0}
-                    className="self-start sm:self-auto text-xs px-3 py-2 sm:py-1.5 rounded-lg border border-slate-800 hover:border-slate-600 text-slate-300 hover:text-white cursor-pointer bg-slate-900/60 transition-colors disabled:opacity-40 shrink-0"
-                  >
-                    Export CSV
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setExportModalOpen(true)}
+                      disabled={allResources.length === 0}
+                      className="text-xs px-3 py-2 sm:py-1.5 rounded-lg border border-teal-500/35 hover:border-teal-400 text-teal-300 hover:text-teal-200 cursor-pointer bg-teal-500/10 transition-colors disabled:opacity-40 shrink-0 font-medium"
+                    >
+                      Export / Share Report
+                    </button>
+                  </div>
                 </div>
 
                 <ResourceTable
@@ -905,7 +804,92 @@ export default function DashboardScreen({
         onClose={() => setScoreModalOpen(false)}
         scoreData={scoreData}
         coverageFailuresCount={coverageFailures.length}
+        skippedOptionalServices={skippedOptionalServices}
       />
+
+      {exportModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-2.5 sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="export-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setExportModalOpen(false);
+          }}
+        >
+          <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+            <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3">
+              <div>
+                <h3 id="export-modal-title" className="text-sm sm:text-base font-bold text-white">
+                  Export Assessment Locally
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Downloads directly to your computer—nothing is uploaded or shared automatically.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExportModalOpen(false)}
+                aria-label="Close export dialog"
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer bg-transparent border-none"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="p-4 sm:p-5 space-y-4 text-xs">
+              <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed">
+                <strong>Privacy Warning:</strong> Full AWS Clarity reports contain sensitive infrastructure details
+                including <strong>AWS Account IDs</strong>, <strong>Resource ARNs</strong>, <strong>Resource Names</strong>,{" "}
+                <strong>Network Configuration</strong>, <strong>Public IP addresses</strong>, and <strong>IAM metadata</strong>.
+                Use a <strong>Sanitized Export</strong> before sharing externally or in issue trackers.
+              </div>
+
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={handleDownloadSanitizedJSON}
+                  className="w-full text-left p-3 rounded-xl border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 transition-colors cursor-pointer space-y-0.5"
+                >
+                  <p className="font-semibold text-teal-200">Download Sanitized JSON (Recommended for Sharing)</p>
+                  <p className="text-[11px] text-teal-200/75">
+                    Redacts Account IDs, ARNs, resource names, IP addresses, and raw IAM/network payloads while keeping rule IDs, severities, and coverage.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportCSV(true)}
+                  className="w-full text-left p-3 rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800/80 transition-colors cursor-pointer space-y-0.5"
+                >
+                  <p className="font-semibold text-slate-200">Download Sanitized CSV</p>
+                  <p className="text-[11px] text-slate-400">
+                    Spreadsheet inventory with anonymized resource names/IDs and redacted evidence.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadFullJSON}
+                  className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
+                >
+                  <p className="font-semibold text-slate-200">Download Full JSON Report (Sensitive — Keep Private)</p>
+                  <p className="text-[11px] text-slate-400">
+                    Complete unredacted local report suitable for private archival or future local Scan Diff.
+                  </p>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleExportCSV(false)}
+                  className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
+                >
+                  <p className="font-semibold text-slate-200">Download Full CSV Inventory (Sensitive)</p>
+                  <p className="text-[11px] text-slate-400">
+                    Complete unredacted spreadsheet of resources, findings, evidence, and remediation steps.
+                  </p>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ChecksCatalogModal
         isOpen={catalogModalOpen}

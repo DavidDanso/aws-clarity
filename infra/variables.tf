@@ -23,11 +23,11 @@ variable "log_retention_days" {
   default = 14
 }
 
-# Usage & cost safeguards (free built-in AWS controls)
+# Usage & cost safeguards (legacy hosted scanning is disabled by default in local-first v1)
 variable "scans_enabled" {
   type        = bool
-  description = "Emergency kill-switch: set to false to stop accepting new scans without destroying the app."
-  default     = true
+  description = "Legacy hosted scan toggle: defaults to false in local-first public release so no anonymous public role assumption occurs."
+  default     = false
 }
 
 variable "scan_cooldown_seconds" {

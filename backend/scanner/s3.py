@@ -27,20 +27,6 @@ def _inspect_bucket(session, s3, bucket, selected_regions):
     if selected_regions is not None and bucket_region != "global" and bucket_region not in selected_regions:
         return None
 
-    # Use regional S3 client when bucket region is known to avoid PermanentRedirect errors
-    regional_s3 = (
-        session.client("s3", region_name=bucket_region)
-        if bucket_region != "global"
-        else s3
-    )
-
-    versioning_status = None
-    try:
-        ver_resp = regional_s3.get_bucket_versioning(Bucket=bucket_name)
-        versioning_status = ver_resp.get("Status", "Disabled")
-    except ClientError:
-        versioning_status = None
-
     item = {
         "id": bucket_name,
         "name": bucket_name,
@@ -54,7 +40,6 @@ def _inspect_bucket(session, s3, bucket, selected_regions):
             "name": bucket_name,
             "creation_date": creation_date,
             "location": raw_location,
-            "versioning": versioning_status,
         },
     }
     if assessment_errors:

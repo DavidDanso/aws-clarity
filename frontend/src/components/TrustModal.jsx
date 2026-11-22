@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
-import { IAM_POLICY_JSON, PERMISSION_PREVIEW_GROUPS } from "../utils/constants";
+import {
+  IAM_POLICY_DEFAULT_JSON,
+  IAM_POLICY_JSON,
+  PERMISSION_PREVIEW_GROUPS,
+} from "../utils/constants";
+import { downloadLocalFile } from "../utils/reportSanitizer";
 
 export default function TrustModal({ isOpen, onClose, dataControls = null }) {
+  const [policyVariant, setPolicyVariant] = useState("default");
   const [showPolicyJson, setShowPolicyJson] = useState(false);
   const [copiedPolicy, setCopiedPolicy] = useState(false);
   const [dataNotice, setDataNotice] = useState("");
@@ -17,9 +23,12 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
 
   if (!isOpen) return null;
 
+  const activePolicyJson =
+    policyVariant === "with-s3" ? IAM_POLICY_JSON : IAM_POLICY_DEFAULT_JSON;
+
   const handleCopyPolicy = async () => {
     try {
-      await navigator.clipboard.writeText(IAM_POLICY_JSON);
+      await navigator.clipboard.writeText(activePolicyJson);
       setCopiedPolicy(true);
       setTimeout(() => setCopiedPolicy(false), 1800);
     } catch {
@@ -31,7 +40,7 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
     if (typeof fn === "function") {
       fn();
       setDataNotice(message);
-      setTimeout(() => setDataNotice(""), 3000);
+      setTimeout(() => setDataNotice(""), 3500);
     }
   };
 
@@ -61,10 +70,10 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
             </div>
             <div className="min-w-0">
               <h3 id="trust-modal-title" className="text-sm sm:text-base font-bold text-white">
-                Trust &amp; Privacy Centre
+                Trust &amp; Privacy Centre (Local-First Architecture)
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                Plain-language explanation of permissions, data flow, retention, and how to disconnect.
+                Plain-language explanation of permissions, network behaviour, security boundaries, and local data controls.
               </p>
             </div>
           </div>
@@ -80,17 +89,34 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
 
         {/* Scrollable Body */}
         <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-6 text-xs leading-relaxed">
-          {/* 1. What AWS Clarity Can Access */}
+          {/* 1. Privacy-First Local Architecture */}
+          <section className="space-y-2">
+            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
+              1. Privacy-First Local Architecture
+            </h4>
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-slate-300 text-[11px]">
+              <p>
+                AWS Clarity does <strong>not</strong> run a central scanning backend, does <strong>not</strong> assume
+                cross-account roles into your AWS account, and does <strong>not</strong> store customer inventories in a
+                central database.
+              </p>
+              <ol className="list-decimal pl-4 space-y-1 text-slate-400">
+                <li>You run the open-source <code className="text-teal-300">aws-clarity</code> Python CLI locally using your existing AWS CLI / IAM Identity Center profile.</li>
+                <li>The CLI communicates directly with official AWS service endpoints via <code className="text-slate-300">boto3</code> and writes <code className="text-teal-300">aws-clarity-report.json</code> locally (permissions <code className="text-slate-300">0600</code>).</li>
+                <li>You import that JSON file into this static website, where the browser parses and renders it strictly in-memory.</li>
+                <li>Production builds enforce Content-Security-Policy <code className="text-teal-300">connect-src &apos;none&apos;</code> so the dashboard cannot upload reports or contact external analytics/APIs.</li>
+              </ol>
+            </div>
+          </section>
+
+          {/* 2. Customer AWS Permissions & Cost Transparency */}
           <section className="space-y-2.5">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              1. What AWS Clarity Can Access
+              2. Read-Only Permissions &amp; Customer-Side API Costs
             </h4>
             <p className="text-slate-300">
-              AWS Clarity connects using a read-only IAM role that <strong>you create</strong> in your own AWS account,
-              protected by a unique <code className="text-teal-300">sts:ExternalId</code>. When you run a verification or scan,
-              AWS Clarity requests temporary <strong>1-hour AWS STS credentials</strong>—it never asks for AWS access keys,
-              secret keys, or root credentials, and it has <strong>zero permissions</strong> to create, modify, stop, or delete
-              any AWS resource.
+              Attach the read-only policy below to your own IAM Identity Center permission set or existing read-only IAM
+              role. You never create a trust relationship to an AWS Clarity AWS account.
             </p>
 
             <div className="rounded-xl bg-slate-950 border border-slate-800 divide-y divide-slate-800/70">
@@ -102,136 +128,125 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
                       {grp.actions.length} read-only action{grp.actions.length === 1 ? "" : "s"}
                     </span>
                   </div>
+                  <p className="text-[10px] text-teal-300/90">{grp.costNote}</p>
                   <p className="text-slate-400 text-[11px]">{grp.summary}</p>
                 </div>
               ))}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setShowPolicyJson((prev) => !prev)}
-                className="text-xs font-medium text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
-              >
-                {showPolicyJson ? "Hide exact 35-action IAM policy JSON ▲" : "Inspect exact 35-action IAM policy JSON ▼"}
-              </button>
-              <button
-                type="button"
-                onClick={handleCopyPolicy}
-                className="text-xs font-medium text-slate-300 hover:text-white px-2.5 py-1 rounded border border-slate-700 bg-slate-800/60 cursor-pointer"
-              >
-                {copiedPolicy ? "Copied Policy JSON ✓" : "Copy Policy JSON"}
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setPolicyVariant("default")}
+                  className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
+                    policyVariant === "default"
+                      ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
+                      : "bg-slate-950 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  28 Actions (Default)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPolicyVariant("with-s3")}
+                  className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
+                    policyVariant === "with-s3"
+                      ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
+                      : "bg-slate-950 border-slate-800 text-slate-400"
+                  }`}
+                >
+                  34 Actions (With Optional S3)
+                </button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPolicyJson((prev) => !prev)}
+                  className="text-xs font-medium text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
+                >
+                  {showPolicyJson ? "Hide Policy JSON ▲" : "Inspect Policy JSON ▼"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyPolicy}
+                  className="text-xs font-medium text-slate-300 hover:text-white px-2.5 py-1 rounded border border-slate-700 bg-slate-800/60 cursor-pointer"
+                >
+                  {copiedPolicy ? "Copied ✓" : "Copy"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadLocalFile(
+                      policyVariant === "with-s3"
+                        ? "aws-clarity-readonly-policy-with-s3.json"
+                        : "aws-clarity-readonly-policy-default.json",
+                      `${activePolicyJson}\n`,
+                      "application/json;charset=utf-8;"
+                    )
+                  }
+                  className="text-xs font-medium text-teal-300 hover:text-teal-200 px-2.5 py-1 rounded border border-teal-500/30 bg-teal-500/10 cursor-pointer"
+                >
+                  Download
+                </button>
+              </div>
             </div>
 
             {showPolicyJson && (
               <pre className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-52 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
-                {IAM_POLICY_JSON}
+                {activePolicyJson}
               </pre>
             )}
           </section>
 
-          {/* 2. What AWS Clarity Collects (and Never Reads) */}
-          <section className="space-y-2.5">
+          {/* 3. What Never Gets Read or Sent */}
+          <section className="space-y-2">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              2. What AWS Clarity Collects — and What It Never Reads
+              3. Network Behaviour &amp; Data Never Accessed
             </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
               <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-                <p className="font-semibold text-slate-200">Configuration Metadata Collected (10 Services)</p>
-                <p className="text-slate-400 text-[11px]">
-                  Resource identifiers, regions, states, tags, firewall ingress rules, VPC/NAT/IGW relationships, S3 public
-                  access/encryption/versioning settings, IAM role/user policies &amp; MFA/key dates, Lambda runtime/modified dates,
-                  RDS/DynamoDB/EBS configuration flags, CloudWatch alarm states/log retention, and CloudTrail status.
+                <p className="font-semibold text-slate-200">Scanner Network Endpoints</p>
+                <p className="text-slate-400">
+                  The local Python CLI contacts <strong>only</strong> official AWS service endpoints for the enabled
+                  regions you scan (`sts`, `ec2`, `iam`, `lambda`, `rds`, `dynamodb`, `monitoring`, `logs`, `cloudtrail`,
+                  and `s3` only if opted in). Zero telemetry, zero crash-reporting servers, zero AWS Clarity API calls.
                 </p>
               </div>
               <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-1.5">
-                <p className="font-semibold text-emerald-300">Never Accessed or Read</p>
-                <ul className="list-disc pl-4 space-y-0.5 text-slate-400 text-[11px]">
-                  <li>S3 object listings or contents (no <code className="text-slate-300">s3:ListBucket</code> or <code className="text-slate-300">s3:GetObject</code>)</li>
-                  <li>RDS database rows or queries</li>
-                  <li>DynamoDB table items or records</li>
-                  <li>Lambda function source code</li>
-                  <li>CloudWatch log events</li>
-                  <li>Application secrets, IAM passwords, or secret keys</li>
+                <p className="font-semibold text-emerald-300">Never Accessed or Logged</p>
+                <ul className="list-disc pl-4 space-y-0.5 text-slate-400">
+                  <li>S3 object listings or contents (no <code className="text-slate-300">s3:ListBucket</code> / <code className="text-slate-300">s3:GetObject</code>)</li>
+                  <li>RDS rows, DynamoDB items, Lambda source code, or CloudWatch log events</li>
+                  <li>AWS access keys, secret keys, session tokens, or IAM passwords</li>
                 </ul>
               </div>
             </div>
           </section>
 
-          {/* 3. Where Your Information Goes */}
+          {/* 4. Honest Security Boundaries */}
           <section className="space-y-2">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              3. Where Customer Information Goes
+              4. Honest Security Boundaries &amp; Verification
             </h4>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-slate-300 text-[11px]">
-              <p className="text-slate-400">
-                Hosted scans are <strong>not</strong> processed solely inside your browser. Resource metadata is processed
-                through AWS Clarity&apos;s AWS Lambda backend as follows:
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2 text-[11px] text-slate-300">
+              <p>
+                No software can promise zero breach risk. Local-first substantially reduces blast radius by removing
+                central credential access and central customer databases, <strong>however</strong>:
               </p>
-              <ol className="list-decimal pl-4 space-y-1">
-                <li>You enter your IAM Role ARN and stable External ID in the browser.</li>
-                <li>AWS Clarity&apos;s Lambda backend calls <code className="text-teal-300">sts:AssumeRole</code> against your role.</li>
-                <li>AWS STS issues temporary 1-hour read-only credentials held only in Lambda memory.</li>
-                <li>Collectors read supported configuration metadata across your enabled AWS regions.</li>
-                <li>The deterministic rule engine evaluates findings, evidence, and coverage status.</li>
-                <li>The assessment is returned over HTTPS to your browser dashboard.</li>
-              </ol>
+              <ul className="list-disc pl-4 space-y-1 text-slate-400">
+                <li>Read-only access prevents resource modification, but does not prevent metadata disclosure if your workstation or local report file is compromised.</li>
+                <li>Software supply-chain attacks or malicious updates remain possible—always inspect releases and verify SHA-256 checksums in <code className="text-slate-300">SHA256SUMS.txt</code> against public source code.</li>
+                <li>AWS Clarity is an independent open-source project and has not undergone third-party SOC 2 / penetration-test certification.</li>
+              </ul>
             </div>
           </section>
 
-          {/* 4. Data Retention & Logs */}
-          <section className="space-y-2">
+          {/* 5. Local Data Controls */}
+          <section className="space-y-2.5">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              4. Data Retention &amp; Application Logs
+              5. Local Data Controls
             </h4>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2 text-slate-300 text-[11px]">
-              <p>
-                <strong className="text-slate-100">Synchronous scans (default):</strong> Results are returned directly in the
-                HTTPS response and are <strong>not</strong> written to DynamoDB. Only a short-lived rate-limit hash (SHA-256 of
-                the Role ARN—never the raw ARN) and active-scan guard counter are touched to prevent abuse.
-              </p>
-              <p>
-                <strong className="text-slate-100">Asynchronous scans (fallback for large accounts):</strong> Gzipped scan
-                results are stored temporarily in DynamoDB behind a 256-bit <code className="text-teal-300">X-Scan-Token</code>{" "}
-                (SHA-256 verified) with a <strong>1-hour TTL</strong>. Note: DynamoDB TTL deletion is asynchronous and AWS may
-                remove expired items slightly after the exact 1-hour mark. Role ARNs and External IDs are never stored in DynamoDB.
-              </p>
-              <p>
-                <strong className="text-slate-100">Your browser:</strong> Real scan results and previous scan diffs are kept in{" "}
-                <code className="text-slate-200">sessionStorage</code> (cleared when the tab closes or when you click Clear below).
-                Your stable External ID and last Role ARN (never credentials) are remembered in{" "}
-                <code className="text-slate-200">localStorage</code> for convenience until you forget them.
-              </p>
-              <p>
-                <strong className="text-slate-100">Backend logs:</strong> AWS Lambda writes standard execution metadata
-                (request ID, duration, memory) to CloudWatch Logs with a <strong>14-day retention</strong>. Role ARNs, External IDs,
-                STS credentials, and customer scan inventories are not logged.
-              </p>
-              <p>
-                <strong className="text-slate-100">Public endpoint security model:</strong> AWS Clarity does not require user
-                registration. On async scans, <code className="text-teal-300">X-Scan-Token</code> isolates scan result retrieval
-                between users. Separately, because <code className="text-slate-200">POST /scan</code> is public, anyone who knows
-                <strong> both</strong> your IAM Role ARN and your exact <code className="text-teal-300">sts:ExternalId</code>{" "}
-                could trigger a read-only scan against that role. Always use the unique random External ID generated in Step 2
-                (avoid predictable values such as <code className="text-slate-300">aws-clarity-scan</code>) and delete your role
-                in AWS IAM whenever you are finished evaluating.
-              </p>
-            </div>
-          </section>
-
-          {/* 5. Data Controls & How to Disconnect */}
-          <section className="space-y-3">
-            <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              5. Data Controls &amp; How to Disconnect
-            </h4>
-
-            {/* Unmistakable warning banner */}
-            <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed">
-              <strong>Important:</strong> Clearing data in this browser only removes information stored on your device. It does{" "}
-              <strong>not</strong> revoke AWS Clarity&apos;s permission to assume your IAM role in AWS. To revoke AWS access,
-              complete <strong>Action C</strong> in your AWS account below.
-            </div>
 
             {dataNotice && (
               <div className="px-3 py-2 rounded-lg bg-emerald-950/40 border border-emerald-500/30 text-emerald-300 text-[11px]">
@@ -239,129 +254,65 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
               </div>
             )}
 
-            {/* Action A: Clear Local Scan Data */}
             <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-[11px]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold text-slate-100">A. Clear Local Scan Data (This Browser Only)</p>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                  Does NOT revoke AWS access
-                </span>
-              </div>
               <p className="text-slate-400">
-                Deletes the current scan inventory, findings, and previous scan diff history stored in this browser tab&apos;s{" "}
-                <code className="text-slate-300">sessionStorage</code>. Your saved Role ARN and External ID stay remembered, and
-                your AWS IAM role is untouched.
+                Imported reports stay strictly in browser memory and disappear automatically when you close this tab. You
+                can also clear active in-memory reports or any residual browser storage below:
               </p>
               {dataControls && (
-                <div className="flex flex-wrap gap-2 pt-0.5">
+                <div className="flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() =>
                       runDataAction(
-                        dataControls.onClearCurrentResults,
-                        "Cleared local scan results and comparison history from this browser tab. Your AWS IAM role was not changed."
+                        dataControls.onClearCurrentReport,
+                        "Cleared the active in-memory assessment report."
                       )
                     }
                     className="px-3 py-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-200 cursor-pointer"
                   >
-                    Clear Local Scan Data
+                    Clear Current Assessment
                   </button>
                   <button
                     type="button"
                     onClick={() =>
                       runDataAction(
-                        dataControls.onClearScanHistory,
-                        "Cleared previous scan diff history from this browser tab."
+                        dataControls.onClearDiffHistory,
+                        "Cleared in-memory scan comparison history."
                       )
                     }
                     className="px-3 py-1.5 text-[11px] font-medium rounded-lg border border-slate-800 bg-slate-900/60 hover:bg-slate-800 text-slate-300 cursor-pointer"
                   >
-                    Clear Diff History Only
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* Action B: Forget Saved Connection Details */}
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5 text-[11px]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold text-slate-100">B. Forget Saved Connection Details (This Browser Only)</p>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-400">
-                  Does NOT revoke AWS access
-                </span>
-              </div>
-              <p className="text-slate-400">
-                Removes your remembered IAM Role ARN and saved External ID from this browser&apos;s{" "}
-                <code className="text-slate-300">localStorage</code>.{" "}
-                <strong className="text-slate-200">Recovery note:</strong> if you keep your IAM role in AWS, AWS Clarity will
-                prepare a new External ID after forgetting. To reconnect to an existing role without recreating it, copy its{" "}
-                <code className="text-slate-300">sts:ExternalId</code> from{" "}
-                <strong>AWS IAM → Roles → [Your Role] → Trust relationships</strong> and paste it into Step 2.
-              </p>
-              {dataControls && (
-                <div className="flex flex-wrap gap-2 pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      runDataAction(
-                        dataControls.onForgetConnectionDetails,
-                        "Forgot saved Role ARN and External ID from this browser. Your AWS IAM role is still active until removed in AWS."
-                      )
-                    }
-                    className="px-3 py-1.5 text-[11px] font-medium rounded-lg border border-slate-700 bg-slate-900 hover:bg-slate-800 text-slate-200 cursor-pointer"
-                  >
-                    Forget Saved Connection Details
+                    Clear Diff History
                   </button>
                   <button
                     type="button"
                     onClick={() =>
                       runDataAction(
                         dataControls.onClearAllLocalData,
-                        "Cleared all local scan data and saved connection details from this browser. Your AWS IAM role was NOT modified."
+                        "Cleared all in-memory report data and any residual browser storage."
                       )
                     }
                     className="px-3 py-1.5 text-[11px] font-medium rounded-lg border border-red-800/60 bg-red-950/30 hover:bg-red-950/50 text-red-300 cursor-pointer"
                   >
-                    Clear All Local Browser Data (A + B)
+                    Clear All Local Browser Data
                   </button>
                 </div>
               )}
-            </div>
-
-            {/* Action C: Revoke AWS Clarity Access */}
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-teal-500/30 space-y-2 text-[11px] text-slate-300">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold text-teal-300">C. Revoke AWS Clarity Access (Required in Your AWS Account)</p>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-teal-950/60 border border-teal-500/30 text-teal-300">
-                  Revokes AWS access immediately
-                </span>
-              </div>
-              <p className="text-slate-400">
-                This is the <strong>only</strong> action that stops AWS Clarity from assuming your IAM role:
+              <p className="text-[11px] text-slate-500">
+                To remove report files from disk, delete your local <code className="text-slate-400">aws-clarity-report.json</code>{" "}
+                file. To remove IAM permissions in AWS, detach the read-only policy from your IAM role or permission set.
               </p>
-              <ol className="list-decimal pl-4 space-y-1 text-slate-300">
-                <li>
-                  <strong>If you used the CloudFormation template:</strong> Open{" "}
-                  <strong>AWS CloudFormation → Stacks</strong>, select the{" "}
-                  <code className="text-teal-300">aws-clarity-readonly-role</code> stack, and click <strong>Delete</strong>.
-                </li>
-                <li>
-                  <strong>If you created the role manually:</strong> Open <strong>AWS IAM → Roles</strong>, select your role
-                  (e.g., <code className="text-teal-300">AWSClarityReadOnly</code>), and either <strong>Delete</strong> the
-                  role or remove AWS Clarity&apos;s Account ID from its <strong>Trust relationships</strong> tab.
-                </li>
-                <li>AWS immediately rejects all future <code className="text-slate-200">sts:AssumeRole</code> calls.</li>
-              </ol>
             </div>
           </section>
 
           {/* 6. Security Contact */}
           <section className="space-y-1.5">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              6. Security Contact
+              6. Security Vulnerability Reporting
             </h4>
             <p className="text-[11px] text-slate-400">
-              Found a security vulnerability or privacy concern? Please report it privately via{" "}
+              Report security vulnerabilities privately via{" "}
               <a
                 href="https://github.com/DavidDanso/aws-clarity/security/advisories/new"
                 target="_blank"
@@ -370,16 +321,7 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
               >
                 GitHub Security Advisories
               </a>{" "}
-              or open a public issue on the{" "}
-              <a
-                href="https://github.com/DavidDanso/aws-clarity/issues"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
-              >
-                AWS Clarity GitHub repository
-              </a>
-              .
+              (see <code className="text-slate-300">SECURITY.md</code> in the repository).
             </p>
           </section>
         </div>
@@ -387,7 +329,7 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
           <span className="text-[11px] text-slate-500">
-            Strictly read-only · Temporary 1h STS sessions · No customer data contents read
+            Local-only execution · Zero report uploads · Strictly read-only
           </span>
           <button
             type="button"
