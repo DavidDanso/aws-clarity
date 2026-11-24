@@ -1,23 +1,21 @@
 #!/bin/bash
-set -e
-echo "🔨 Rebuilding lean Lambda package (uses AWS Lambda built-in boto3/botocore)..."
-rm -rf backend/lambda_package infra/lambda.zip
-mkdir -p backend/lambda_package
-cp backend/lambda_handler.py backend/lambda_package/
-cp backend/utils.py backend/lambda_package/
-cp backend/exceptions.py backend/lambda_package/
-cp -r backend/scanner/ backend/lambda_package/scanner/
-(cd backend/lambda_package && zip -r ../../infra/lambda.zip . -x "*.pyc" -x "*/__pycache__/*" >/dev/null)
-echo "✅ Lambda package built cleanly ($(du -h infra/lambda.zip | awk '{print $1}'))"
+set -euo pipefail
 
-echo "🚀 Running terraform apply..."
+echo "🚀 Applying static frontend Terraform configuration (S3 + CloudFront only)..."
 terraform -chdir=infra apply -auto-approve
 
-echo "🔄 Syncing frontend/.env from Terraform outputs..."
-API_URL=$(terraform -chdir=infra output -raw api_gateway_url)
-APP_ACCOUNT_ID=$(terraform -chdir=infra output -raw app_account_id)
-cat > frontend/.env <<EOF
-VITE_API_URL=${API_URL}
-VITE_APP_ACCOUNT_ID=${APP_ACCOUNT_ID}
-EOF
-echo "✅ Synced frontend/.env -> ${API_URL}"
+S3_BUCKET=$(terraform -chdir=infra output -raw s3_bucket_name)
+CF_URL=$(terraform -chdir=infra output -raw cloudfront_url)
+CF_DIST_ID=$(terraform -chdir=infra output -raw cloudfront_distribution_id)
+
+echo "🏗️ Building & verifying local-first static frontend..."
+npm --prefix frontend run build
+npm --prefix frontend run verify
+
+echo "☁️ Syncing frontend/dist/ to s3://${S3_BUCKET}..."
+aws s3 sync frontend/dist/ "s3://${S3_BUCKET}" --delete
+
+echo "🔄 Invalidating CloudFront cache (${CF_DIST_ID})..."
+aws cloudfront create-invalidation --distribution-id "${CF_DIST_ID}" --paths "/*" >/dev/null
+
+echo "✅ Static frontend deployed cleanly -> ${CF_URL}"
