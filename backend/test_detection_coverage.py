@@ -545,6 +545,8 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
 
         evaluated = evaluate(mock_session, {
             "s3_buckets": [{"id": "clean-b", "name": "clean-b", "type": "s3_bucket", "service": "S3", "region": "us-east-1", "raw": {"name": "clean-b"}}],
+            "ec2_instances": [{"id": "i-stopped", "name": "dev-box", "type": "ec2_instance", "service": "EC2", "region": "us-east-1", "raw": {"state": "stopped", "http_tokens": "required", "ebs_volumes": ["vol-1"]}}],
+            "dynamodb_tables": [{"id": "empty-tbl", "name": "empty-tbl", "type": "dynamodb_table", "service": "DynamoDB", "region": "us-east-1", "raw": {"billing_mode": "PROVISIONED", "item_count": 0, "sse_description": {"Status": "ENABLED"}}}],
             "ebs_volumes": [],
             "snapshots": [{"id": "snap-1", "name": "backup", "type": "ebs_snapshot", "service": "EBS", "region": "us-east-1", "raw": {"volume_id": "vol-deleted", "volume_size": 50}}],
             "lambda_functions": [{"id": "fn-1", "name": "stable-fn", "type": "lambda_function", "service": "Lambda", "region": "us-east-1", "raw": {"last_modified": old_ts, "runtime": "python3.12"}}],
@@ -554,9 +556,10 @@ class TestAllRegionsAndIncompleteCoverage(unittest.TestCase):
 
         self.assertEqual(evaluated["s3_buckets"][0]["status"], "HEALTHY")
         self.assertEqual(evaluated["s3_buckets"][0]["issues"], [])
+        self.assertEqual(RULE_METADATA["S3-004"]["severity"], "INFO")
         self.assertNotIn("S3-001", RULE_METADATA)
 
-        for key in ("snapshots", "lambda_functions", "cloudwatch_alarms", "nat_gateways"):
+        for key in ("ec2_instances", "dynamodb_tables", "snapshots", "lambda_functions", "cloudwatch_alarms", "nat_gateways"):
             res = evaluated[key][0]
             self.assertEqual(res["status"], "HEALTHY", f"{key} with INFO-only observation must remain HEALTHY")
             self.assertTrue(any(i["severity"] == "INFO" for i in res["issues"]), f"{key} should retain INFO review note")

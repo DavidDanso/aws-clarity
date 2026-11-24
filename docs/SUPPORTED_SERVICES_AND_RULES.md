@@ -6,7 +6,7 @@ AWS Clarity v1 intentionally focuses on **10 core AWS services**, **17 resource 
 
 - **Categories:** `Security Risk`, `Operational Concern`, `Potential Cost Waste`.
 - **Resource Statuses:** `CRITICAL`, `WARNING`, `UNUSED`, `HEALTHY`, `INCOMPLETE` (no `NOT_ASSESSED` status).
-- **Informational Observations (`INFO`):** Non-penalizing (`0` score deduction) review notes for configurations that are often legitimate (`NAT-002`, `LAM-001`, `SNAP-001`, `CW-002`). Resources with only `INFO` notes remain `HEALTHY` if all mandatory checks passed.
+- **Informational Observations (`INFO`):** Non-penalizing (`0` score deduction) review notes for configurations that are often legitimate (`NAT-002`, `LAM-001`, `SNAP-001`, `CW-002`, `EC2-001`, `DDB-002`, and `S3-004` default encryption verification). Resources with only `INFO` notes remain `HEALTHY` if all mandatory checks passed.
 - **Coverage Statuses:** `COMPLETE`, `INCOMPLETE`, and `SKIPPED_OPTIONAL` (used when optional S3 checks are not enabled; skipped checks are never counted as healthy or passed).
 
 ## 10-Service Coverage Matrix

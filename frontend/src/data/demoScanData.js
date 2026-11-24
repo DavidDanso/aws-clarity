@@ -58,16 +58,16 @@ export function buildDemoScanData() {
         name: "staging-batch-worker",
         type: "ec2_instance",
         service: "EC2",
-        status: "UNUSED",
+        status: "HEALTHY",
         region: "eu-west-1",
         issues: [
           {
             rule_id: "EC2-001",
-            severity: "UNUSED",
+            severity: "INFO",
             category: "Potential Cost Waste",
-            title: "EC2 instance is stopped",
+            title: "Stopped EC2 instance (review attached EBS/EIP costs)",
             what_found: "EC2 instance is in 'stopped' state while retaining attached EBS storage.",
-            why: "Stopped instances do not incur EC2 compute charges, but attached EBS volumes continue generating monthly storage charges.",
+            why: "A stopped instance is NOT automatically wasteful (dev, staging, or scheduled instances are often paused on purpose). Stopped instances do not incur EC2 compute charges, though attached EBS volumes continue generating monthly storage charges.",
             what_checked: "Inspected EC2 DescribeInstances instance state.",
             evidence: { Instance: "i-0demo223344556677", InstanceType: "t3.large", State: "stopped", AttachedVolumes: "1" },
             fix: "Confirm whether this staging worker is paused intentionally. Before terminating, take an AMI/EBS snapshot backup if data is needed and verify Terraform/IaC state.",
@@ -77,7 +77,7 @@ export function buildDemoScanData() {
         assessment: {
           status: "COMPLETE",
           checks: [
-            { rule_id: "EC2-001", status: "VIOLATED" },
+            { rule_id: "EC2-001", status: "REVIEW" },
             { rule_id: "EC2-002", status: "PASSED" },
           ],
         },

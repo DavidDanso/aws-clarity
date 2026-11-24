@@ -171,12 +171,12 @@ RULE_METADATA = {
         "what_checked": "Evaluated Security Group ingress port ranges against database ports with unrestricted CIDR sources.",
     },
     "EC2-001": {
-        "name": "Stopped EC2 Instance",
+        "name": "Stopped EC2 Instance (Review Attached Storage Costs)",
         "service": "EC2",
         "resource_type": "ec2_instance",
-        "severity": "UNUSED",
+        "severity": "INFO",
         "category": "Potential Cost Waste",
-        "what_it_checks": "Checks whether an EC2 instance is stopped while retaining attached EBS storage and Elastic IPs that continue incurring charges.",
+        "what_it_checks": "Informational review noting whether an EC2 instance is stopped while retaining attached EBS storage or Elastic IPs (intentionally paused dev/scheduled instances are not marked unhealthy).",
         "what_found": "EC2 instance is in 'stopped' state while retaining attached storage and IPs.",
         "what_checked": "Inspected EC2 DescribeInstances instance state.",
     },
@@ -265,12 +265,12 @@ RULE_METADATA = {
         "what_checked": "Queried S3 GetBucketAcl API and inspected grantee URIs.",
     },
     "S3-004": {
-        "name": "Server-Side Encryption Configuration",
+        "name": "S3 Default Encryption Verification (SSE-S3 Active by Default)",
         "service": "S3",
         "resource_type": "s3_bucket",
-        "severity": "WARNING",
+        "severity": "INFO",
         "category": "Security Risk",
-        "what_it_checks": "Verifies S3 default server-side encryption configuration is readable and active (respecting AWS default SSE-S3).",
+        "what_it_checks": "Informational verification that S3 bucket encryption metadata is readable (AWS enforces SSE-S3 encryption by default on all buckets since Jan 2023; never raises false encryption warnings).",
         "what_found": "Inspected bucket encryption configuration; AWS S3 applies SSE-S3 by default.",
         "what_checked": "Queried S3 GetBucketEncryption and accounted for AWS default SSE-S3 encryption.",
     },
@@ -473,13 +473,13 @@ RULE_METADATA = {
         "what_checked": "Inspected DynamoDB DescribeTable SSEDescription (respecting AWS-owned default encryption).",
     },
     "DDB-002": {
-        "name": "Empty Provisioned DynamoDB Table",
+        "name": "Empty Provisioned DynamoDB Table (Review Capacity Mode)",
         "service": "DynamoDB",
         "resource_type": "dynamodb_table",
-        "severity": "UNUSED",
+        "severity": "INFO",
         "category": "Potential Cost Waste",
-        "what_it_checks": "Checks whether a PROVISIONED-capacity DynamoDB table holds 0 items and may incur unnecessary capacity charges.",
-        "what_found": "DynamoDB table uses PROVISIONED billing mode while containing 0 items.",
+        "what_it_checks": "Informational review noting whether a PROVISIONED-capacity DynamoDB table reports 0 items (AWS updates ItemCount roughly every 6 hours, and staging/free-tier tables may be intentionally provisioned).",
+        "what_found": "DynamoDB table uses PROVISIONED billing mode while reporting 0 items.",
         "what_checked": "Inspected DynamoDB DescribeTable BillingModeSummary and ItemCount.",
     },
 
@@ -1103,9 +1103,9 @@ def evaluate(
                 if ec2_state == "stopped":
                     issues.append(_issue(
                         rule_id="EC2-001",
-                        severity="UNUSED",
-                        title="EC2 instance is stopped",
-                        why="Stopped instances do not incur EC2 compute charges, but attached EBS volumes and any associated Elastic IPs continue generating monthly charges.",
+                        severity="INFO",
+                        title="Stopped EC2 instance (review attached EBS/EIP costs)",
+                        why="A stopped instance is NOT automatically wasteful (dev, staging, or scheduled instances are often paused on purpose). Stopped instances do not incur EC2 compute charges, though attached EBS volumes and Elastic IPs continue generating monthly charges.",
                         evidence={
                             "Instance": r["id"],
                             "InstanceType": str(raw.get("instance_type") or "unknown"),
@@ -1340,9 +1340,9 @@ def evaluate(
                 if raw.get("billing_mode") == "PROVISIONED" and raw.get("item_count") == 0:
                     issues.append(_issue(
                         rule_id="DDB-002",
-                        severity="UNUSED",
-                        title="Empty DynamoDB table using provisioned capacity",
-                        why="Provisioned capacity tables reserve RCU/WCU continuously even when holding 0 items (note: AWS updates ItemCount approximately every 6 hours, so recently populated tables should be verified first).",
+                        severity="INFO",
+                        title="Empty provisioned DynamoDB table (review capacity mode)",
+                        why="An empty provisioned table is NOT automatically wasteful—AWS updates ItemCount roughly every 6 hours, and up to 25 RCU/WCU falls under the Always-Free tier. Review whether On-Demand (PAY_PER_REQUEST) mode is a better fit if the table stays idle.",
                         evidence={
                             "Table": table_name,
                             "BillingMode": "PROVISIONED",
@@ -1611,7 +1611,7 @@ def evaluate(
                                         title="Cross-account trust missing ExternalId or Org condition",
                                         why="Allowing an external AWS account to assume this role without sts:ExternalId or aws:PrincipalOrgID exposes it to confused deputy attacks.",
                                         evidence={"Role": role_name, "TrustedPrincipal": p_arn, "MissingCondition": "sts:ExternalId / aws:PrincipalOrgID"},
-                                        fix="Add a StringEquals Condition requiring 'sts:ExternalId' (or 'aws:PrincipalOrgID' for AWS Organizations) to the role's trust policy.",
+                                        fix="Add a StringEquals Condition requiring 'sts:ExternalId' (for third-party accounts) or 'aws:PrincipalOrgID' (for accounts in your own AWS Organization) to the role's trust policy. If both accounts are strictly internal without AWS Organizations, review and document the trust intentionally.",
                                         verify="Re-scan in AWS Clarity after updating the trust policy to confirm IAM-008 passes.",
                                         resource=r,
                                     ))

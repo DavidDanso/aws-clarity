@@ -11,31 +11,61 @@ import { parseLocalAssessmentReport } from "../utils/reportImporter";
 import { downloadLocalFile } from "../utils/reportSanitizer";
 import TrustModal from "../components/TrustModal";
 
+const WHEEL_URL =
+  "https://github.com/DavidDanso/aws-clarity/releases/download/v1.0.0/aws_clarity-1.0.0-py3-none-any.whl";
+
+const INSTALL_TABS = [
+  {
+    id: "pipx",
+    label: "pipx (Easiest)",
+    hint: "Recommended — installs `aws-clarity` cleanly in one command without touching your system Python.",
+    installCmd: `pipx install ${WHEEL_URL}`,
+    verifyCmd: "aws-clarity version",
+    cliPrefix: "aws-clarity",
+  },
+  {
+    id: "unix",
+    label: "macOS / Linux",
+    hint: "Uses Python 3.10+ built-in virtual environment (no pipx needed).",
+    installCmd: `python3 -m venv ~/.aws-clarity && ~/.aws-clarity/bin/pip install ${WHEEL_URL}`,
+    verifyCmd: "~/.aws-clarity/bin/aws-clarity version",
+    cliPrefix: "~/.aws-clarity/bin/aws-clarity",
+  },
+  {
+    id: "windows",
+    label: "Windows (PowerShell)",
+    hint: "Uses Python 3.10+ built-in virtual environment in PowerShell.",
+    installCmd: `py -m venv "$HOME\\.aws-clarity"\n& "$HOME\\.aws-clarity\\Scripts\\pip.exe" install ${WHEEL_URL}`,
+    verifyCmd: `& "$HOME\\.aws-clarity\\Scripts\\aws-clarity.exe" version`,
+    cliPrefix: `& "$HOME\\.aws-clarity\\Scripts\\aws-clarity.exe"`,
+  },
+];
+
 const FAQ_ITEMS = [
   {
-    question: "Why does AWS Clarity run locally instead of scanning from a vendor server?",
+    question: "Is this safe to run on my real AWS account?",
     answer:
-      "Because you should not have to grant a third-party backend cross-account access to your AWS environment. Running the open-source CLI on your own computer keeps your AWS credentials and account inventory entirely under your control—and means a compromise of this static website cannot expose stored customer accounts.",
+      "Yes. AWS Clarity is strictly read-only—it only reads configuration metadata (like security group rules, MFA status, and unattached volumes) and never creates, edits, or deletes anything in AWS. It never reads S3 file contents, database rows, Lambda code, or secrets.",
   },
   {
-    question: "Does importing my JSON report upload it anywhere?",
+    question: "Will running a scan add charges to my AWS bill?",
     answer:
-      "No. Your report file is read and parsed locally in browser memory. The production static site enforces Content-Security-Policy `connect-src 'none'`, blocking outbound network requests from the dashboard, and includes zero analytics or tracking scripts.",
+      "By default, no. A normal scan checks 9 AWS services using free AWS control-plane read APIs. S3 is skipped by default because S3 charges small per-request fees outside your 12-month Free Tier—if you want S3 checked too, check the optional S3 box and confirm the prompt.",
   },
   {
-    question: "Will running the local scanner create AWS charges in my account?",
+    question: "Does this website upload, see, or save my AWS report?",
     answer:
-      "By default, `aws-clarity scan` checks 9 AWS services using free control-plane Describe/List/Get APIs and skips S3 because S3 bills LIST/GET API requests outside an account's 12-month S3 Free Tier. S3 checks require explicit opt-in (`--include-s3-checks`) with cost disclosure and confirmation.",
+      "Never. When you pick or drop your JSON file, your browser reads it in memory only. This static site enforces Content-Security-Policy connect-src 'none', which tells your browser to block outbound data requests completely. Close the tab and your report disappears from memory.",
   },
   {
-    question: "Does AWS Clarity work with IAM Identity Center (AWS SSO) and existing read-only roles?",
+    question: "What if I use AWS SSO, a read-only role, or have a large AWS account?",
     answer:
-      "Yes. The local CLI uses the standard AWS SDK credential chain (`--profile`), supporting `aws sso login`, AWS CLI named profiles, temporary STS credentials, and optional customer-owned `--role-arn` role assumption—without ever trusting an AWS Clarity account.",
+      "The scanner uses your normal AWS CLI setup: sign in with `aws sso login --profile your-profile` (or pass `--role-arn` for your own read-only role). Large accounts scan across all enabled regions with a 90-second default budget—if a region times out, Clarity honestly marks coverage Incomplete and lets you scan specific regions with `--regions us-east-1,eu-west-1`.",
   },
   {
-    question: "Can my team use AWS Clarity without signing up for an account?",
+    question: "How can I share findings with my team without leaking Account IDs or IPs?",
     answer:
-      "Yes. Each engineer runs the local CLI with their own authorized AWS profile and can export a full or sanitized (redacted) JSON/CSV report to share via your team's existing secure channels. There is no central database or account registration.",
+      "Once your report is open in the dashboard, click 'Export / Share Report' and choose Sanitized JSON or Sanitized CSV. Clarity strips AWS Account IDs, ARNs, resource names, and IP addresses so you can share findings safely in Slack, Jira, or GitHub.",
   },
 ];
 
@@ -49,14 +79,20 @@ export default function SetupScreen({
   dataControls = null,
 }) {
   const fileInputRef = useRef(null);
+  const tabRefs = useRef([]);
+
+  const [installTab, setInstallTab] = useState("pipx");
+  const [includeS3, setIncludeS3] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [copiedKey, setCopiedKey] = useState(null);
-  const [openFaq, setOpenFaq] = useState(null);
-  const [showMatrix, setShowMatrix] = useState(false);
-  const [showPermissionPreview, setShowPermissionPreview] = useState(false);
-  const [policyVariant, setPolicyVariant] = useState("default"); // "default" (28) | "with-s3" (34)
+  const [policyVariant, setPolicyVariant] = useState("default");
   const [showPolicyJson, setShowPolicyJson] = useState(false);
   const [trustModalOpen, setTrustModalOpen] = useState(false);
+
+  const activeInstall = INSTALL_TABS.find((t) => t.id === installTab) || INSTALL_TABS[0];
+  const s3Flag = includeS3 ? " --include-s3-checks" : "";
+  const scanCommand = `${activeInstall.cliPrefix} scan${s3Flag} --output aws-clarity-report.json`;
+  const doctorCommand = `${activeInstall.cliPrefix} doctor${s3Flag}`;
 
   const activePolicyJson =
     policyVariant === "with-s3" ? IAM_POLICY_JSON : IAM_POLICY_DEFAULT_JSON;
@@ -72,6 +108,20 @@ export default function SetupScreen({
       setTimeout(() => setCopiedKey(null), 1800);
     } catch {
       // Ignore clipboard failures
+    }
+  };
+
+  const handleTabKeyDown = (e, idx) => {
+    let nextIdx = null;
+    if (e.key === "ArrowRight") nextIdx = (idx + 1) % INSTALL_TABS.length;
+    else if (e.key === "ArrowLeft") nextIdx = (idx - 1 + INSTALL_TABS.length) % INSTALL_TABS.length;
+    else if (e.key === "Home") nextIdx = 0;
+    else if (e.key === "End") nextIdx = INSTALL_TABS.length - 1;
+
+    if (nextIdx !== null) {
+      e.preventDefault();
+      setInstallTab(INSTALL_TABS[nextIdx].id);
+      tabRefs.current[nextIdx]?.focus();
     }
   };
 
@@ -106,13 +156,13 @@ export default function SetupScreen({
   };
 
   return (
-    <div className="min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-start px-3.5 sm:px-6 lg:px-8 py-6 sm:py-10 lg:py-12 pb-20 sm:pb-16 text-slate-100">
-      <div className="w-full max-w-2xl lg:max-w-3xl flex flex-col space-y-6 sm:space-y-7">
-        {/* Top Navigation Strip */}
-        <div className="flex items-center justify-between gap-3">
-          <div className="inline-flex items-center gap-2 text-xs font-semibold text-slate-200">
-            <span className="w-6 h-6 rounded-md bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <div className="min-h-[100dvh] bg-slate-950 flex flex-col items-center justify-start px-4 sm:px-6 lg:px-8 py-5 sm:py-8 pb-20 text-slate-100">
+      <div className="w-full max-w-3xl flex flex-col space-y-8 sm:space-y-10">
+        {/* Compact Single-Row Top Bar */}
+        <header className="flex items-center justify-between gap-3">
+          <div className="inline-flex items-center gap-2 text-sm font-semibold text-white">
+            <span className="w-7 h-7 rounded-lg bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400">
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
               </svg>
             </span>
@@ -124,72 +174,70 @@ export default function SetupScreen({
           <button
             type="button"
             onClick={() => setTrustModalOpen(true)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/60 hover:border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
+            className="text-xs px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/70 hover:border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
           >
             <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-            <span>Trust &amp; Privacy Centre</span>
+            <span>Trust &amp; Privacy</span>
           </button>
-        </div>
+        </header>
 
-        {/* Hero */}
-        <header className="flex flex-col items-center text-center space-y-3.5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-[11px] sm:text-xs font-medium max-w-full">
-            <span className="truncate">Free · Local-Only Scanner · Zero Backend Data Collection</span>
-          </div>
-          <h1 className="text-xl sm:text-3xl lg:text-4xl font-bold text-white tracking-tight max-w-2xl leading-tight">
-            Your AWS Account. Your Credentials. Your Data. Your Control.
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-400 max-w-xl leading-relaxed">
-            Run the open-source, strictly read-only <code className="text-teal-300">aws-clarity</code> CLI locally using
-            your own AWS CLI or IAM Identity Center profile, then inspect the generated JSON report locally in this
-            browser. AWS Clarity minimizes what it collects, never stores customer inventories centrally, never modifies
-            AWS resources, and requires no payment.
+        {/* Hero: 5-Second Plain-English Understanding */}
+        <section className="text-center flex flex-col items-center space-y-4 pt-1 sm:pt-3">
+          <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-500/10 border border-teal-500/20 text-teal-300 text-xs font-medium">
+            Free · Runs on your computer · Zero uploads
           </p>
 
-          {/* Key Privacy Facts Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full pt-1 text-left">
-            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
-              <p className="text-[11px] font-semibold text-teal-300">No Central Credentials</p>
-              <p className="text-[11px] text-slate-400">Uses your local AWS CLI / SSO session. Never asks for AWS keys or cross-account vendor roles.</p>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
-              <p className="text-[11px] font-semibold text-teal-300">No Report Upload</p>
-              <p className="text-[11px] text-slate-400">Imported reports are parsed in browser memory only. Static site enforces <code className="text-slate-300">connect-src &apos;none&apos;</code>.</p>
-            </div>
-            <div className="p-3 rounded-xl bg-slate-900/60 border border-slate-800 space-y-0.5">
-              <p className="text-[11px] font-semibold text-teal-300">Free &amp; Cost-Conscious</p>
-              <p className="text-[11px] text-slate-400">$0 subscription. Default scan uses 9 free control-plane services; S3 checks require explicit opt-in.</p>
-            </div>
-          </div>
+          <h1 className="text-2xl sm:text-4xl font-bold text-white tracking-tight max-w-2xl leading-[1.15]">
+            See what&apos;s risky or wasting money in your AWS account.
+          </h1>
 
-          {/* Primary CTAs */}
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-2.5 pt-1 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-semibold transition-colors shadow-lg shadow-teal-500/10 cursor-pointer flex items-center justify-center gap-2"
-            >
-              <span>Import Assessment Report (.json)</span>
-            </button>
+          <p className="text-sm sm:text-[15px] text-slate-400 max-w-xl leading-relaxed">
+            Run one read-only command on your laptop, drop the report file below, and get clear,
+            evidence-backed fixes right in your browser. Your AWS credentials and account data never
+            leave your machine.
+          </p>
+
+          {/* Primary CTAs — Try Demo first for zero-friction curiosity, Import for returning users */}
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-1 w-full sm:w-auto">
             {onExploreDemo && (
               <button
                 type="button"
                 onClick={onExploreDemo}
-                className="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-teal-500/40 text-teal-300 hover:text-teal-200 text-xs sm:text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2"
+                className="w-full sm:w-auto min-h-[46px] px-6 py-2.5 rounded-xl bg-teal-500 hover:bg-teal-400 text-slate-950 text-sm font-bold transition-colors shadow-lg shadow-teal-500/15 cursor-pointer flex items-center justify-center gap-2"
               >
-                <span>Explore Demo</span>
-                <span className="text-[11px] font-normal text-slate-400">(No AWS needed)</span>
+                <span>Explore Live Demo</span>
+                <span className="text-xs font-medium opacity-80">(No AWS needed)</span>
               </button>
             )}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full sm:w-auto min-h-[46px] px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-100 text-sm font-semibold transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <span>Import Report (.json)</span>
+            </button>
           </div>
-        </header>
 
-        {/* Resume Current In-Memory Report */}
+          {/* Calm single-row reassurance */}
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-1 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-teal-400">✓</span> Strictly read-only
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-teal-400">✓</span> Works with AWS CLI &amp; SSO
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="text-teal-400">✓</span> $0 AWS API fees by default
+            </span>
+          </div>
+        </section>
+
+        {/* Resume Current In-Memory Report (only shown when returning from a loaded real report) */}
         {onResumeReport && (
-          <div className="rounded-xl border border-teal-500/30 bg-teal-950/20 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
+          <div className="rounded-xl border border-teal-500/35 bg-teal-950/25 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs">
             <span className="text-teal-200">
-              You have an imported report open in memory for{" "}
-              <span className="font-mono font-semibold">Account {maskAccountId(resumableAccountId)}</span>.
+              Your report for{" "}
+              <strong className="font-mono">Account {maskAccountId(resumableAccountId)}</strong> is still open in browser memory.
             </span>
             <button
               type="button"
@@ -201,124 +249,291 @@ export default function SetupScreen({
           </div>
         )}
 
-        {/* Local Report Dropzone */}
-        <section
-          id="import-report"
-          onDragOver={(e) => {
-            e.preventDefault();
-            setIsDragging(true);
-          }}
-          onDragLeave={() => setIsDragging(false)}
-          onDrop={handleDrop}
-          className={`rounded-xl border-2 border-dashed p-5 sm:p-6 text-center transition-colors ${
-            isDragging
-              ? "border-teal-400 bg-teal-950/25"
-              : "border-slate-700/80 bg-slate-900/50 hover:border-slate-600"
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            id="report-file-input"
-            type="file"
-            accept=".json,application/json"
-            onChange={handleFileInputChange}
-            className="hidden"
-          />
-          <div className="space-y-2 max-w-md mx-auto">
-            <p className="text-sm font-semibold text-white">
-              Import Local Assessment JSON
+        {/* Hidden file input shared by hero CTA and Step 3 dropzone */}
+        <input
+          ref={fileInputRef}
+          id="report-file-input"
+          type="file"
+          accept=".json,application/json"
+          onChange={handleFileInputChange}
+          className="hidden"
+        />
+
+        {/* Guided 3-Step Onboarding Flow */}
+        <section aria-labelledby="steps-heading" className="space-y-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="steps-heading" className="text-base sm:text-lg font-bold text-white">
+              Scan your own AWS account in 3 easy steps
+            </h2>
+            <span className="text-xs text-slate-400">Takes ~2 minutes · Python 3.10+</span>
+          </div>
+
+          {/* STEP 1 — Install */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="w-7 h-7 rounded-full bg-teal-500/15 border border-teal-500/40 text-teal-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                1
+              </span>
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-sm sm:text-base font-semibold text-white">
+                  Install the local scanner
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  <strong className="text-slate-300">Why:</strong> Running it on your own computer means this website never asks for your AWS keys or connects to your AWS account.
+                </p>
+              </div>
+            </div>
+
+            {/* Accessible single-row install method tabs */}
+            <div className="space-y-3">
+              <div
+                role="tablist"
+                aria-label="Choose how to install the scanner"
+                className="flex items-center gap-1 border-b border-slate-800 overflow-x-auto no-scrollbar"
+              >
+                {INSTALL_TABS.map((tab, idx) => {
+                  const selected = installTab === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      ref={(el) => {
+                        tabRefs.current[idx] = el;
+                      }}
+                      type="button"
+                      role="tab"
+                      id={`install-tab-${tab.id}`}
+                      aria-selected={selected}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setInstallTab(tab.id)}
+                      onKeyDown={(e) => handleTabKeyDown(e, idx)}
+                      className={`clarity-tab shrink-0 px-3 py-2 text-xs font-medium cursor-pointer bg-transparent border-0 transition-colors whitespace-nowrap ${
+                        selected ? "text-teal-300" : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {INSTALL_TABS.map((tab) => {
+                const selected = installTab === tab.id;
+                return (
+                  <div
+                    key={tab.id}
+                    role="tabpanel"
+                    aria-labelledby={`install-tab-${tab.id}`}
+                    hidden={!selected}
+                  >
+                    <div className="space-y-2.5">
+                      <p className="text-xs text-slate-400">{tab.hint}</p>
+                      <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
+                        <pre className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
+                          {tab.installCmd}
+                        </pre>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(`install-${tab.id}`, tab.installCmd)}
+                          className="absolute top-2.5 right-2.5 text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer transition-colors"
+                        >
+                          {copiedKey === `install-${tab.id}` ? "Copied ✓" : "Copy"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="rounded-xl bg-emerald-950/20 border border-emerald-500/20 px-3.5 py-2.5 text-xs flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5">
+              <p className="text-emerald-200/90 leading-relaxed">
+                <strong className="text-emerald-300">What to expect:</strong> Running{" "}
+                <code className="text-emerald-200">{activeInstall.verifyCmd}</code> prints{" "}
+                <code className="text-slate-200">aws-clarity 1.0.0 (local-first, read-only, zero telemetry)</code>.
+              </p>
+            </div>
+
+            <p className="text-[11px] text-slate-500">
+              Want to verify the package before installing? Inspect the open-source code and SHA-256 checksums on{" "}
+              <a
+                href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.0.0"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
+              >
+                GitHub Releases (v1.0.0)
+              </a>
+              .
             </p>
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Drag and drop <code className="text-teal-300">aws-clarity-report.json</code> here, or select it from your
-              computer. Processed 100% locally in browser memory—never uploaded to any server.
-            </p>
-            <div className="pt-1.5">
+          </div>
+
+          {/* STEP 2 — Run Scan */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <span className="w-7 h-7 rounded-full bg-teal-500/15 border border-teal-500/40 text-teal-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                2
+              </span>
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-sm sm:text-base font-semibold text-white">
+                  Run a read-only scan
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  <strong className="text-slate-300">Why:</strong> Uses your existing AWS CLI or SSO login to inspect 9 core services with free read APIs and saves a private report file on your machine.
+                </p>
+              </div>
+            </div>
+
+            <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
+              <pre className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
+                {scanCommand}
+              </pre>
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 text-xs font-semibold cursor-pointer transition-colors"
+                onClick={() => handleCopy("scan-cmd", scanCommand)}
+                className="absolute top-2.5 right-2.5 text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer transition-colors"
               >
-                Choose Local JSON File
+                {copiedKey === "scan-cmd" ? "Copied ✓" : "Copy"}
               </button>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Max 25 MB · Strict schema &amp; credential-leak validation · Never executes imported content
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 text-xs">
+              <label className="inline-flex items-start gap-2 cursor-pointer text-slate-300 select-none">
+                <input
+                  type="checkbox"
+                  checked={includeS3}
+                  onChange={(e) => setIncludeS3(e.target.checked)}
+                  className="mt-0.5 rounded border-slate-700 bg-slate-950 text-teal-500 focus:ring-teal-500 cursor-pointer"
+                />
+                <span>
+                  Also check S3 buckets <span className="text-slate-500">(optional — asks for cost consent; small S3 API fees may apply outside Free Tier)</span>
+                </span>
+              </label>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Using a named AWS profile or SSO? Add <code className="text-teal-300">--profile your-profile</code> (after <code className="text-slate-300">aws sso login</code>). Want to test your login &amp; permissions first? Run{" "}
+              <code className="text-slate-200">{doctorCommand}</code>.
             </p>
+
+            <div className="rounded-xl bg-emerald-950/20 border border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-200/90 leading-relaxed">
+              <strong className="text-emerald-300">What to expect:</strong> After ~30–60 seconds, your terminal prints{" "}
+              <code className="text-slate-200">Scan complete — Saved local report: aws-clarity-report.json</code>{" "}
+              with your summary counts. Nothing in AWS is ever modified.
+            </div>
           </div>
 
-          {importError && (
-            <div className="mt-4 flex items-start gap-2 border border-red-800/40 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/30 text-left break-words">
-              <span className="text-red-400 font-bold shrink-0">⚠</span>
-              <span className="min-w-0">{importError}</span>
+          {/* STEP 3 — Drop Report Here */}
+          <div
+            id="import-report"
+            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-4"
+          >
+            <div className="flex items-start gap-3">
+              <span className="w-7 h-7 rounded-full bg-teal-500/15 border border-teal-500/40 text-teal-300 font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
+                3
+              </span>
+              <div className="space-y-1 min-w-0">
+                <h3 className="text-sm sm:text-base font-semibold text-white">
+                  Drop your report here to explore it
+                </h3>
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  <strong className="text-slate-300">Why:</strong> Parsed 100% inside your browser tab (<code className="text-slate-300">connect-src &apos;none&apos;</code> blocks network uploads). Close the tab and it&apos;s gone.
+                </p>
+              </div>
             </div>
-          )}
+
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={handleDrop}
+              className={`rounded-xl border-2 border-dashed p-6 sm:p-8 text-center transition-colors ${
+                isDragging
+                  ? "border-teal-400 bg-teal-950/30"
+                  : "border-slate-700 bg-slate-950/70 hover:border-teal-500/50"
+              }`}
+            >
+              <div className="space-y-3 max-w-sm mx-auto">
+                <p className="text-sm font-semibold text-white">
+                  Drag &amp; drop <code className="text-teal-300">aws-clarity-report.json</code> here
+                </p>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
+                >
+                  Choose Local Report File
+                </button>
+                <p className="text-[11px] text-slate-500">
+                  Max 25 MB · Rejects AWS credential files automatically · Zero server upload
+                </p>
+              </div>
+
+              {importError && (
+                <div className="mt-4 flex items-start gap-2 border border-red-800/50 rounded-lg px-3 py-2 text-xs text-red-300 bg-red-950/40 text-left break-words">
+                  <span className="text-red-400 font-bold shrink-0">⚠</span>
+                  <span className="min-w-0">{importError}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl bg-emerald-950/20 border border-emerald-500/20 px-3.5 py-2.5 text-xs text-emerald-200/90 leading-relaxed">
+              <strong className="text-emerald-300">What to expect:</strong> Your interactive dashboard opens immediately with prioritized risks, exact AWS proof, step-by-step manual fixes, Scan Diff (to verify fixes later), and safe redacted sharing.
+            </div>
+          </div>
         </section>
 
-        {/* 10 Supported AWS Services + Clear Default (9) vs Optional S3 (1) Breakdown */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 sm:p-5 space-y-3.5">
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                AWS Clarity Supports 10 AWS Services · 17 Resource Types · 43 Rules (v1)
-              </p>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                A normal default scan assesses <strong className="text-slate-200">9 services</strong>; S3 is excluded by default unless you explicitly opt in.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowMatrix((prev) => !prev)}
-              className="text-xs font-medium text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0"
-            >
-              {showMatrix ? "Hide coverage matrix ▲" : "View resource coverage matrix ▼"}
-            </button>
-          </div>
+        {/* Secondary Technical Reference — Collapsed on Demand (Zero Visual Clutter) */}
+        <section aria-labelledby="details-heading" className="space-y-3">
+          <h2 id="details-heading" className="sr-only">
+            Technical details and permissions
+          </h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
-            <div className="p-3 rounded-lg bg-slate-950 border border-slate-800 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-emerald-300">Default Assessment: 9 Services</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                  Zero Request Charges
-                </span>
-              </div>
-              <p className="text-slate-400 leading-relaxed">
-                Uses 28 free AWS control-plane read APIs across:
-              </p>
-              <div className="flex flex-wrap gap-1">
-                {SUPPORTED_SERVICES.filter((svc) => svc !== "S3").map((svc) => (
-                  <span
-                    key={svc}
-                    className="text-[11px] font-medium px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
-                  >
-                    {svc}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <details className="clarity-disclosure rounded-2xl border border-slate-800 bg-slate-900/40 px-4 sm:px-5 py-3.5">
+            <summary className="text-xs sm:text-sm font-semibold text-slate-200 hover:text-white transition-colors">
+              <span>What AWS services &amp; IAM permissions does it use? (9 free + optional S3)</span>
+            </summary>
 
-            <div className="p-3 rounded-lg bg-slate-950 border border-sky-500/30 space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-semibold text-sky-300">Optional S3 Assessment: 1 Service</span>
-                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                  Requires Consent
-                </span>
-              </div>
-              <p className="text-slate-400 leading-relaxed">
-                <strong className="text-slate-200">Excluded by default:</strong> S3 public policy (<code className="text-slate-300">S3-002</code>),
-                public ACL (<code className="text-slate-300">S3-003</code>), encryption (<code className="text-slate-300">S3-004</code>), and Block Public Access (<code className="text-slate-300">S3-005</code>).
-              </p>
-              <p className="text-[10px] text-slate-400 leading-relaxed">
-                <strong className="text-slate-300">Why optional:</strong> Outside an account&apos;s 12-month S3 Free Tier, AWS S3 bills <code className="text-slate-300">ListBuckets</code> ($0.005/1k LIST) and <code className="text-slate-300">GetBucket*</code> ($0.0004/1k GET). Opt in with <code className="text-sky-300">--include-s3-checks</code>; skipped S3 checks are marked <code className="text-sky-300">SKIPPED_OPTIONAL</code>, never Healthy.
-              </p>
-            </div>
-          </div>
+            <div className="pt-4 mt-3 border-t border-slate-800/80 space-y-5 text-xs">
+              {/* 9 Default vs Optional S3 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-emerald-300">Default: 9 Services</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                      28 Free Read APIs
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {SUPPORTED_SERVICES.filter((svc) => svc !== "S3").map((svc) => (
+                      <span
+                        key={svc}
+                        className="text-[11px] px-2 py-0.5 rounded bg-slate-900 border border-slate-800 text-slate-200"
+                      >
+                        {svc}
+                      </span>
+                    ))}
+                  </div>
+                </div>
 
-          {showMatrix && (
-            <div className="pt-2 space-y-2 text-[11px]">
-              <div className="rounded-lg border border-slate-800 bg-slate-950 divide-y divide-slate-800/70 overflow-hidden">
+                <div className="p-3 rounded-xl bg-slate-950 border border-sky-500/30 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold text-sky-300">Optional: S3 Buckets</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                      +6 Actions (Opt-in)
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Checks public bucket policies, ACLs, and Block Public Access without listing or reading your files. Skipped S3 checks are marked <code className="text-sky-300">SKIPPED_OPTIONAL</code>, never Healthy.
+                  </p>
+                </div>
+              </div>
+
+              {/* Compact 10-Service Coverage Table */}
+              <div className="rounded-xl border border-slate-800 bg-slate-950 divide-y divide-slate-800/70 overflow-hidden text-[11px]">
                 {SERVICE_COVERAGE_MATRIX.map((row) => (
-                  <div key={row.service} className="p-2.5 grid grid-cols-1 sm:grid-cols-12 gap-1.5 sm:gap-3">
+                  <div key={row.service} className="p-2.5 grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-3">
                     <div className="sm:col-span-3">
                       <span className="font-semibold text-teal-300">{row.service}</span>
                       <span className="block text-[10px] text-slate-500">{row.scope}</span>
@@ -328,70 +543,20 @@ export default function SetupScreen({
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] text-slate-500">
-                Intentionally out of scope in v1: Cost Explorer/Billing APIs (paid), GuardDuty/Config/Security Hub (paid), AWS services outside these 10, and customer data contents.
-              </p>
-            </div>
-          )}
-        </section>
 
-        {/* Getting Started: Local Scanner Guide */}
-        <section id="getting-started" className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 sm:p-6 space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-white">Getting Started — Run Locally in 3 Steps</h2>
-              <p className="text-[11px] text-slate-400 mt-0.5">
-                Works on macOS, Linux, and Windows with Python 3.10+ and your existing AWS CLI / IAM Identity Center profile.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setTrustModalOpen(true)}
-              className="text-xs text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0 shrink-0"
-            >
-              Security &amp; Privacy Boundaries →
-            </button>
-          </div>
-
-          {/* STEP 1 — Review & Attach Read-Only IAM Policy (Customer-Owned) */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold text-slate-100">
-                  <span className="text-teal-400 mr-1.5">Step 1.</span>
-                  Review Read-Only Permissions (28 Default Free / 34 With Optional S3)
+              {/* Least-Privilege IAM Policy Preview & Download */}
+              <div className="space-y-2.5">
+                <p className="font-semibold text-slate-200">
+                  Need a least-privilege IAM policy for your team or AWS SSO permission set?
                 </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Attach to your own IAM Identity Center permission set or read-only IAM role. No vendor cross-account trust required.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPermissionPreview((prev) => !prev)}
-                className="text-xs font-medium text-teal-400 hover:text-teal-300 cursor-pointer bg-transparent border-none p-0 shrink-0"
-              >
-                {showPermissionPreview ? "Hide permission preview ▲" : "Preview all permissions & costs ▼"}
-              </button>
-            </div>
-
-            {showPermissionPreview && (
-              <div className="pt-2 border-t border-slate-800 space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {PERMISSION_PREVIEW_GROUPS.map((grp) => (
-                    <div key={grp.service} className="p-2.5 rounded-lg bg-slate-900/70 border border-slate-800/80 space-y-1">
+                    <div key={grp.service} className="p-2.5 rounded-lg bg-slate-950 border border-slate-800/80 space-y-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] font-semibold text-slate-200">{grp.service}</p>
-                        {grp.optional && (
-                          <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                            Optional
-                          </span>
-                        )}
+                        <span className="text-[11px] font-semibold text-slate-200">{grp.service}</span>
+                        <span className="text-[10px] font-mono text-slate-500">{grp.actions.length} actions</span>
                       </div>
-                      <p className="text-[10px] text-teal-300/90">{grp.costNote}</p>
                       <p className="text-[10px] text-slate-400 leading-relaxed">{grp.summary}</p>
-                      <p className="text-[10px] font-mono text-slate-500 break-all">
-                        {grp.actions.join(", ")}
-                      </p>
                     </div>
                   ))}
                 </div>
@@ -404,10 +569,10 @@ export default function SetupScreen({
                       className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
                         policyVariant === "default"
                           ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
-                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                          : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                       }`}
                     >
-                      28 Actions (Default Zero-Cost)
+                      28 Actions (Default)
                     </button>
                     <button
                       type="button"
@@ -415,10 +580,10 @@ export default function SetupScreen({
                       className={`text-[11px] px-2.5 py-1 rounded border cursor-pointer ${
                         policyVariant === "with-s3"
                           ? "bg-teal-500/15 border-teal-500/40 text-teal-300 font-semibold"
-                          : "bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200"
+                          : "bg-slate-950 border-slate-800 text-slate-400 hover:text-slate-200"
                       }`}
                     >
-                      34 Actions (With Optional S3)
+                      34 Actions (With S3)
                     </button>
                   </div>
 
@@ -428,19 +593,23 @@ export default function SetupScreen({
                       onClick={() => setShowPolicyJson((prev) => !prev)}
                       className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0"
                     >
-                      {showPolicyJson ? "Hide JSON ▲" : "View JSON ▼"}
+                      {showPolicyJson ? "Hide JSON" : "View JSON"}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleCopy("policy", activePolicyJson)}
-                      className="text-[11px] text-slate-300 hover:text-white font-medium cursor-pointer bg-slate-800/70 border border-slate-700 px-2.5 py-1 rounded"
+                      className="text-[11px] text-slate-300 hover:text-white font-medium cursor-pointer bg-slate-800 border border-slate-700 px-2.5 py-1 rounded"
                     >
-                      {copiedKey === "policy" ? "Copied ✓" : "Copy Policy JSON"}
+                      {copiedKey === "policy" ? "Copied ✓" : "Copy Policy"}
                     </button>
                     <button
                       type="button"
                       onClick={() =>
-                        downloadLocalFile(activePolicyFilename, `${activePolicyJson}\n`, "application/json;charset=utf-8;")
+                        downloadLocalFile(
+                          activePolicyFilename,
+                          `${activePolicyJson}\n`,
+                          "application/json;charset=utf-8;"
+                        )
                       }
                       className="text-[11px] text-teal-300 hover:text-teal-200 font-medium cursor-pointer bg-teal-500/10 border border-teal-500/30 px-2.5 py-1 rounded"
                     >
@@ -450,135 +619,36 @@ export default function SetupScreen({
                 </div>
 
                 {showPolicyJson && (
-                  <pre className="text-[10px] text-slate-300 p-2.5 overflow-x-auto max-h-48 font-mono leading-relaxed bg-slate-950 rounded border border-slate-800">
+                  <pre className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-48 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
                     {activePolicyJson}
                   </pre>
                 )}
               </div>
-            )}
-          </div>
-
-          {/* STEP 2 — Authenticate & Run Local Scanner */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold text-slate-100">
-                  <span className="text-teal-400 mr-1.5">Step 2.</span>
-                  Install &amp; Run the Local Scanner Using Your AWS CLI Profile
-                </p>
-                <p className="text-[11px] text-slate-400 mt-0.5">
-                  Verify your active AWS identity locally, check permissions, and generate your report JSON.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() =>
-                  handleCopy(
-                    "cli-quickstart",
-                    [
-                      "# 1. Install locally from verified public source",
-                      "git clone https://github.com/DavidDanso/aws-clarity.git && cd aws-clarity",
-                      "python3 -m venv .venv && source .venv/bin/activate && pip install .",
-                      "",
-                      "# 2. Sign in with your AWS CLI / IAM Identity Center profile",
-                      "aws sso login --profile my-profile",
-                      "aws sts get-caller-identity --profile my-profile",
-                      "",
-                      "# 3. Verify permissions & run local read-only scan",
-                      "aws-clarity doctor --profile my-profile",
-                      "aws-clarity scan --profile my-profile --output aws-clarity-report.json",
-                    ].join("\n")
-                  )
-                }
-                className="text-[11px] text-teal-400 hover:text-teal-300 font-medium cursor-pointer bg-transparent border-none p-0 shrink-0"
-              >
-                {copiedKey === "cli-quickstart" ? "Copied Commands ✓" : "Copy Commands"}
-              </button>
             </div>
+          </details>
+        </section>
 
-            <pre className="text-[11px] text-slate-200 p-3 overflow-x-auto font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
-{`# 1. Authenticate with your existing AWS CLI / IAM Identity Center profile
-aws sso login --profile my-profile
-aws sts get-caller-identity --profile my-profile
-
-# 2. Verify identity, enabled regions, and read-only permissions locally
-aws-clarity doctor --profile my-profile
-
-# 3. Generate local JSON report (9 zero-request-charge services by default)
-aws-clarity scan --profile my-profile --output aws-clarity-report.json
-
-# Optional: include S3 bucket configuration checks (prompts for cost consent)
-aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-report.json`}
-            </pre>
-
-            <p className="text-[11px] text-slate-500 leading-relaxed">
-              Inspect source code and verify release SHA-256 checksums on{" "}
-              <a
-                href="https://github.com/DavidDanso/aws-clarity/releases"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-teal-400 hover:text-teal-300 underline underline-offset-2"
-              >
-                GitHub Releases (DavidDanso/aws-clarity)
-              </a>
-              . Reports are written locally with <code className="text-slate-400">0600</code> permissions on macOS/Linux (standard user ACLs on Windows) and never contain AWS credentials.
-            </p>
-          </div>
-
-          {/* STEP 3 — Import, Compare & Export Safely */}
-          <div className="rounded-xl border border-slate-800 bg-slate-950/60 p-3.5 sm:p-4 space-y-2">
-            <p className="text-xs font-semibold text-slate-100">
-              <span className="text-teal-400 mr-1.5">Step 3.</span>
-              Import Locally, Compare Fixes &amp; Share Sanitized Reports
-            </p>
-            <p className="text-[11px] text-slate-400 leading-relaxed">
-              Import <code className="text-teal-300">aws-clarity-report.json</code> above to explore findings, AWS API
-              evidence, and manual remediation steps. After applying fixes in AWS and re-running the CLI, click{" "}
-              <strong className="text-slate-200">Import Newer Report (Diff)</strong> in the dashboard to see{" "}
-              <strong className="text-slate-200">New</strong>, <strong className="text-slate-200">Resolved</strong>, and{" "}
-              <strong className="text-slate-200">Unchanged</strong> findings—or export a{" "}
-              <strong className="text-slate-200">Sanitized Report</strong> with account IDs, ARNs, and IPs redacted for team review.
-            </p>
+        {/* Plain-Language FAQ — Native Non-Exclusive <details> Accordion */}
+        <section aria-labelledby="faq-heading" className="space-y-2.5">
+          <h2 id="faq-heading" className="text-sm font-bold text-slate-200">
+            Common Questions
+          </h2>
+          <div className="rounded-2xl border border-slate-800/90 bg-slate-900/35 divide-y divide-slate-800/80 overflow-hidden">
+            {FAQ_ITEMS.map((item) => (
+              <details key={item.question} className="clarity-disclosure px-4 sm:px-5 py-3.5">
+                <summary className="text-xs sm:text-[13px] font-medium text-slate-200 hover:text-white transition-colors">
+                  <span>{item.question}</span>
+                </summary>
+                <p className="text-xs text-slate-400 pt-2.5 pl-4 leading-relaxed">
+                  {item.answer}
+                </p>
+              </details>
+            ))}
           </div>
         </section>
 
-        {/* Honest Security Boundary Callout */}
-        <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 text-[11px] text-slate-400 leading-relaxed space-y-1">
-          <p className="font-semibold text-slate-200">Honest Security Boundaries</p>
-          <p>
-            Local-first architecture eliminates central credential handling and central inventory storage, significantly
-            reducing what an attacker could gain by compromising this static website. However, no software can guarantee
-            zero breach risk: you should still inspect open-source updates, verify release checksums, and protect your
-            workstation and local report files.
-          </p>
-        </section>
-
-        {/* FAQ */}
-        <div className="px-1 space-y-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">
-            Frequently Asked Questions
-          </p>
-          {FAQ_ITEMS.map((item, index) => (
-            <div key={index} className="border-b border-slate-800/80 last:border-b-0">
-              <button
-                type="button"
-                onClick={() => setOpenFaq((prev) => (prev === index ? null : index))}
-                className="w-full min-h-[44px] flex items-center justify-between gap-3 py-2.5 text-left cursor-pointer bg-transparent border-none"
-              >
-                <span className="text-xs sm:text-[13px] text-slate-400 hover:text-slate-200 transition-colors font-medium">
-                  {item.question}
-                </span>
-                <span className="text-slate-500 text-sm shrink-0">{openFaq === index ? "−" : "+"}</span>
-              </button>
-              {openFaq === index && (
-                <p className="text-xs text-slate-500 pb-3 leading-relaxed">{item.answer}</p>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Footer */}
-        <footer className="pt-4 border-t border-slate-800/60 flex flex-col items-center gap-2 text-xs text-slate-500">
+        {/* Minimal Footer */}
+        <footer className="pt-4 border-t border-slate-800/70 flex flex-col items-center gap-2 text-xs text-slate-500">
           <div className="flex items-center gap-2 flex-wrap justify-center">
             <span>Built by</span>
             <a
@@ -596,7 +666,7 @@ aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-r
               rel="noopener noreferrer"
               className="text-slate-300 hover:text-teal-400 transition-colors font-medium"
             >
-              Open Source on GitHub
+              Open Source (MIT)
             </a>
             <span>·</span>
             <button
@@ -608,7 +678,7 @@ aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-r
             </button>
           </div>
           <p className="text-[11px] text-slate-600 text-center">
-            Free · Privacy-first local execution · Strictly read-only · Zero backend data collection
+            Local-only execution · Strictly read-only · Zero backend data collection
           </p>
         </footer>
       </div>

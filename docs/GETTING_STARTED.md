@@ -10,7 +10,17 @@ AWS Clarity runs **locally on your computer** using your existing AWS CLI or IAM
 
 ## 1. Install the Local Scanner
 
-Install directly from the inspectable public source repository into an isolated virtual environment:
+### Option A — `pipx` (Easiest, Recommended)
+
+Install the SHA-256 checksummed `v1.0.0` release wheel in one command without touching your system Python:
+
+```bash
+pipx install https://github.com/DavidDanso/aws-clarity/releases/download/v1.0.0/aws_clarity-1.0.0-py3-none-any.whl
+```
+
+### Option B — Isolated Virtual Environment (`venv` + `pip`)
+
+Install from the release wheel or the inspectable public source repository into an isolated virtual environment:
 
 ```bash
 git clone https://github.com/DavidDanso/aws-clarity.git

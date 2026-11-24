@@ -48,7 +48,7 @@ assert.throws(
 // 3. Report Importer security: malformed JSON, prototype pollution, credential leak blocking, control chars
 assert.throws(() => parseLocalAssessmentReport("{bad json"), /Invalid JSON/i);
 assert.throws(
-  () => parseLocalAssessmentReport(JSON.stringify({ resources: { vpcs: [] }, SecretAccessKey: "wJalrXUtnFEMI/K7MDENG" })),
+  () => parseLocalAssessmentReport(JSON.stringify({ resources: { vpcs: [] }, SecretAccessKey: "dummy-test-value" })),
   /AWS credential fields/i,
   "Importer must block files containing AWS credentials"
 );

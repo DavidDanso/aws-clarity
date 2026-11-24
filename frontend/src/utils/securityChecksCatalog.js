@@ -12,7 +12,7 @@ export const SECURITY_CHECKS = [
   { id: "SG-002", name: "Unrestricted SSH Access (Port 22)", service: "EC2", resourceType: "security_group", severity: "CRITICAL", category: "Security Risk", whatItChecks: "Checks whether inbound SSH (port 22) is exposed to 0.0.0.0/0 or ::/0." },
   { id: "SG-003", name: "Unrestricted RDP Access (Port 3389)", service: "EC2", resourceType: "security_group", severity: "CRITICAL", category: "Security Risk", whatItChecks: "Checks whether inbound Windows RDP (port 3389) is exposed to 0.0.0.0/0 or ::/0." },
   { id: "SG-004", name: "Database Port Exposed to Internet", service: "EC2", resourceType: "security_group", severity: "CRITICAL", category: "Security Risk", whatItChecks: "Checks whether common database ports (3306, 5432, 1433, 6379, 27017) are open to 0.0.0.0/0 or ::/0." },
-  { id: "EC2-001", name: "Stopped EC2 Instance", service: "EC2", resourceType: "ec2_instance", severity: "UNUSED", category: "Potential Cost Waste", whatItChecks: "Checks whether an EC2 instance is stopped while retaining attached EBS storage and Elastic IPs." },
+  { id: "EC2-001", name: "Stopped EC2 Instance (Review Attached Storage Costs)", service: "EC2", resourceType: "ec2_instance", severity: "INFO", category: "Potential Cost Waste", whatItChecks: "Informational review noting whether an EC2 instance is stopped while retaining attached EBS storage or Elastic IPs (intentionally paused instances are not marked unhealthy)." },
   { id: "EC2-002", name: "IMDSv2 Not Enforced", service: "EC2", resourceType: "ec2_instance", severity: "WARNING", category: "Security Risk", whatItChecks: "Checks whether an active EC2 instance enforces IMDSv2 (HttpTokens=required)." },
   { id: "EIP-001", name: "Unassociated Elastic IP", service: "EC2", resourceType: "elastic_ip", severity: "UNUSED", category: "Potential Cost Waste", whatItChecks: "Checks whether an allocated Elastic IP is unattached and incurring hourly public IPv4 charges." },
 
@@ -25,7 +25,7 @@ export const SECURITY_CHECKS = [
   // S3
   { id: "S3-002", name: "Public Access via Bucket Policy", service: "S3", resourceType: "s3_bucket", severity: "CRITICAL", category: "Security Risk", whatItChecks: "Checks whether an S3 bucket policy permits public read or write access." },
   { id: "S3-003", name: "Public Access via Bucket ACL", service: "S3", resourceType: "s3_bucket", severity: "CRITICAL", category: "Security Risk", whatItChecks: "Checks whether an S3 bucket ACL grants public access to AllUsers or AuthenticatedUsers." },
-  { id: "S3-004", name: "Server-Side Encryption Configuration", service: "S3", resourceType: "s3_bucket", severity: "WARNING", category: "Security Risk", whatItChecks: "Verifies S3 default server-side encryption configuration is readable and active (respecting AWS default SSE-S3)." },
+  { id: "S3-004", name: "S3 Default Encryption Verification (SSE-S3 Active by Default)", service: "S3", resourceType: "s3_bucket", severity: "INFO", category: "Security Risk", whatItChecks: "Informational verification that S3 bucket encryption metadata is readable (AWS enforces SSE-S3 encryption by default on all buckets since Jan 2023; never raises false encryption warnings)." },
   { id: "S3-005", name: "Incomplete Block Public Access", service: "S3", resourceType: "s3_bucket", severity: "WARNING", category: "Security Risk", whatItChecks: "Checks whether all 4 S3 Block Public Access controls are enabled." },
 
   // IAM
@@ -53,7 +53,7 @@ export const SECURITY_CHECKS = [
 
   // DynamoDB
   { id: "DDB-001", name: "DynamoDB Encryption Disabled", service: "DynamoDB", resourceType: "dynamodb_table", severity: "WARNING", category: "Security Risk", whatItChecks: "Checks whether a DynamoDB table explicitly reports encryption disabled (AWS-owned default encryption passes)." },
-  { id: "DDB-002", name: "Empty Provisioned DynamoDB Table", service: "DynamoDB", resourceType: "dynamodb_table", severity: "UNUSED", category: "Potential Cost Waste", whatItChecks: "Checks whether a PROVISIONED-capacity DynamoDB table holds 0 items." },
+  { id: "DDB-002", name: "Empty Provisioned DynamoDB Table (Review Capacity Mode)", service: "DynamoDB", resourceType: "dynamodb_table", severity: "INFO", category: "Potential Cost Waste", whatItChecks: "Informational review noting whether a PROVISIONED-capacity DynamoDB table reports 0 items (AWS updates ItemCount roughly every 6 hours)." },
 
   // EBS
   { id: "EBS-001", name: "EBS Volume Unencrypted", service: "EBS", resourceType: "ebs_volume", severity: "WARNING", category: "Security Risk", whatItChecks: "Checks whether an EBS volume is encrypted at rest." },
