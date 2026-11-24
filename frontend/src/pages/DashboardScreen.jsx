@@ -7,7 +7,6 @@ import CoverageModal from "../components/CoverageModal";
 import ScoreModal from "../components/ScoreModal";
 import ChecksCatalogModal from "../components/ChecksCatalogModal";
 import {
-  CATEGORY_BADGE,
   RESOURCE_COLLECTION_KEYS,
   RESOURCE_TYPE_LABELS,
   STATUS_COLOR,
@@ -23,7 +22,7 @@ import {
 } from "../utils/reportSanitizer";
 
 function ScoreRing({ score, label, labelColor }) {
-  const r = 34;
+  const r = 30;
   const circ = 2 * Math.PI * r;
   const offset = circ - (score / 100) * circ;
   const strokeColor =
@@ -34,12 +33,12 @@ function ScoreRing({ score, label, labelColor }) {
     : "#f87171";
 
   return (
-    <div className="flex items-center gap-5 shrink-0">
-      <svg width="76" height="76" viewBox="0 0 80 80" className="-rotate-90 shrink-0">
-        <circle cx="40" cy="40" r={r} fill="none" stroke="#1e293b" strokeWidth="6" />
+    <div className="flex items-center gap-4 shrink-0">
+      <svg width="68" height="68" viewBox="0 0 72 72" className="-rotate-90 shrink-0" aria-hidden="true">
+        <circle cx="36" cy="36" r={r} fill="none" stroke="#1e293b" strokeWidth="6" />
         <circle
-          cx="40"
-          cy="40"
+          cx="36"
+          cy="36"
           r={r}
           fill="none"
           stroke={strokeColor}
@@ -47,35 +46,33 @@ function ScoreRing({ score, label, labelColor }) {
           strokeLinecap="round"
           strokeDasharray={circ}
           strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 0.7s ease" }}
+          style={{ transition: "stroke-dashoffset 0.6s ease" }}
         />
       </svg>
       <div className="flex flex-col">
-        <span className={`text-4xl font-bold tabular-nums leading-none tracking-tight ${labelColor}`}>
+        <span className={`text-3xl font-bold tabular-nums leading-none tracking-tight ${labelColor}`}>
           {score}
+          <span className="text-sm font-normal text-slate-500 ml-0.5">/100</span>
         </span>
-        <span className={`text-sm font-semibold mt-1.5 leading-none ${labelColor}`}>{label}</span>
+        <span className={`text-xs font-semibold mt-1 leading-none ${labelColor}`}>{label}</span>
       </div>
     </div>
   );
 }
 
-function ChevronIcon({ open }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
+const SEVERITY_DOT = {
+  CRITICAL: "bg-red-500",
+  WARNING: "bg-amber-400",
+  UNUSED: "bg-sky-400",
+  INFO: "bg-slate-400",
+};
+
+const SEVERITY_TEXT = {
+  CRITICAL: "text-red-400",
+  WARNING: "text-amber-400",
+  UNUSED: "text-sky-300",
+  INFO: "text-slate-400",
+};
 
 export default function DashboardScreen({
   scanResults,
@@ -97,7 +94,6 @@ export default function DashboardScreen({
   const [comparisonExpanded, setComparisonExpanded] = useState(false);
   const [progressTab, setProgressTab] = useState("resolved");
   const [tableStatusFilter, setTableStatusFilter] = useState("ALL");
-  const [tableCategoryFilter, setTableCategoryFilter] = useState("ALL");
 
   const inventorySectionRef = useRef(null);
   const diffFileInputRef = useRef(null);
@@ -118,6 +114,8 @@ export default function DashboardScreen({
     scanResults?.partial === true ||
     coverageFailures.length > 0;
   const regionsScanned = coverage?.regions_scanned || scanResults?.regions || [];
+  const regionsFailed = coverage?.regions_failed || [];
+  const regionsSucceededCount = Math.max(0, regionsScanned.length - regionsFailed.length);
   const accountAdvisories = scanResults?.account_advisories || [];
 
   const handleDiffFileSelected = async (e) => {
@@ -138,9 +136,8 @@ export default function DashboardScreen({
     }
   };
 
-  const jumpToInventory = (statusFilter, categoryFilter = "ALL") => {
+  const jumpToInventory = (statusFilter) => {
     setTableStatusFilter(statusFilter);
-    setTableCategoryFilter(categoryFilter);
     inventorySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
@@ -186,8 +183,8 @@ export default function DashboardScreen({
     [activeCatalog, allResources, skippedOptionalServices]
   );
 
-  // Prioritized "Needs Attention" list: critical security risks + top cost/unused items
-  const topAttentionItems = useMemo(() => {
+  // Up to 4 highest-priority actionable findings (Critical -> Unused/Cost -> Warning)
+  const topPriorityItems = useMemo(() => {
     const items = [];
     const seen = new Set();
 
@@ -210,10 +207,9 @@ export default function DashboardScreen({
     addMatching(
       (i) =>
         i.severity !== "INFO" &&
-        (i.category === "Potential Cost Waste" ||
-          i.category === "Cost Risk" ||
-          i.category === "Unused" ||
-          i.severity === "UNUSED"),
+        (i.severity === "UNUSED" ||
+          i.category === "Potential Cost Waste" ||
+          i.category === "Cost Risk"),
       2
     );
     if (items.length < 4) {
@@ -250,22 +246,11 @@ export default function DashboardScreen({
     setExportModalOpen(false);
   };
 
-  const deltaLabel =
-    comparison.scoreDelta > 0
-      ? `+${comparison.scoreDelta} pts`
-      : comparison.scoreDelta < 0
-      ? `${comparison.scoreDelta} pts`
-      : "no change";
-  const deltaColor =
-    comparison.scoreDelta > 0
-      ? "text-emerald-400"
-      : comparison.scoreDelta < 0
-      ? "text-red-400"
-      : "text-slate-500";
+  const assessedServicesCount = 10 - skippedOptionalServices.length;
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white">
-      <div className="px-3.5 sm:px-6 lg:px-8 py-4 sm:py-6 pb-20 sm:pb-16 max-w-7xl mx-auto w-full">
+      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-5 pb-20 max-w-6xl mx-auto w-full">
         <input
           ref={diffFileInputRef}
           type="file"
@@ -273,525 +258,456 @@ export default function DashboardScreen({
           onChange={handleDiffFileSelected}
           className="hidden"
         />
+
         <TopBar
           accountId={scanResults?.account_id || ""}
-          regionsCount={regionsScanned.length}
           scannedAt={scanResults?.scanned_at || ""}
           importedFileName={importedFileName}
           isDemoMode={isDemoMode}
           onExitDemo={onExitDemo}
           onTriggerImportNewer={() => diffFileInputRef.current?.click()}
+          onOpenExport={() => setExportModalOpen(true)}
+          canExport={allResources.length > 0}
           onReturnHome={onReturnHome}
           onOpenTrust={() => setTrustModalOpen(true)}
         />
 
-        <main className="mt-6 sm:mt-9">
+        <main className="mt-6 space-y-8">
+          {/* Import Diff Error */}
           {diffImportError && (
-            <div className="mb-5 flex items-start justify-between gap-3 border border-red-800/40 rounded-xl px-3.5 py-2.5 text-xs text-red-300 bg-red-950/30">
+            <div className="flex items-start justify-between gap-3 border border-red-800/50 rounded-xl px-4 py-2.5 text-xs text-red-300 bg-red-950/30">
               <span>⚠ {diffImportError}</span>
               <button
                 type="button"
                 onClick={() => setDiffImportError("")}
-                className="text-red-300 hover:text-white bg-transparent border-none p-0 cursor-pointer shrink-0"
+                aria-label="Dismiss error"
+                className="text-red-300 hover:text-white bg-transparent border-0 p-0 cursor-pointer shrink-0"
               >
                 ✕
               </button>
             </div>
           )}
 
-          {/* Unmistakable Demonstration Mode Banner */}
+          {/* Slim Single-Line Demo Notice */}
           {isDemoMode && (
-            <div className="mb-6 rounded-xl border border-indigo-500/40 bg-indigo-950/30 p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs">
-              <div className="space-y-0.5 min-w-0">
-                <p className="font-semibold text-indigo-200">
-                  Demonstration Account — Sample AWS Assessment Data Only
-                </p>
-                <p className="text-indigo-200/80 text-[11px] leading-relaxed">
-                  You are viewing static synthetic data covering CRITICAL, WARNING, UNUSED, INFO, HEALTHY, and INCOMPLETE
-                  states across all 10 supported services. Demo data never mixes with real imported reports.
-                </p>
-              </div>
+            <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/25 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <p className="text-indigo-200">
+                <strong className="font-semibold">Demo Mode:</strong> Exploring sample AWS data — nothing here is from your account.
+              </p>
               <button
                 type="button"
                 onClick={onExitDemo}
-                className="self-start sm:self-auto shrink-0 px-3.5 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold cursor-pointer transition-colors"
+                className="text-xs font-semibold text-teal-300 hover:text-teal-200 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
               >
-                Import Your Local Report →
+                Scan your real AWS account →
               </button>
             </div>
           )}
 
-          {/* Loaded Report Dashboard */}
           {scanResults && (
-            <div className="flex flex-col space-y-8 sm:space-y-11">
-              {/* SEPARATE INVENTORY COVERAGE STATUS BANNER */}
-              <div
-                className={`p-3.5 rounded-xl border flex flex-col md:flex-row md:items-center md:justify-between gap-2.5 text-xs ${
-                  isIncompleteScan
-                    ? "bg-orange-950/25 border-orange-500/40 text-orange-200"
-                    : "bg-slate-900/50 border-slate-800 text-slate-300"
-                }`}
-              >
-                <div className="flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0">
-                  <span
-                    className={`w-2 h-2 rounded-full shrink-0 ${
-                      isIncompleteScan ? "bg-orange-400" : "bg-emerald-400"
-                    }`}
-                  />
-                  <span className="font-semibold text-slate-100">
-                    {isIncompleteScan
-                      ? `Incomplete Scan Coverage (${coverageFailures.length} failure${coverageFailures.length === 1 ? "" : "s"} reported)`
-                      : skippedOptionalServices.length > 0
-                      ? `Complete Coverage (${10 - skippedOptionalServices.length} of 10 Services · Optional ${skippedOptionalServices.join(", ")} Skipped)`
-                      : "Complete Scan Coverage"}
-                  </span>
-                  <span className="text-slate-600">·</span>
-                  <span className="font-mono text-slate-300">{allResources.length} resources discovered</span>
-                  <span className="text-slate-600">·</span>
-                  <span className="font-mono text-slate-300">10 services</span>
-                  <span className="text-slate-600">·</span>
-                  <span className="font-mono text-slate-300">
-                    {regionsScanned.length} enabled region{regionsScanned.length === 1 ? "" : "s"}
-                  </span>
-                  {typeof scanResults?.scan_duration_ms === "number" && (
-                    <>
-                      <span className="text-slate-600">·</span>
-                      <span className="font-mono text-teal-400">
-                        {(scanResults.scan_duration_ms / 1000).toFixed(1)}s
-                      </span>
-                    </>
-                  )}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setCoverageModalOpen(true)}
-                  className={`text-[11px] font-semibold underline underline-offset-2 transition-colors cursor-pointer bg-transparent border-none p-0 self-start md:self-auto shrink-0 ${
-                    isIncompleteScan ? "text-orange-300 hover:text-orange-200" : "text-teal-400 hover:text-teal-300"
-                  }`}
-                >
-                  {isIncompleteScan ? "Inspect affected services & regions →" : "View 10-service coverage matrix →"}
-                </button>
-              </div>
-
-              {/* Account-Level Advisories (e.g. No CloudTrail trails in account) */}
+            <>
+              {/* Account-Wide Critical Advisory (e.g. CT-000 No CloudTrail) */}
               {accountAdvisories.length > 0 && (
                 <div className="space-y-2.5">
                   {accountAdvisories.map((adv, idx) => (
-                    <div
+                    <details
                       key={`${adv.rule_id}-${idx}`}
-                      className="rounded-xl border border-red-500/35 bg-red-950/20 p-3.5 sm:p-4 text-xs space-y-1.5 break-words"
+                      className="clarity-disclosure rounded-xl border border-red-500/35 bg-red-950/20 px-4 py-3 text-xs"
                     >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-red-500/15 text-red-400 border border-red-500/30">
+                      <summary className="text-red-100 font-semibold">
+                        <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-300 border border-red-500/30 shrink-0">
                           {adv.rule_id}
                         </span>
-                        <span className="text-[11px] font-bold uppercase text-red-400">{adv.severity}</span>
-                        <span className="text-sm font-semibold text-red-100">{adv.title}</span>
+                        <span className="truncate">{adv.title}</span>
+                        <span className="ml-auto text-[11px] font-normal text-red-300/80 shrink-0">
+                          View fix
+                        </span>
+                      </summary>
+                      <div className="pt-3 pl-4 space-y-1.5 text-slate-300 leading-relaxed">
+                        <p>{adv.why}</p>
+                        <p className="text-teal-300">
+                          <strong className="text-teal-400">Fix:</strong> {adv.fix}
+                        </p>
+                        <p className="text-emerald-300/90">
+                          <strong className="text-emerald-400">Verify:</strong> {adv.verify}
+                        </p>
                       </div>
-                      <p className="text-slate-300 leading-relaxed">{adv.why}</p>
-                      <p className="text-teal-300 leading-relaxed"><strong className="text-teal-400">Fix:</strong> {adv.fix}</p>
-                      <p className="text-emerald-300/90 leading-relaxed"><strong className="text-emerald-400">Verify:</strong> {adv.verify}</p>
-                    </div>
+                    </details>
                   ))}
                 </div>
               )}
 
-              {/* LEVEL 1 — SECURITY, OPERATIONAL & COST ASSESSMENT RESULTS */}
-              <section className="space-y-4">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                  Assessment Summary — Security Risks · Operational Concerns · Potential Cost Waste
-                </p>
-
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+              {/* LEVEL 1 — UNIFIED ACCOUNT OVERVIEW */}
+              <section
+                aria-label="Account health overview"
+                className="rounded-2xl border border-slate-800/90 bg-slate-900/50 p-5 sm:p-6 space-y-5"
+              >
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+                  {/* Left: Honest Health Score OR Clear Incomplete Explanation */}
                   {scoreData.isAvailable ? (
-                    <ScoreRing
-                      score={scoreData.score}
-                      label={scoreData.label}
-                      labelColor={scoreData.labelColor}
-                    />
+                    <div className="space-y-2">
+                      <ScoreRing
+                        score={scoreData.score}
+                        label={scoreData.label}
+                        labelColor={scoreData.labelColor}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setScoreModalOpen(true)}
+                        className="text-[11px] text-slate-400 hover:text-teal-300 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                      >
+                        How this score is calculated →
+                      </button>
+                    </div>
                   ) : (
-                    <div className="rounded-xl border border-orange-500/35 bg-orange-950/20 px-4 py-3.5 max-w-md space-y-1.5">
-                      <p className="text-sm font-semibold text-orange-200">
-                        Health score unavailable — assessment incomplete.
-                      </p>
-                      <p className="text-xs text-orange-200/80 leading-relaxed">
-                        {coverageFailures.length > 0
-                          ? `${coverageFailures.length} collection or check failure${coverageFailures.length === 1 ? "" : "s"} prevented a complete account assessment.`
-                          : "One or more resource checks could not complete."}{" "}
-                        AWS Clarity withholds the numeric score so partial scans are never mistaken for a 100/100 healthy account.
+                    <div className="space-y-1.5 max-w-md">
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-orange-400 shrink-0" />
+                        <h1 className="text-sm sm:text-base font-bold text-orange-200">
+                          Health score unavailable — assessment incomplete
+                        </h1>
+                      </div>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        {regionsFailed.length > 0
+                          ? `${regionsFailed.length} region${regionsFailed.length === 1 ? "" : "s"} couldn't be reached (${regionsFailed.join(", ")}), so we withhold the numeric score rather than guessing.`
+                          : `${coverageFailures.length || "Some"} check${coverageFailures.length === 1 ? "" : "s"} couldn't finish, so we withhold the numeric score rather than guessing.`}
                       </p>
                       <button
                         type="button"
                         onClick={() => setCoverageModalOpen(true)}
-                        className="text-xs font-semibold text-orange-300 hover:text-orange-200 underline underline-offset-2 cursor-pointer bg-transparent border-none p-0"
+                        className="text-xs font-semibold text-orange-300 hover:text-orange-200 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
                       >
-                        Inspect incomplete services &amp; regions →
+                        See incomplete regions &amp; details →
                       </button>
                     </div>
                   )}
 
-                  <div className="space-y-2.5 w-full md:w-auto">
-                    {/* 3 Finding Category Buttons */}
-                    <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-center gap-2 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("ALL", "Security Risk")}
-                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 hover:bg-rose-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span>Security Risks</span>
-                        <span className="font-mono font-bold">{scoreData.securityRisks}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("ALL", "Operational Concern")}
-                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 hover:bg-indigo-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span>Operational Concerns</span>
-                        <span className="font-mono font-bold">{scoreData.operationalConcerns}</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("ALL", "Potential Cost Waste")}
-                        className="flex items-center justify-between sm:justify-start gap-2 px-3 py-2 sm:py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 text-amber-300 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span>Potential Cost Waste</span>
-                        <span className="font-mono font-bold">{scoreData.potentialCostWaste}</span>
-                      </button>
-                    </div>
+                  {/* Right: 4 Clean Clickable Stat Tiles */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 w-full md:w-auto md:min-w-[400px]">
+                    <button
+                      type="button"
+                      onClick={() => jumpToInventory("CRITICAL")}
+                      className="rounded-xl border border-slate-800 hover:border-red-500/40 bg-slate-950/70 hover:bg-red-950/20 px-3.5 py-3 text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-xl sm:text-2xl font-bold tabular-nums text-red-400 block leading-none">
+                        {scoreData.critical}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1.5 block">Critical</span>
+                    </button>
 
-                    {/* Severity Quick Filters */}
-                    <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("CRITICAL", "ALL")}
-                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0" />
-                        <span>{scoreData.critical} Critical</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("WARNING", "ALL")}
-                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                        <span>{scoreData.warning} Warning{scoreData.warning === 1 ? "" : "s"}</span>
-                      </button>
-                      {scoreData.info > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => jumpToInventory("INFO", "ALL")}
-                          className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-500/10 border border-slate-600/40 text-slate-300 hover:bg-slate-800 transition-colors cursor-pointer font-medium"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
-                          <span>{scoreData.info} Review Info</span>
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => jumpToInventory("HEALTHY", "ALL")}
-                        className="flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 transition-colors cursor-pointer font-medium"
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                        <span>{scoreData.healthy} Healthy</span>
-                      </button>
-                      {scoreData.incomplete > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => jumpToInventory("INCOMPLETE", "ALL")}
-                          className="col-span-2 sm:col-span-1 flex items-center justify-center sm:justify-start gap-1.5 px-2.5 py-1.5 rounded-lg bg-orange-500/10 border border-orange-500/25 text-orange-300 hover:bg-orange-500/20 transition-colors cursor-pointer font-medium"
-                        >
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-400 shrink-0" />
-                          <span>{scoreData.incomplete} Incomplete</span>
-                        </button>
-                      )}
-                    </div>
+                    <button
+                      type="button"
+                      onClick={() => jumpToInventory("WARNING")}
+                      className="rounded-xl border border-slate-800 hover:border-amber-500/40 bg-slate-950/70 hover:bg-amber-950/20 px-3.5 py-3 text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-xl sm:text-2xl font-bold tabular-nums text-amber-400 block leading-none">
+                        {scoreData.warning}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1.5 block">Warnings</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => jumpToInventory("COST_UNUSED")}
+                      className="rounded-xl border border-slate-800 hover:border-sky-500/40 bg-slate-950/70 hover:bg-sky-950/20 px-3.5 py-3 text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-xl sm:text-2xl font-bold tabular-nums text-sky-300 block leading-none">
+                        {scoreData.potentialCostWaste}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1.5 block">Cost / Review</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => jumpToInventory("HEALTHY")}
+                      className="rounded-xl border border-slate-800 hover:border-emerald-500/40 bg-slate-950/70 hover:bg-emerald-950/20 px-3.5 py-3 text-left transition-colors cursor-pointer"
+                    >
+                      <span className="text-xl sm:text-2xl font-bold tabular-nums text-emerald-400 block leading-none">
+                        {scoreData.healthy}
+                      </span>
+                      <span className="text-[11px] text-slate-400 mt-1.5 block">Healthy</span>
+                    </button>
                   </div>
                 </div>
 
-                {/* Transparency Links & Scan Verification Diff */}
-                <div className="flex items-center gap-3 text-xs text-slate-500 flex-wrap pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setScoreModalOpen(true)}
-                    className="hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
-                  >
-                    How score is calculated
-                  </button>
-                  <span>·</span>
-                  <button
-                    type="button"
-                    onClick={() => setCatalogModalOpen(true)}
-                    className="hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
-                  >
-                    Checks catalog ({activeCatalog.length} rules)
-                  </button>
-                  <span>·</span>
-                  <button
-                    type="button"
-                    onClick={() => setCoverageModalOpen(true)}
-                    className="hover:text-slate-200 transition-colors cursor-pointer bg-transparent border-none p-0 text-slate-400"
-                  >
-                    Coverage report
-                  </button>
+                {/* Quiet Single-Line Transparency Footer */}
+                <div className="pt-3.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                    <button
+                      type="button"
+                      onClick={() => setCoverageModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                          isIncompleteScan ? "bg-orange-400" : "bg-emerald-400"
+                        }`}
+                      />
+                      <span>
+                        {allResources.length} resources · {assessedServicesCount}/10 services
+                        {skippedOptionalServices.length > 0 ? ` (${skippedOptionalServices.join(", ")} skipped)` : ""}
+                        {regionsScanned.length > 0 ? ` · ${regionsSucceededCount}/${regionsScanned.length} regions` : ""}
+                      </span>
+                    </button>
+                    <span className="text-slate-700">·</span>
+                    <button
+                      type="button"
+                      onClick={() => setCatalogModalOpen(true)}
+                      className="hover:text-teal-300 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                    >
+                      {activeCatalog.length} rules checked
+                    </button>
+                    {typeof scanResults?.scan_duration_ms === "number" && (
+                      <>
+                        <span className="text-slate-700 hidden sm:inline">·</span>
+                        <span className="font-mono text-slate-500 hidden sm:inline">
+                          {(scanResults.scan_duration_ms / 1000).toFixed(1)}s
+                        </span>
+                      </>
+                    )}
+                  </div>
 
                   {comparison.hasPrevious && (
-                    <>
-                      <span>·</span>
-                      {scoreData.isAvailable && !previousScanIncomplete ? (
-                        <>
-                          <span className="text-slate-400">
-                            Previous: {comparison.previousScore} → {comparison.currentScore}
-                          </span>
-                          <span className={`font-semibold ${deltaColor}`}>{deltaLabel}</span>
-                        </>
-                      ) : (
-                        <span className="text-slate-400">
-                          Scan Diff: {comparison.newCount} new · {comparison.resolvedCount} resolved · {comparison.stillOpenCount} unchanged
+                    <button
+                      type="button"
+                      onClick={() => setComparisonExpanded((prev) => !prev)}
+                      className="text-xs font-semibold text-teal-300 hover:text-teal-200 bg-teal-500/10 border border-teal-500/30 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
+                    >
+                      Scan Diff: {comparison.resolvedCount} resolved · {comparison.newCount} new{" "}
+                      {comparisonExpanded ? "▲" : "▼"}
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              {/* OPTIONAL SCAN DIFF PANEL (Only visible after user compares two scans) */}
+              {comparisonExpanded && comparison.hasPrevious && (
+                <section
+                  aria-label="Scan comparison diff"
+                  className="rounded-2xl border border-teal-500/30 bg-slate-900/60 p-4 sm:p-5 space-y-3"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h2 className="text-sm font-semibold text-white">
+                      Changes Since Previous Scan
+                    </h2>
+                    {scoreData.isAvailable && !previousScanIncomplete && (
+                      <span className="text-xs font-mono text-slate-300">
+                        Score: {comparison.previousScore} → {comparison.currentScore}{" "}
+                        <span
+                          className={
+                            comparison.scoreDelta > 0
+                              ? "text-emerald-400"
+                              : comparison.scoreDelta < 0
+                              ? "text-red-400"
+                              : "text-slate-500"
+                          }
+                        >
+                          ({comparison.scoreDelta > 0 ? `+${comparison.scoreDelta}` : comparison.scoreDelta} pts)
                         </span>
-                      )}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {[
+                      { key: "resolved", label: "✓ Resolved", count: comparison.resolvedCount, active: "text-emerald-300 bg-emerald-500/15 border-emerald-500/30" },
+                      { key: "new", label: "New", count: comparison.newCount, active: "text-cyan-300 bg-cyan-500/15 border-cyan-500/30" },
+                      { key: "stillOpen", label: "Unchanged", count: comparison.stillOpenCount, active: "text-amber-300 bg-amber-500/15 border-amber-500/30" },
+                      { key: "newResources", label: "Added Resources", count: comparison.newResourcesCount, active: "text-sky-300 bg-sky-500/15 border-sky-500/30" },
+                      { key: "removedResources", label: "Removed", count: comparison.removedResourcesCount, active: "text-rose-300 bg-rose-500/15 border-rose-500/30" },
+                      { key: "statusChanges", label: "Status Changes", count: comparison.statusChangesCount, active: "text-indigo-300 bg-indigo-500/15 border-indigo-500/30" },
+                    ].map((tab) => (
                       <button
                         type="button"
-                        onClick={() => setComparisonExpanded((prev) => !prev)}
-                        className="hover:text-slate-200 flex items-center gap-1 cursor-pointer bg-transparent border-none p-0 text-teal-400"
+                        key={tab.key}
+                        onClick={() => setProgressTab(tab.key)}
+                        className={`text-xs font-medium px-2.5 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                          progressTab === tab.key
+                            ? tab.active
+                            : "text-slate-400 hover:text-slate-200 border-slate-800 bg-slate-950/50"
+                        }`}
                       >
-                        Scan Diff <ChevronIcon open={comparisonExpanded} />
+                        <span>{tab.label}</span>
+                        <span className="font-mono text-[11px] opacity-80">{tab.count}</span>
                       </button>
-                    </>
+                    ))}
+                  </div>
+
+                  <div className="text-xs space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                    {progressTab === "resolved" &&
+                      (comparison.resolvedCount === 0 ? (
+                        <p className="text-slate-500 py-1">No findings resolved since the previous scan.</p>
+                      ) : (
+                        comparison.resolved.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-emerald-950/25">
+                            <span className="text-emerald-400 font-bold shrink-0">✓</span>
+                            {item.ruleId && <span className="text-[11px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
+                            <span className="text-slate-200 truncate">{item.title}</span>
+                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "new" &&
+                      (comparison.newCount === 0 ? (
+                        <p className="text-slate-500 py-1">No new findings discovered.</p>
+                      ) : (
+                        comparison.newFindings.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-cyan-950/25">
+                            <span className="text-cyan-400 font-bold shrink-0">+</span>
+                            {item.ruleId && <span className="text-[11px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
+                            <span className="text-slate-200 truncate">{item.title}</span>
+                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "stillOpen" &&
+                      (comparison.stillOpenCount === 0 ? (
+                        <p className="text-slate-500 py-1">No findings carried over.</p>
+                      ) : (
+                        comparison.stillOpen.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-amber-950/20">
+                            <span className="text-amber-400 font-bold shrink-0">•</span>
+                            {item.ruleId && <span className="text-[11px] font-mono text-amber-400 shrink-0">{item.ruleId}</span>}
+                            <span className="text-slate-200 truncate">{item.title}</span>
+                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "newResources" &&
+                      (comparison.newResourcesCount === 0 ? (
+                        <p className="text-slate-500 py-1">No new resources discovered.</p>
+                      ) : (
+                        comparison.newResources.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-sky-950/20">
+                            <span className="text-slate-200 truncate">
+                              <span className="text-[10px] font-mono text-sky-400 mr-2 uppercase">{item.type}</span>
+                              {item.name || item.id}
+                            </span>
+                            <span className={`text-[11px] font-semibold ${STATUS_COLOR[item.status] || "text-slate-400"}`}>
+                              {item.status}
+                            </span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "removedResources" &&
+                      (comparison.removedResourcesCount === 0 ? (
+                        <p className="text-slate-500 py-1">No resources removed.</p>
+                      ) : (
+                        comparison.removedResources.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-rose-950/20">
+                            <span className="text-slate-200 truncate">
+                              <span className="text-[10px] font-mono text-rose-400 mr-2 uppercase">{item.type}</span>
+                              {item.name || item.id}
+                            </span>
+                            <span className="text-[11px] text-slate-500 font-mono">Removed</span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "statusChanges" &&
+                      (comparison.statusChangesCount === 0 ? (
+                        <p className="text-slate-500 py-1">No resource status changes.</p>
+                      ) : (
+                        comparison.statusChanges.map((item, idx) => (
+                          <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-indigo-950/20">
+                            <span className="text-slate-200 truncate">{item.resourceName}</span>
+                            <span className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono">
+                              <span className={STATUS_COLOR[item.previousStatus] || "text-slate-400"}>{item.previousStatus}</span>
+                              <span className="text-slate-500">→</span>
+                              <span className={STATUS_COLOR[item.currentStatus] || "text-slate-400"}>{item.currentStatus}</span>
+                            </span>
+                          </div>
+                        ))
+                      ))}
+                  </div>
+                </section>
+              )}
+
+              {/* LEVEL 2 — WHAT TO FIX FIRST */}
+              <section aria-labelledby="priority-heading" className="space-y-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 id="priority-heading" className="text-sm font-bold text-white">
+                    What to fix first
+                  </h2>
+                  {topPriorityItems.length > 0 && (
+                    <span className="text-xs text-slate-500">
+                      Click any item for AWS evidence &amp; step-by-step fix
+                    </span>
                   )}
                 </div>
 
-                {comparisonExpanded && comparison.hasPrevious && (
-                  <div className="border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 bg-slate-900/40">
-                    <div className="flex items-center gap-1 flex-wrap">
-                      {[
-                        { key: "new", label: "⚡ New", count: comparison.newCount, activeClass: "text-cyan-400 bg-cyan-500/10 border-cyan-500/20" },
-                        { key: "resolved", label: "✓ Resolved", count: comparison.resolvedCount, activeClass: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20" },
-                        { key: "stillOpen", label: "• Unchanged", count: comparison.stillOpenCount, activeClass: "text-amber-400 bg-amber-500/10 border-amber-500/20" },
-                        { key: "newResources", label: "New Resources", count: comparison.newResourcesCount, activeClass: "text-sky-400 bg-sky-500/10 border-sky-500/20" },
-                        { key: "removedResources", label: "Removed", count: comparison.removedResourcesCount, activeClass: "text-rose-400 bg-rose-500/10 border-rose-500/20" },
-                        { key: "statusChanges", label: "Status Changes", count: comparison.statusChangesCount, activeClass: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20" },
-                      ].map((tab) => (
-                        <button
-                          type="button"
-                          key={tab.key}
-                          onClick={() => setProgressTab(tab.key)}
-                          className={`text-[11px] font-semibold px-2.5 py-1 rounded transition-colors cursor-pointer flex items-center gap-1.5 border ${
-                            progressTab === tab.key
-                              ? tab.activeClass
-                              : "text-slate-400 hover:text-slate-200 border-transparent"
-                          }`}
-                        >
-                          {tab.label}
-                          <span className="text-[10px] font-mono tabular-nums px-1 rounded bg-slate-800/80">
-                            {tab.count}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-
-                    <div className="text-xs space-y-1 max-h-44 overflow-y-auto pr-1">
-                      {progressTab === "resolved" &&
-                        (comparison.resolvedCount === 0 ? (
-                          <p className="text-slate-500 py-1">No findings resolved since the previous scan.</p>
-                        ) : (
-                          comparison.resolved.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-emerald-950/20">
-                              <span className="text-emerald-400 font-bold shrink-0">✓</span>
-                              {item.ruleId && <span className="text-[10px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
-                              <span className="text-slate-300 truncate">{item.title}</span>
-                              <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                            </div>
-                          ))
-                        ))}
-                      {progressTab === "stillOpen" &&
-                        (comparison.stillOpenCount === 0 ? (
-                          <p className="text-slate-500 py-1">No findings carried over.</p>
-                        ) : (
-                          comparison.stillOpen.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-amber-950/20">
-                              <span className="text-amber-400 font-bold shrink-0">⚠</span>
-                              {item.ruleId && <span className="text-[10px] font-mono text-amber-400 shrink-0">{item.ruleId}</span>}
-                              <span className="text-slate-300 truncate">{item.title}</span>
-                              <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                            </div>
-                          ))
-                        ))}
-                      {progressTab === "new" &&
-                        (comparison.newCount === 0 ? (
-                          <p className="text-slate-500 py-1">No new findings discovered.</p>
-                        ) : (
-                          comparison.newFindings.map((item, idx) => (
-                            <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-cyan-950/20">
-                              <span className="text-cyan-400 font-bold shrink-0">⚡</span>
-                              {item.ruleId && <span className="text-[10px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
-                              <span className="text-slate-300 truncate">{item.title}</span>
-                              <span className="text-slate-500 text-[11px] truncate shrink-0">({item.resourceName})</span>
-                            </div>
-                          ))
-                        ))}
-                      {progressTab === "newResources" &&
-                        (comparison.newResourcesCount === 0 ? (
-                          <p className="text-slate-500 py-1">No new resources discovered.</p>
-                        ) : (
-                          comparison.newResources.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-sky-950/20">
-                              <span className="text-slate-300 truncate">
-                                <span className="text-[10px] font-mono text-sky-400 mr-2 uppercase">{item.type}</span>
-                                {item.name || item.id}
-                              </span>
-                              <span className={`text-[10px] font-semibold uppercase ${STATUS_COLOR[item.status] || "text-slate-400"}`}>
-                                {item.status}
-                              </span>
-                            </div>
-                          ))
-                        ))}
-                      {progressTab === "removedResources" &&
-                        (comparison.removedResourcesCount === 0 ? (
-                          <p className="text-slate-500 py-1">No resources removed.</p>
-                        ) : (
-                          comparison.removedResources.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-rose-950/20">
-                              <span className="text-slate-300 truncate">
-                                <span className="text-[10px] font-mono text-rose-400 mr-2 uppercase">{item.type}</span>
-                                {item.name || item.id}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">Removed</span>
-                            </div>
-                          ))
-                        ))}
-                      {progressTab === "statusChanges" &&
-                        (comparison.statusChangesCount === 0 ? (
-                          <p className="text-slate-500 py-1">No resource status changes.</p>
-                        ) : (
-                          comparison.statusChanges.map((item, idx) => (
-                            <div key={idx} className="flex items-center justify-between py-1 px-2 rounded bg-indigo-950/20">
-                              <span className="text-slate-300 truncate">{item.resourceName}</span>
-                              <div className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono">
-                                <span className={STATUS_COLOR[item.previousStatus] || "text-slate-400"}>{item.previousStatus}</span>
-                                <span className="text-slate-500">→</span>
-                                <span className={STATUS_COLOR[item.currentStatus] || "text-slate-400"}>{item.currentStatus}</span>
-                              </div>
-                            </div>
-                          ))
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </section>
-
-              {/* LEVEL 2 — NEEDS ATTENTION */}
-              <section>
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 mb-3">
-                  Needs Attention — Top Security &amp; Cost Risks
-                </p>
-
-                {topAttentionItems.length > 0 ? (
-                  <div className="divide-y divide-slate-800/60 border-y border-slate-800/60">
-                    {topAttentionItems.map(({ resource, issue }, idx) => (
-                      <div
+                {topPriorityItems.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-800/90 bg-slate-900/40 divide-y divide-slate-800/70 overflow-hidden">
+                    {topPriorityItems.map(({ resource, issue }, idx) => (
+                      <button
+                        type="button"
                         key={`${issue.rule_id}-${resource.id}-${idx}`}
-                        className="py-3.5 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3"
+                        onClick={() => setSelectedResource(resource)}
+                        className="w-full text-left px-4 py-3.5 hover:bg-slate-800/45 transition-colors cursor-pointer flex items-center justify-between gap-4 bg-transparent border-0"
                       >
-                        <div className="flex flex-col gap-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className={`text-[11px] font-semibold uppercase tracking-wider ${
-                                issue.severity === "CRITICAL"
-                                  ? "text-red-400"
-                                  : issue.severity === "WARNING"
-                                  ? "text-amber-400"
-                                  : "text-sky-300"
-                              }`}
-                            >
-                              {issue.severity}
-                            </span>
-                            {issue.category && (
-                              <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded border ${
-                                  CATEGORY_BADGE[issue.category] || "bg-slate-800 text-slate-400 border-slate-700"
-                                }`}
-                              >
-                                {issue.category}
-                              </span>
-                            )}
-                            {issue.rule_id && (
-                              <span className="text-[11px] font-mono text-slate-500">{issue.rule_id}</span>
-                            )}
-                            <span className="text-[13px] font-medium text-slate-200">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <span
+                            className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${
+                              SEVERITY_DOT[issue.severity] || "bg-slate-400"
+                            }`}
+                          />
+                          <div className="min-w-0 space-y-0.5">
+                            <p className="text-sm font-medium text-slate-100 leading-snug">
                               {issue.title || issue.message}
-                            </span>
-                          </div>
-                          <span className="text-[12px] text-slate-500">
-                            {RESOURCE_TYPE_LABELS[resource.type] || resource.type} · {resource.name} ·{" "}
-                            <span className="font-mono">{resource.region || "global"}</span>
-                          </span>
-                          {issue.why && (
-                            <p className="text-[12px] text-slate-400 leading-relaxed mt-0.5 max-w-prose">
-                              {issue.why}
                             </p>
-                          )}
+                            <p className="text-xs text-slate-400 truncate">
+                              <span className={`font-semibold ${SEVERITY_TEXT[issue.severity] || "text-slate-400"}`}>
+                                {issue.severity}
+                              </span>
+                              {" · "}
+                              {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
+                              {" · "}
+                              <span className="text-slate-300">{resource.name}</span>
+                              {" · "}
+                              <span className="font-mono text-slate-500">{resource.region || "global"}</span>
+                            </p>
+                          </div>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedResource(resource)}
-                          className="text-xs text-teal-400 hover:text-teal-300 font-medium bg-transparent border-none p-0 cursor-pointer shrink-0 sm:pt-0.5 self-start whitespace-nowrap transition-colors"
-                        >
-                          Inspect &amp; Fix →
-                        </button>
-                      </div>
+                        <span className="text-xs font-semibold text-teal-400 shrink-0 whitespace-nowrap">
+                          Fix steps →
+                        </span>
+                      </button>
                     ))}
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2.5 py-3 px-4 rounded-xl border border-emerald-500/20 bg-emerald-950/10 text-emerald-300 text-[13px]">
-                    <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                    </svg>
+                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/15 px-4 py-3 flex items-center gap-2.5 text-xs text-emerald-300">
+                    <span className="font-bold">✓</span>
                     <span>
                       {isIncompleteScan
-                        ? "No findings detected in completed checks, though scan coverage is incomplete (inspect coverage above)."
-                        : "No security issues or unused cost risks detected across your connected account."}
+                        ? "No critical or warning findings in completed checks (some regions were incomplete — inspect coverage above)."
+                        : "No critical security risks or unused cost waste detected across your scanned services."}
                     </span>
                   </div>
                 )}
               </section>
 
-              {/* LEVEL 3 — CENTRAL RESOURCE INVENTORY */}
-              <section ref={inventorySectionRef} className="scroll-mt-6">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-                  <div className="min-w-0">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500">
-                      Complete Account Inventory (10 Supported Services)
-                    </p>
-                    <p className="text-[12px] text-slate-500 mt-0.5">
-                      {allResources.length} actual resources discovered across {regionsScanned.length} enabled region{regionsScanned.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => setExportModalOpen(true)}
-                      disabled={allResources.length === 0}
-                      className="text-xs px-3 py-2 sm:py-1.5 rounded-lg border border-teal-500/35 hover:border-teal-400 text-teal-300 hover:text-teal-200 cursor-pointer bg-teal-500/10 transition-colors disabled:opacity-40 shrink-0 font-medium"
-                    >
-                      Export / Share Report
-                    </button>
-                  </div>
+              {/* LEVEL 3 — ALL RESOURCES (Clean, Single-Toolbar Table) */}
+              <section ref={inventorySectionRef} aria-labelledby="inventory-heading" className="scroll-mt-6 space-y-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <h2 id="inventory-heading" className="text-sm font-bold text-white">
+                    All Resources
+                  </h2>
+                  <span className="text-xs text-slate-500">
+                    {allResources.length} discovered
+                  </span>
                 </div>
 
                 <ResourceTable
                   resources={allResources}
                   initialStatusFilter={tableStatusFilter}
-                  initialCategoryFilter={tableCategoryFilter}
                   onInspect={(resource) => setSelectedResource(resource)}
                 />
               </section>
-            </div>
+            </>
           )}
         </main>
       </div>
 
+      {/* MODALS & INSPECTION DRAWER */}
       <CoverageModal
         isOpen={coverageModalOpen}
         onClose={() => setCoverageModalOpen(false)}
@@ -821,27 +737,26 @@ export default function DashboardScreen({
             <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 id="export-modal-title" className="text-sm sm:text-base font-bold text-white">
-                  Export Assessment Locally
+                  Export Report Locally
                 </h3>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Downloads directly to your computer—nothing is uploaded or shared automatically.
+                  Saves directly to your computer — nothing is uploaded.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setExportModalOpen(false)}
                 aria-label="Close export dialog"
-                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer bg-transparent border-none"
+                className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer bg-transparent border-0"
               >
                 ✕
               </button>
             </div>
             <div className="p-4 sm:p-5 space-y-4 text-xs">
               <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed">
-                <strong>Privacy Warning:</strong> Full AWS Clarity reports contain sensitive infrastructure details
-                including <strong>AWS Account IDs</strong>, <strong>Resource ARNs</strong>, <strong>Resource Names</strong>,{" "}
-                <strong>Network Configuration</strong>, <strong>Public IP addresses</strong>, and <strong>IAM metadata</strong>.
-                Use a <strong>Sanitized Export</strong> before sharing externally or in issue trackers.
+                <strong>Privacy Warning:</strong> Full reports contain sensitive AWS Account IDs, ARNs,
+                resource names, public IPs, and IAM metadata. Use a <strong>Sanitized</strong> export
+                before sharing externally.
               </div>
 
               <div className="space-y-2">
@@ -852,7 +767,7 @@ export default function DashboardScreen({
                 >
                   <p className="font-semibold text-teal-200">Download Sanitized JSON (Recommended for Sharing)</p>
                   <p className="text-[11px] text-teal-200/75">
-                    Best-effort redaction of Account IDs, ARNs, resource names, IP addresses, and raw IAM/network payloads while keeping rule IDs, severities, and coverage. Always review before sharing externally.
+                    Best-effort redaction of Account IDs, ARNs, names, IPs, and raw payloads while keeping findings and coverage.
                   </p>
                 </button>
                 <button
@@ -862,7 +777,7 @@ export default function DashboardScreen({
                 >
                   <p className="font-semibold text-slate-200">Download Sanitized CSV</p>
                   <p className="text-[11px] text-slate-400">
-                    Spreadsheet inventory with anonymized resource names/IDs and redacted evidence.
+                    Spreadsheet inventory with anonymized names/IDs and redacted evidence.
                   </p>
                 </button>
                 <button
@@ -870,9 +785,9 @@ export default function DashboardScreen({
                   onClick={handleDownloadFullJSON}
                   className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-slate-200">Download Full JSON Report (Sensitive — Keep Private)</p>
+                  <p className="font-semibold text-slate-200">Download Full JSON (Private Archive / Diff Baseline)</p>
                   <p className="text-[11px] text-slate-400">
-                    Complete unredacted local report suitable for private archival or future local Scan Diff.
+                    Complete unredacted local report for private storage or future Scan Diff.
                   </p>
                 </button>
                 <button
@@ -880,9 +795,9 @@ export default function DashboardScreen({
                   onClick={() => handleExportCSV(false)}
                   className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-slate-200">Download Full CSV Inventory (Sensitive)</p>
+                  <p className="font-semibold text-slate-200">Download Full CSV (Private)</p>
                   <p className="text-[11px] text-slate-400">
-                    Complete unredacted spreadsheet of resources, findings, evidence, and remediation steps.
+                    Complete unredacted spreadsheet of resources, findings, evidence, and fixes.
                   </p>
                 </button>
               </div>

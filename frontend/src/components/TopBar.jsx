@@ -1,43 +1,53 @@
 import { maskAccountId } from "../utils/formatters";
 
-function getRelativeTime(isoString) {
-  if (!isoString) return "unknown";
+function formatShortTime(isoString) {
+  if (!isoString) return "";
   try {
     const date = new Date(isoString);
-    if (isNaN(date.getTime())) return "unknown";
-    const diffMs = Date.now() - date.getTime();
-    if (diffMs < 0) return "just now";
-    const diffMins = Math.floor(diffMs / 60000);
+    if (isNaN(date.getTime())) return "";
+    const diffMins = Math.floor((Date.now() - date.getTime()) / 60000);
     if (diffMins < 1) return "just now";
-    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? "s" : ""} ago`;
+    if (diffMins < 60) return `${diffMins}m ago`;
     const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
   } catch {
-    return "unknown";
+    return "";
   }
 }
 
 export default function TopBar({
   accountId,
-  regionsCount = 0,
   scannedAt,
   importedFileName = "",
   isDemoMode = false,
   onExitDemo,
   onTriggerImportNewer,
+  onOpenExport,
+  canExport = false,
   onReturnHome,
   onOpenTrust,
 }) {
+  const timeLabel = formatShortTime(scannedAt);
+  const accountTooltip = [
+    importedFileName ? `File: ${importedFileName}` : "",
+    timeLabel ? `Generated ${timeLabel}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
   return (
-    <header className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 py-3 w-full border-b border-slate-800/70">
-      {/* Row 1 on mobile/tablet: Brand + Report Metadata */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between lg:justify-start gap-2.5 sm:gap-4 min-w-0">
-        {/* Brand */}
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="w-7 h-7 sm:w-6 sm:h-6 rounded-md bg-teal-500/10 border border-teal-500/20 flex items-center justify-center shrink-0">
-            <svg className="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <header className="flex items-center justify-between gap-3 py-3 border-b border-slate-800/70">
+      {/* Left: Brand (click to go Home) + Single Calm Context Pill */}
+      <div className="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          onClick={isDemoMode ? onExitDemo : onReturnHome}
+          title="Return to Home & Getting Started"
+          className="flex items-center gap-2 shrink-0 bg-transparent border-0 p-0 cursor-pointer group"
+        >
+          <span className="w-7 h-7 rounded-lg bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400 group-hover:bg-teal-500/25 transition-colors">
+            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"
@@ -45,80 +55,71 @@ export default function TopBar({
                 d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"
               />
             </svg>
-          </div>
-          <span className="text-[15px] sm:text-[14px] font-semibold text-slate-100 tracking-tight">
+          </span>
+          <span className="text-sm font-semibold text-white tracking-tight group-hover:text-teal-300 transition-colors">
             AWS Clarity
           </span>
-          {isDemoMode ? (
-            <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/40">
-              DEMO
-            </span>
-          ) : (
-            <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 rounded bg-teal-500/15 text-teal-300 border border-teal-500/30">
-              LOCAL ONLY
-            </span>
-          )}
-        </div>
+        </button>
 
-        {/* Report Metadata */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs text-slate-400 min-w-0">
-          <span className="font-mono text-slate-200 whitespace-nowrap">
-            {isDemoMode ? "Sample Demo Account" : `Account ${maskAccountId(accountId)}`}
+        <span className="text-slate-700 hidden sm:inline">/</span>
+
+        {isDemoMode ? (
+          <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 truncate">
+            Demo Account
           </span>
-          {regionsCount > 0 && (
-            <>
-              <span className="text-slate-700 hidden sm:inline">·</span>
-              <span className="font-mono text-[11px] text-slate-300 px-2 py-0.5 rounded bg-slate-900 border border-slate-800 whitespace-nowrap">
-                {regionsCount} enabled region{regionsCount === 1 ? "" : "s"}
-              </span>
-            </>
-          )}
-          {scannedAt && !isDemoMode && (
-            <>
-              <span className="text-slate-700 hidden sm:inline">·</span>
-              <span className="whitespace-nowrap">Generated {getRelativeTime(scannedAt)}</span>
-            </>
-          )}
-          {importedFileName && !isDemoMode && (
-            <>
-              <span className="text-slate-700 hidden sm:inline">·</span>
-              <span className="font-mono text-[11px] text-slate-500 truncate max-w-[160px]" title={importedFileName}>
-                {importedFileName}
-              </span>
-            </>
-          )}
-        </div>
+        ) : (
+          <span
+            title={accountTooltip || undefined}
+            className="text-xs font-mono text-slate-400 truncate"
+          >
+            Account {maskAccountId(accountId)}
+            {timeLabel && <span className="hidden md:inline text-slate-500"> · {timeLabel}</span>}
+          </span>
+        )}
       </div>
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 flex-wrap shrink-0">
-        {onOpenTrust && (
-          <button
-            type="button"
-            onClick={onOpenTrust}
-            className="px-3 py-1.5 sm:py-1 text-xs border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded-md bg-slate-900/60 transition-colors cursor-pointer flex items-center justify-center gap-1.5 min-h-[36px] sm:min-h-[30px]"
-          >
-            <span className="w-1.5 h-1.5 rounded-full bg-teal-400" />
-            <span>Trust &amp; Privacy</span>
-          </button>
-        )}
+      {/* Right: Max 3 Clean Actions */}
+      <nav aria-label="Dashboard actions" className="flex items-center gap-2 shrink-0">
         {isDemoMode ? (
-          <button
-            type="button"
-            onClick={onExitDemo}
-            className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
-          >
-            Import Local Report →
-          </button>
-        ) : (
           <>
-            {onReturnHome && (
+            {onOpenTrust && (
               <button
                 type="button"
-                onClick={onReturnHome}
-                className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 rounded-md bg-transparent transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
+                onClick={onOpenTrust}
+                className="px-2.5 py-1.5 text-xs text-slate-400 hover:text-white bg-transparent border-0 cursor-pointer transition-colors"
               >
-                Home / Guide
+                Privacy
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onExitDemo}
+              className="px-3.5 py-1.5 text-xs font-semibold rounded-lg bg-teal-500 hover:bg-teal-400 text-slate-950 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              Import My Report →
+            </button>
+          </>
+        ) : (
+          <>
+            {onOpenTrust && (
+              <button
+                type="button"
+                onClick={onOpenTrust}
+                className="px-2 py-1.5 text-xs text-slate-400 hover:text-white bg-transparent border-0 cursor-pointer transition-colors inline-flex items-center gap-1.5 whitespace-nowrap"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 hidden sm:inline-block" />
+                <span className="sm:hidden">Privacy</span>
+                <span className="hidden sm:inline">Trust &amp; Privacy</span>
+              </button>
+            )}
+            {onOpenExport && (
+              <button
+                type="button"
+                onClick={onOpenExport}
+                disabled={!canExport}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 hover:border-slate-600 bg-slate-900 hover:bg-slate-800 text-slate-200 transition-colors cursor-pointer disabled:opacity-40 whitespace-nowrap"
+              >
+                Export
               </button>
             )}
             {onTriggerImportNewer && (
@@ -126,14 +127,14 @@ export default function TopBar({
                 id="import-diff-button"
                 type="button"
                 onClick={onTriggerImportNewer}
-                className="flex-1 sm:flex-none px-3 py-1.5 sm:py-1 text-xs border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 text-teal-300 hover:text-teal-200 font-medium rounded-md transition-colors cursor-pointer text-center whitespace-nowrap min-h-[36px] sm:min-h-[30px]"
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-teal-500/40 bg-teal-500/15 hover:bg-teal-500/25 text-teal-200 transition-colors cursor-pointer whitespace-nowrap"
               >
-                Import Newer Report (Diff)
+                Compare Scan
               </button>
             )}
           </>
         )}
-      </div>
+      </nav>
     </header>
   );
 }
