@@ -7,7 +7,11 @@ import {
   SERVICE_COVERAGE_MATRIX,
   SUPPORTED_SERVICES,
 } from "../utils/constants";
-import { parseLocalAssessmentReport } from "../utils/reportImporter";
+import {
+  MAX_REPORT_BYTES,
+  parseLocalAssessmentReport,
+  sanitizeImportedFileName,
+} from "../utils/reportImporter";
 import { downloadLocalFile } from "../utils/reportSanitizer";
 import TrustModal from "../components/TrustModal";
 
@@ -65,7 +69,7 @@ const FAQ_ITEMS = [
   {
     question: "How can I share findings with my team without leaking Account IDs or IPs?",
     answer:
-      "Once your report is open in the dashboard, click 'Export / Share Report' and choose Sanitized JSON or Sanitized CSV. Clarity strips AWS Account IDs, ARNs, resource names, and IP addresses so you can share findings safely in Slack, Jira, or GitHub.",
+      "Once your report is open in the dashboard, click 'Export / Share Report' and choose Sanitized JSON or Sanitized CSV. Sanitized reports use best-effort redaction to strip Account IDs, ARNs, resource names, and IPs—they are not guaranteed to be completely anonymous, so inspect the file before sharing.",
   },
 ];
 
@@ -129,9 +133,12 @@ export default function SetupScreen({
     if (!file) return;
     if (setImportError) setImportError("");
     try {
+      if (typeof file.size === "number" && file.size > MAX_REPORT_BYTES) {
+        throw new Error("Report file exceeds the 25 MB local browser safety limit.");
+      }
       const text = await file.text();
       const parsed = parseLocalAssessmentReport(text, file.size);
-      onImportReport(parsed, file.name);
+      onImportReport(parsed, sanitizeImportedFileName(file.name));
     } catch (err) {
       if (setImportError) {
         setImportError(err.message || "Could not import the selected report file.");

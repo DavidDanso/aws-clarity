@@ -2,12 +2,20 @@ import { RESOURCE_COLLECTION_KEYS } from "./constants.js";
 
 export const MAX_REPORT_BYTES = 25 * 1024 * 1024; // 25 MB safety limit
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
-const CREDENTIAL_KEYS = new Set([
-  "SecretAccessKey",
-  "SessionToken",
-  "aws_secret_access_key",
-  "aws_session_token",
+const CREDENTIAL_KEYS_NORMALIZED = new Set([
+  "secretaccesskey",
+  "sessiontoken",
+  "securitytoken",
+  "awssecretaccesskey",
+  "awssessiontoken",
+  "awssecuritytoken",
+  "accesskeysecret",
+  "awssecretkey",
 ]);
+const CREDENTIAL_VALUE_RE =
+  /(?:aws_secret_access_key|aws_session_token|aws_security_token|SecretAccessKey|SessionToken|SecurityToken)\s*[:=]\s*[^\s,'"}]+|\bASIA[0-9A-Z]{16}\b|\bFwoGZXIvYXdz[A-Za-z0-9/+=]{16,}/i;
+const ALLOWED_STATUSES = new Set(["CRITICAL", "WARNING", "UNUSED", "HEALTHY", "INCOMPLETE"]);
+const ALLOWED_SEVERITIES = new Set(["CRITICAL", "WARNING", "UNUSED", "INFO"]);
 
 function stripControlChars(str, maxLen = 4096) {
   let out = "";
@@ -22,19 +30,29 @@ function stripControlChars(str, maxLen = 4096) {
   return str.length > maxLen ? `${out}…` : out;
 }
 
+export function sanitizeImportedFileName(name) {
+  return stripControlChars(String(name || ""), 128).trim();
+}
+
 /**
  * Recursively clones untrusted JSON data while:
  * - Dropping prototype-pollution keys (`__proto__`, `constructor`, `prototype`)
  * - Stripping control characters and bounding string lengths
- * - Detecting accidental credential fields
+ * - Detecting accidental credential fields and secret/session-token string patterns
  */
-function sanitizeUntrustedValue(value, depth = 0, state = { foundCredentialField: false }) {
-  if (depth > 16) return null;
+function sanitizeUntrustedValue(value, depth = 0, state = { foundCredentialField: false, maxDepthExceeded: false }) {
+  if (depth > 16) {
+    state.maxDepthExceeded = true;
+    return null;
+  }
   if (value === null || value === undefined) return value;
   if (typeof value === "boolean" || typeof value === "number") {
     return Number.isFinite(value) || typeof value === "boolean" ? value : null;
   }
   if (typeof value === "string") {
+    if (CREDENTIAL_VALUE_RE.test(value)) {
+      state.foundCredentialField = true;
+    }
     return stripControlChars(value, 4096);
   }
   if (Array.isArray(value)) {
@@ -44,7 +62,7 @@ function sanitizeUntrustedValue(value, depth = 0, state = { foundCredentialField
     const clean = Object.create(null);
     for (const [k, v] of Object.entries(value)) {
       if (FORBIDDEN_KEYS.has(k)) continue;
-      if (CREDENTIAL_KEYS.has(k)) {
+      if (CREDENTIAL_KEYS_NORMALIZED.has(k.toLowerCase().replace(/[_-]/g, ""))) {
         state.foundCredentialField = true;
         continue;
       }
@@ -54,6 +72,48 @@ function sanitizeUntrustedValue(value, depth = 0, state = { foundCredentialField
     return { ...clean };
   }
   return null;
+}
+
+function validateAndNormalizeResource(item, collectionKey) {
+  if (!item || typeof item !== "object" || Array.isArray(item)) {
+    throw new Error(`Malformed report: resources.${collectionKey} contains a non-object entry.`);
+  }
+  if (typeof item.id !== "string" || !item.id.trim()) {
+    throw new Error(`Malformed report: resources.${collectionKey} contains a resource with a missing or invalid id.`);
+  }
+  if (item.status !== undefined && (typeof item.status !== "string" || !ALLOWED_STATUSES.has(item.status))) {
+    throw new Error(`Malformed report: resources.${collectionKey} contains an unsupported status value.`);
+  }
+  if (item.issues !== undefined && !Array.isArray(item.issues)) {
+    throw new Error(`Malformed report: resources.${collectionKey} has a non-array issues field.`);
+  }
+
+  const normalizedIssues = [];
+  for (const issue of item.issues || []) {
+    if (!issue || typeof issue !== "object" || Array.isArray(issue)) {
+      throw new Error(`Malformed report: resources.${collectionKey} contains an invalid finding object.`);
+    }
+    if (typeof issue.severity !== "string" || !ALLOWED_SEVERITIES.has(issue.severity)) {
+      throw new Error(`Malformed report: resources.${collectionKey} contains a finding with an unsupported severity.`);
+    }
+    normalizedIssues.push(issue);
+  }
+
+  // Never allow a resource without complete assessment metadata to claim HEALTHY
+  const assessmentStatus = item.assessment && typeof item.assessment === "object" ? item.assessment.status : null;
+  const resolvedStatus =
+    !item.status || (item.status === "HEALTHY" && assessmentStatus !== "COMPLETE")
+      ? "INCOMPLETE"
+      : item.status;
+
+  return {
+    ...item,
+    id: item.id,
+    name: typeof item.name === "string" && item.name ? item.name : item.id,
+    region: typeof item.region === "string" && item.region ? item.region : "global",
+    status: resolvedStatus,
+    issues: normalizedIssues,
+  };
 }
 
 /**
@@ -83,12 +143,12 @@ export function parseLocalAssessmentReport(rawText, fileSizeBytes = null) {
     throw new Error("Unsupported report format: root JSON value must be an object.");
   }
 
-  const scanState = { foundCredentialField: false };
+  const scanState = { foundCredentialField: false, maxDepthExceeded: false };
   const safe = sanitizeUntrustedValue(parsed, 0, scanState);
 
   if (scanState.foundCredentialField) {
     throw new Error(
-      "Blocked import: this file appears to contain AWS credential fields (SecretAccessKey / SessionToken). " +
+      "Blocked import: this file appears to contain AWS credential fields (SecretAccessKey / SessionToken / temporary STS credentials). " +
         "AWS Clarity never accepts credential files—please select an assessment report generated by `aws-clarity scan`."
     );
   }
@@ -103,7 +163,7 @@ export function parseLocalAssessmentReport(rawText, fileSizeBytes = null) {
     );
   }
 
-  // Normalize recognized resource collections and reject non-array resource groups
+  // Normalize recognized resource collections, reject malformed items, and deduplicate duplicates
   const normalizedResources = {};
   let recognizedCollectionCount = 0;
   for (const key of RESOURCE_COLLECTION_KEYS) {
@@ -112,9 +172,19 @@ export function parseLocalAssessmentReport(rawText, fileSizeBytes = null) {
         throw new Error(`Malformed report: resources.${key} must be a list.`);
       }
       recognizedCollectionCount++;
-      normalizedResources[key] = safe.resources[key].filter(
-        (item) => item && typeof item === "object" && typeof item.id === "string"
-      );
+      const seenKeys = new Set();
+      const deduped = [];
+      for (const rawItem of safe.resources[key]) {
+        const normalized = validateAndNormalizeResource(rawItem, key);
+        const rawArn = normalized.raw && typeof normalized.raw === "object" && typeof normalized.raw.arn === "string"
+          ? normalized.raw.arn
+          : "";
+        const dedupKey = rawArn || `${normalized.type || key}::${normalized.region}::${normalized.id}`;
+        if (seenKeys.has(dedupKey)) continue;
+        seenKeys.add(dedupKey);
+        deduped.push(normalized);
+      }
+      normalizedResources[key] = deduped;
     } else {
       normalizedResources[key] = [];
     }
@@ -126,11 +196,19 @@ export function parseLocalAssessmentReport(rawText, fileSizeBytes = null) {
     );
   }
 
-  const coverage = safe.coverage && typeof safe.coverage === "object" ? safe.coverage : {};
+  const coverage = safe.coverage && typeof safe.coverage === "object" && !Array.isArray(safe.coverage)
+    ? safe.coverage
+    : {};
   const regions = Array.isArray(safe.regions)
     ? safe.regions.filter((r) => typeof r === "string")
     : Array.isArray(coverage.regions_scanned)
     ? coverage.regions_scanned.filter((r) => typeof r === "string")
+    : [];
+
+  const accountAdvisories = Array.isArray(safe.account_advisories)
+    ? safe.account_advisories.filter(
+        (a) => a && typeof a === "object" && !Array.isArray(a) && ALLOWED_SEVERITIES.has(a.severity)
+      )
     : [];
 
   return {
@@ -143,6 +221,6 @@ export function parseLocalAssessmentReport(rawText, fileSizeBytes = null) {
     regions,
     coverage,
     resources: normalizedResources,
-    account_advisories: Array.isArray(safe.account_advisories) ? safe.account_advisories : [],
+    account_advisories: accountAdvisories,
   };
 }
