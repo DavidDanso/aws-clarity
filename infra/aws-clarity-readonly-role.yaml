@@ -1,0 +1,142 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  AWS Clarity — Least-Privilege Customer-Owned Read-Only IAM Role for Local Scanning.
+  Grants ONLY the exact read-only metadata actions from `aws-clarity policy`
+  (28 default zero-request-charge actions, plus 6 optional S3 metadata actions when
+  IncludeS3Checks=true). Never grants write, delete, or customer-data read access,
+  and never trusts any external AWS Clarity vendor account.
+
+Parameters:
+  RoleName:
+    Type: String
+    Default: AWSClarityLocalReadOnlyRole
+    AllowedPattern: "^[a-zA-Z0-9+=,.@_-]{1,64}$"
+    Description: Name of the customer-owned read-only IAM role to create.
+
+  TrustedPrincipalArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:iam::[0-9]{12}:(root|user/.+|role/.+)$"
+    Description: >
+      ARN of YOUR OWN IAM user, IAM role, or account root permitted to assume this
+      role locally via `aws-clarity scan --role-arn <RoleArn>` (for example:
+      arn:aws:iam::123456789012:role/YourSSOPermissionSetRole). Never enter a
+      third-party vendor account unless you intentionally trust it.
+
+  ExternalId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[A-Za-z0-9+=,.@:/_-]{2,128}$"
+    Description: >
+      Optional ExternalId condition for sts:AssumeRole (leave blank if assuming
+      from your own same-account IAM identity; recommended for cross-account trusts).
+
+  IncludeS3Checks:
+    Type: String
+    Default: "false"
+    AllowedValues:
+      - "false"
+      - "true"
+    Description: >
+      Set to "true" ONLY if you plan to opt into S3 bucket configuration checks
+      with `aws-clarity scan --include-s3-checks` (adds 6 S3 metadata actions;
+      never grants s3:ListBucket or s3:GetObject).
+
+Conditions:
+  HasExternalId: !Not [!Equals [!Ref ExternalId, ""]]
+  EnableS3Metadata: !Equals [!Ref IncludeS3Checks, "true"]
+
+Resources:
+  AWSClarityLocalReadOnlyRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref RoleName
+      Description: >
+        Strictly read-only metadata role for AWS Clarity local CLI scanning.
+        No write, delete, or data-plane read permissions.
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCustomerLocalPrincipalAssumeRole
+            Effect: Allow
+            Principal:
+              AWS: !Ref TrustedPrincipalArn
+            Action: sts:AssumeRole
+            Condition: !If
+              - HasExternalId
+              - StringEquals:
+                  sts:ExternalId: !Ref ExternalId
+              - !Ref AWS::NoValue
+      Policies:
+        # Why Resource: "*" is required below:
+        # AWS IAM does not support resource-level ARN restrictions on account-wide
+        # discovery/inventory APIs (sts:GetCallerIdentity, ec2:Describe*, iam:List*,
+        # lambda:ListFunctions, rds:DescribeDBInstances, dynamodb:ListTables,
+        # cloudwatch:DescribeAlarms, logs:DescribeLogGroups, cloudtrail:DescribeTrails)
+        # and read-only metadata lookups across arbitrary discovered resources.
+        # Every action below is strictly read-only metadata (zero mutations, zero data reads).
+        - PolicyName: AWSClarityDefaultZeroCostReadOnly
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AWSClarityLocalZeroRequestCostReadOnly
+                Effect: Allow
+                Action:
+                  - sts:GetCallerIdentity
+                  - ec2:DescribeRegions
+                  - ec2:DescribeInstances
+                  - ec2:DescribeAddresses
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeVpcs
+                  - ec2:DescribeInternetGateways
+                  - ec2:DescribeNatGateways
+                  - ec2:DescribeVolumes
+                  - ec2:DescribeSnapshots
+                  - iam:ListRoles
+                  - iam:ListRolePolicies
+                  - iam:GetRolePolicy
+                  - iam:ListAttachedRolePolicies
+                  - iam:ListUsers
+                  - iam:ListMFADevices
+                  - iam:ListAccessKeys
+                  - iam:ListAttachedUserPolicies
+                  - iam:ListUserPolicies
+                  - iam:GetUserPolicy
+                  - lambda:ListFunctions
+                  - rds:DescribeDBInstances
+                  - dynamodb:ListTables
+                  - dynamodb:DescribeTable
+                  - cloudwatch:DescribeAlarms
+                  - logs:DescribeLogGroups
+                  - cloudtrail:DescribeTrails
+                  - cloudtrail:GetTrailStatus
+                Resource: "*"
+        - !If
+          - EnableS3Metadata
+          - PolicyName: AWSClarityOptionalS3MetadataReadOnly
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                # Why Resource: "*" is required here:
+                # s3:ListAllMyBuckets only supports Resource: "*", and bucket metadata
+                # checks evaluate every discovered bucket in the account. Object listing
+                # (s3:ListBucket) and object reads (s3:GetObject) are intentionally excluded.
+                - Sid: AWSClarityLocalOptionalS3Metadata
+                  Effect: Allow
+                  Action:
+                    - s3:ListAllMyBuckets
+                    - s3:GetBucketLocation
+                    - s3:GetBucketPolicyStatus
+                    - s3:GetBucketAcl
+                    - s3:GetEncryptionConfiguration
+                    - s3:GetBucketPublicAccessBlock
+                  Resource: "*"
+          - !Ref AWS::NoValue
+
+Outputs:
+  ReadOnlyRoleArn:
+    Description: Customer-owned read-only IAM Role ARN to pass to `aws-clarity scan --role-arn`
+    Value: !GetAtt AWSClarityLocalReadOnlyRole.Arn
+  ScanCommandExample:
+    Description: Example local CLI command using this dedicated read-only role
+    Value: !Sub "aws-clarity scan --role-arn ${AWSClarityLocalReadOnlyRole.Arn} --output aws-clarity-report.json"
