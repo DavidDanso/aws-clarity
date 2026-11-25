@@ -383,9 +383,60 @@ export default function SetupScreen({
               </div>
             </div>
 
+            {/* Visible Recommended Read-Only Role Callout (Phase 1.7 — outside any collapsed section) */}
+            <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3.5 py-3 text-xs space-y-1.5">
+              <p className="font-semibold text-amber-200">
+                Recommended: use a dedicated read-only role first
+              </p>
+              <p className="text-[11px] text-slate-300 leading-relaxed">
+                Avoid running any local scanner with AWS account root or broad admin credentials.
+                (Root credentials are refused by default; using a dedicated read-only role is recommended
+                to limit blast radius.)
+              </p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5 text-[11px]">
+                <a
+                  href="https://github.com/DavidDanso/aws-clarity/blob/main/docs/IAM_PERMISSIONS.md"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-teal-300 hover:text-teal-200 font-medium underline underline-offset-2"
+                >
+                  View least-privilege IAM policy (28/34 actions)
+                </a>
+                <span className="text-slate-600">·</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadLocalFile(
+                      "aws-clarity-readonly-policy-default.json",
+                      `${IAM_POLICY_DEFAULT_JSON}\n`,
+                      "application/json;charset=utf-8;"
+                    )
+                  }
+                  className="text-teal-300 hover:text-teal-200 font-medium underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
+                >
+                  Download policy JSON
+                </button>
+                <span className="text-slate-600">·</span>
+                <a
+                  href="https://github.com/DavidDanso/aws-clarity/blob/main/infra/aws-clarity-readonly-role.yaml"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-teal-300 hover:text-teal-200 font-medium underline underline-offset-2"
+                >
+                  CloudFormation read-only role template
+                </a>
+              </div>
+            </div>
+
             <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
               <pre className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
-                {scanCommand}
+                <span>{activeInstall.cliPrefix} scan</span>
+                {includeS3 && (
+                  <span className="mx-1 px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-sky-200 font-semibold">
+                    --include-s3-checks
+                  </span>
+                )}
+                <span> --output aws-clarity-report.json</span>
               </pre>
               <button
                 type="button"
