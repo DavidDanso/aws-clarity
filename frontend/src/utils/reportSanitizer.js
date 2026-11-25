@@ -1,28 +1,63 @@
 import { RESOURCE_COLLECTION_KEYS, RESOURCE_TYPE_LABELS } from "./constants.js";
 
 const IPV4_RE = /\b(?:\d{1,3}\.){3}\d{1,3}(?:\/\d{1,2})?\b/g;
+const IPV6_RE = /\b(?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(?:\/\d{1,3})?\b/gi;
 const ACCOUNT_ID_RE = /\b\d{12}\b/g;
-const ARN_RE = /arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:\d{0,12}:[^\s"',}]+/gi;
+const ARN_RE = /arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:[a-z0-9_-]*:[^\s"',}]+/gi;
+const ACCESS_KEY_ID_RE = /\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b/g;
+const CREDENTIAL_ASSIGN_RE =
+  /(?:aws_secret_access_key|aws_session_token|aws_security_token|SecretAccessKey|SessionToken|SecurityToken)\s*[:=]\s*[^\s,'"}]+|\bFwoGZXIvYXdz[A-Za-z0-9/+=]{16,}/gi;
+const AWS_RESOURCE_ID_RE =
+  /\b(?:i|vpc|sg|vol|snap|igw|nat|eipalloc|subnet|eni|ami|rtb|acl|vpce|tgw|dopt)-[0-9a-f]{8,17}\b/gi;
 
 function redactSensitiveText(text, replacementMap) {
   if (typeof text !== "string" || !text) return text;
   let out = text;
-  for (const [secret, alias] of replacementMap.entries()) {
-    if (secret && secret.length >= 4 && out.includes(secret)) {
+  // Redact structured credentials, access keys, and full ARNs FIRST so partial substring
+  // replacements (like replacing the 12-digit account ID) cannot break ARN matching.
+  out = out.replace(CREDENTIAL_ASSIGN_RE, "[credential-redacted]");
+  out = out.replace(ACCESS_KEY_ID_RE, "[access-key-redacted]");
+  out = out.replace(ARN_RE, "[arn-redacted]");
+  const sortedEntries = Array.from(replacementMap.entries()).sort((a, b) => b[0].length - a[0].length);
+  for (const [secret, alias] of sortedEntries) {
+    if (!secret) continue;
+    if (secret.length >= 4 && out.includes(secret)) {
       out = out.split(secret).join(alias);
+    } else if (secret.length >= 2 && out === secret) {
+      out = alias;
     }
   }
-  out = out.replace(ARN_RE, "[arn-redacted]");
+  out = out.replace(AWS_RESOURCE_ID_RE, "[id-redacted]");
   out = out.replace(ACCOUNT_ID_RE, "000000000000");
   out = out.replace(IPV4_RE, (match) => (match === "0.0.0.0/0" ? match : "[ip-redacted]"));
+  out = out.replace(IPV6_RE, (match) => {
+    if (match === "::/0" || !/[0-9a-f]/i.test(match)) return match;
+    return "[ipv6-redacted]";
+  });
   return out;
 }
 
+function redactAssessment(assessment, replacementMap) {
+  if (!assessment || typeof assessment !== "object") return null;
+  return {
+    status: assessment.status,
+    checks: Array.isArray(assessment.checks)
+      ? assessment.checks.map((chk) => ({
+          rule_id: chk.rule_id,
+          status: chk.status,
+          ...(chk.reason ? { reason: redactSensitiveText(String(chk.reason), replacementMap) } : {}),
+        }))
+      : [],
+  };
+}
+
 /**
- * Produces a share-safe sanitized copy of an AWS Clarity assessment report.
- * Removes AWS Account IDs, Caller ARNs, Resource ARNs, Resource Names/IDs,
- * IP addresses, and raw IAM/network payloads while keeping services, regions,
- * rule IDs, severities, categories, counts, and coverage status intact.
+ * Produces a best-effort sanitized copy of an AWS Clarity assessment report.
+ * Removes AWS Account IDs, Caller ARNs, Resource ARNs, Access Key IDs, Resource Names/IDs,
+ * IP addresses/CIDRs (preserving 0.0.0.0/0 and ::/0), and raw AWS payloads while keeping
+ * services, regions, rule IDs, severities, categories, counts, and coverage status intact.
+ *
+ * NOTE: Best-effort redaction is not guaranteed to be completely anonymous—inspect before sharing.
  */
 export function sanitizeReportForSharing(report) {
   if (!report || typeof report !== "object") return null;
@@ -41,6 +76,8 @@ export function sanitizeReportForSharing(report) {
       if (r.id) replacementMap.set(String(r.id), alias);
       if (r.name) replacementMap.set(String(r.name), alias);
       if (r.raw?.arn) replacementMap.set(String(r.raw.arn), `[arn:${alias}]`);
+      if (r.raw?.function_arn) replacementMap.set(String(r.raw.function_arn), `[arn:${alias}]`);
+      if (r.raw?.table_arn) replacementMap.set(String(r.raw.table_arn), `[arn:${alias}]`);
     }
   }
 
@@ -60,13 +97,14 @@ export function sanitizeReportForSharing(report) {
           rule_id: issue.rule_id,
           severity: issue.severity,
           category: issue.category,
-          title: issue.title,
+          title: redactSensitiveText(issue.title || "", replacementMap),
           what_found: redactSensitiveText(issue.what_found || "", replacementMap),
-          why: issue.why,
-          what_checked: issue.what_checked,
+          why: redactSensitiveText(issue.why || "", replacementMap),
+          ...(issue.impact ? { impact: redactSensitiveText(issue.impact, replacementMap) } : {}),
+          what_checked: redactSensitiveText(issue.what_checked || "", replacementMap),
           evidence: sanitizedEvidence,
           fix: redactSensitiveText(issue.fix || "", replacementMap),
-          verify: issue.verify,
+          verify: redactSensitiveText(issue.verify || "", replacementMap),
         };
       });
 
@@ -77,12 +115,34 @@ export function sanitizeReportForSharing(report) {
         service: r.service,
         status: r.status,
         region: r.region || "global",
-        assessment: r.assessment || null,
+        assessment: redactAssessment(r.assessment, replacementMap),
         issues: sanitizedIssues,
         raw: { redacted: true },
       };
     });
   }
+
+  const sanitizedAdvisories = (Array.isArray(report.account_advisories) ? report.account_advisories : []).map((adv) => {
+    const sanitizedEvidence = {};
+    for (const [ek, ev] of Object.entries(adv.evidence || {})) {
+      sanitizedEvidence[ek] = redactSensitiveText(
+        typeof ev === "object" ? JSON.stringify(ev) : String(ev ?? ""),
+        replacementMap
+      );
+    }
+    return {
+      rule_id: adv.rule_id,
+      severity: adv.severity,
+      category: adv.category,
+      service: adv.service,
+      title: redactSensitiveText(adv.title || "", replacementMap),
+      why: redactSensitiveText(adv.why || "", replacementMap),
+      ...(adv.impact ? { impact: redactSensitiveText(adv.impact, replacementMap) } : {}),
+      ...(Object.keys(sanitizedEvidence).length > 0 ? { evidence: sanitizedEvidence } : {}),
+      fix: redactSensitiveText(adv.fix || "", replacementMap),
+      verify: redactSensitiveText(adv.verify || "", replacementMap),
+    };
+  });
 
   const coverage = report.coverage || {};
   const sanitizedFailures = (coverage.failures || []).map((f) => ({
@@ -92,12 +152,29 @@ export function sanitizeReportForSharing(report) {
     reason: redactSensitiveText(String(f.reason || ""), replacementMap),
     required_permission: f.required_permission,
   }));
+  const sanitizedScannerStatuses = Array.isArray(coverage.scanner_statuses)
+    ? coverage.scanner_statuses.map((s) => ({
+        ...s,
+        ...(s.reason ? { reason: redactSensitiveText(String(s.reason), replacementMap) } : {}),
+      }))
+    : undefined;
+  const sanitizedRegionDiscovery =
+    coverage.region_discovery && typeof coverage.region_discovery === "object"
+      ? {
+          ...coverage.region_discovery,
+          ...(coverage.region_discovery.reason
+            ? { reason: redactSensitiveText(String(coverage.region_discovery.reason), replacementMap) }
+            : {}),
+        }
+      : coverage.region_discovery;
 
   return {
     schema_version: report.schema_version || "aws-clarity-report/v1",
     scanner_version: report.scanner_version || "1.0.0",
     execution_mode: report.execution_mode || "local-cli",
     sanitized_for_sharing: true,
+    sanitization_notice:
+      "Sanitized reports use best-effort redaction. They are not guaranteed to be completely anonymous. Inspect the file before sharing.",
     sanitized_at: new Date().toISOString(),
     status: report.status,
     scan_state: report.scan_state || report.status,
@@ -109,16 +186,19 @@ export function sanitizeReportForSharing(report) {
     scan_duration_ms: report.scan_duration_ms,
     partial: report.partial,
     summary: report.summary || {},
-    account_advisories: report.account_advisories || [],
+    account_advisories: sanitizedAdvisories,
     coverage: {
       ...coverage,
+      ...(sanitizedRegionDiscovery !== undefined ? { region_discovery: sanitizedRegionDiscovery } : {}),
+      ...(sanitizedScannerStatuses !== undefined ? { scanner_statuses: sanitizedScannerStatuses } : {}),
       failures: sanitizedFailures,
     },
     resources: sanitizedResources,
   };
 }
 
-const CSV_FORMULA_PREFIX_RE = /^[=+\-@\t\r]/;
+// Neutralize spreadsheet formula prefixes including leading whitespace/control characters
+const CSV_FORMULA_PREFIX_RE = /^(?:[\t\r\n]|[ ]*[=+\-@])/;
 
 export function neutralizeCsvCell(val) {
   const str = String(val ?? "");
@@ -210,7 +290,10 @@ export function downloadLocalFile(filename, content, mimeType) {
   link.href = url;
   link.setAttribute("download", filename);
   document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  try {
+    link.click();
+  } finally {
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
