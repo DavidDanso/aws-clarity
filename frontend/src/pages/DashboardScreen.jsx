@@ -14,7 +14,11 @@ import {
 import { computeScore } from "../utils/securityScore";
 import { compareScans, getStableResourceId } from "../utils/scanComparison";
 import { SECURITY_CHECKS, evaluateCheckStatus } from "../utils/securityChecksCatalog";
-import { parseLocalAssessmentReport } from "../utils/reportImporter";
+import {
+  MAX_REPORT_BYTES,
+  parseLocalAssessmentReport,
+  sanitizeImportedFileName,
+} from "../utils/reportImporter";
 import {
   buildInventoryCSV,
   downloadLocalFile,
@@ -123,10 +127,13 @@ export default function DashboardScreen({
     if (!file) return;
     setDiffImportError("");
     try {
+      if (typeof file.size === "number" && file.size > MAX_REPORT_BYTES) {
+        throw new Error("Report file exceeds the 25 MB local browser safety limit.");
+      }
       const text = await file.text();
       const parsed = parseLocalAssessmentReport(text, file.size);
       if (typeof onImportNewerReport === "function") {
-        onImportNewerReport(parsed, file.name);
+        onImportNewerReport(parsed, sanitizeImportedFileName(file.name));
         setComparisonExpanded(true);
       }
     } catch (err) {
@@ -151,20 +158,33 @@ export default function DashboardScreen({
     return RESOURCE_COLLECTION_KEYS.flatMap((key) => scanResults.resources[key] || []);
   }, [scanResults]);
 
+  const previousScanIncomplete =
+    previousScanResults?.coverage?.status === "INCOMPLETE" ||
+    previousScanResults?.partial === true ||
+    (previousScanResults?.coverage?.failures || []).length > 0;
+
   const comparison = useMemo(
-    () => compareScans(previousAllResources, allResources),
-    [previousAllResources, allResources]
+    () =>
+      compareScans(previousAllResources, allResources, {
+        prevReport: previousScanResults,
+        currReport: scanResults,
+        prevIncomplete: previousScanIncomplete,
+        currIncomplete: isIncompleteScan,
+      }),
+    [
+      previousAllResources,
+      allResources,
+      previousScanResults,
+      scanResults,
+      previousScanIncomplete,
+      isIncompleteScan,
+    ]
   );
 
   const scoreData = useMemo(
     () => computeScore(allResources, isIncompleteScan, accountAdvisories),
     [allResources, isIncompleteScan, accountAdvisories]
   );
-
-  const previousScanIncomplete =
-    previousScanResults?.coverage?.status === "INCOMPLETE" ||
-    previousScanResults?.partial === true ||
-    (previousScanResults?.coverage?.failures || []).length > 0;
 
   const activeCatalog = useMemo(() => {
     const rulesCatalog = scanResults?.coverage?.rules_catalog;
@@ -501,7 +521,7 @@ export default function DashboardScreen({
                     <h2 className="text-sm font-semibold text-white">
                       Changes Since Previous Scan
                     </h2>
-                    {scoreData.isAvailable && !previousScanIncomplete && (
+                    {comparison.isComparable && comparison.scoreDelta !== null && (
                       <span className="text-xs font-mono text-slate-300">
                         Score: {comparison.previousScore} → {comparison.currentScore}{" "}
                         <span
@@ -519,9 +539,28 @@ export default function DashboardScreen({
                     )}
                   </div>
 
+                  {!comparison.isComparable && comparison.incomparableReason && (
+                    <div className="rounded-xl border border-orange-500/35 bg-orange-950/25 px-3.5 py-2.5 text-xs text-orange-200 leading-relaxed">
+                      <strong>Comparison withheld:</strong> {comparison.incomparableReason}
+                    </div>
+                  )}
+
+                  {comparison.isComparable && comparison.warnings?.length > 0 && (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-950/20 px-3.5 py-2 text-[11px] text-amber-200 leading-relaxed space-y-1">
+                      {comparison.warnings.map((w, idx) => (
+                        <p key={idx}>{w}</p>
+                      ))}
+                    </div>
+                  )}
+
+                  {comparison.isComparable && (
+                    <>
                   <div className="flex items-center gap-1.5 flex-wrap">
                     {[
                       { key: "resolved", label: "✓ Resolved", count: comparison.resolvedCount, active: "text-emerald-300 bg-emerald-500/15 border-emerald-500/30" },
+                      ...(comparison.unverifiedCount > 0
+                        ? [{ key: "unverified", label: "? Unverified", count: comparison.unverifiedCount, active: "text-orange-300 bg-orange-500/15 border-orange-500/30" }]
+                        : []),
                       { key: "new", label: "New", count: comparison.newCount, active: "text-cyan-300 bg-cyan-500/15 border-cyan-500/30" },
                       { key: "stillOpen", label: "Unchanged", count: comparison.stillOpenCount, active: "text-amber-300 bg-amber-500/15 border-amber-500/30" },
                       { key: "newResources", label: "Added Resources", count: comparison.newResourcesCount, active: "text-sky-300 bg-sky-500/15 border-sky-500/30" },
@@ -547,7 +586,7 @@ export default function DashboardScreen({
                   <div className="text-xs space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {progressTab === "resolved" &&
                       (comparison.resolvedCount === 0 ? (
-                        <p className="text-slate-500 py-1">No findings resolved since the previous scan.</p>
+                        <p className="text-slate-500 py-1">No findings verified as resolved since the previous scan.</p>
                       ) : (
                         comparison.resolved.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-emerald-950/25">
@@ -555,6 +594,19 @@ export default function DashboardScreen({
                             {item.ruleId && <span className="text-[11px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
                             <span className="text-slate-200 truncate">{item.title}</span>
                             <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                          </div>
+                        ))
+                      ))}
+                    {progressTab === "unverified" &&
+                      (comparison.unverifiedCount === 0 ? (
+                        <p className="text-slate-500 py-1">No unverified findings.</p>
+                      ) : (
+                        comparison.unverified.map((item, idx) => (
+                          <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-orange-950/25">
+                            <span className="text-orange-400 font-bold shrink-0">?</span>
+                            {item.ruleId && <span className="text-[11px] font-mono text-orange-300 shrink-0">{item.ruleId}</span>}
+                            <span className="text-slate-200 truncate">{item.title}</span>
+                            <span className="text-orange-200/80 text-[11px] truncate ml-auto shrink-0">{item.reason || item.resourceName}</span>
                           </div>
                         ))
                       ))}
@@ -630,6 +682,8 @@ export default function DashboardScreen({
                         ))
                       ))}
                   </div>
+                    </>
+                  )}
                 </section>
               )}
 
@@ -764,10 +818,14 @@ export default function DashboardScreen({
               </button>
             </div>
             <div className="p-4 sm:p-5 space-y-4 text-xs">
-              <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed">
-                <strong>Privacy Warning:</strong> Full reports contain sensitive AWS Account IDs, ARNs,
-                resource names, public IPs, and IAM metadata. Use a <strong>Sanitized</strong> export
-                before sharing externally.
+              <div className="p-3 rounded-xl bg-amber-950/30 border border-amber-500/35 text-amber-200 text-[11px] leading-relaxed space-y-1.5">
+                <p>
+                  <strong>Sanitized reports use best-effort redaction. They are not guaranteed to be completely anonymous. Inspect the file before sharing.</strong>
+                </p>
+                <p className="text-amber-200/85">
+                  <strong>Full JSON &amp; Full CSV warning:</strong> Unredacted exports contain sensitive AWS Account IDs,
+                  ARNs, resource names, public IPs, CIDRs, and IAM metadata—keep them private and do not post publicly.
+                </p>
               </div>
 
               <div className="space-y-2">
@@ -776,9 +834,9 @@ export default function DashboardScreen({
                   onClick={handleDownloadSanitizedJSON}
                   className="w-full text-left p-3 rounded-xl border border-teal-500/40 bg-teal-500/10 hover:bg-teal-500/20 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-teal-200">Download Sanitized JSON (Recommended for Sharing)</p>
+                  <p className="font-semibold text-teal-200">Download Sanitized JSON (Best-Effort Redaction)</p>
                   <p className="text-[11px] text-teal-200/75">
-                    Best-effort redaction of Account IDs, ARNs, names, IPs, and raw payloads while keeping findings and coverage.
+                    Redacts Account IDs, ARNs, access key IDs, names, IPs/CIDRs, and raw payloads. Inspect before sharing.
                   </p>
                 </button>
                 <button
@@ -786,9 +844,9 @@ export default function DashboardScreen({
                   onClick={() => handleExportCSV(true)}
                   className="w-full text-left p-3 rounded-xl border border-slate-700 bg-slate-950 hover:bg-slate-800/80 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-slate-200">Download Sanitized CSV</p>
+                  <p className="font-semibold text-slate-200">Download Sanitized CSV (Best-Effort Redaction)</p>
                   <p className="text-[11px] text-slate-400">
-                    Spreadsheet inventory with anonymized names/IDs and redacted evidence.
+                    Spreadsheet inventory with anonymized names/IDs, formula neutralization, and redacted evidence. Inspect before sharing.
                   </p>
                 </button>
                 <button
@@ -796,9 +854,9 @@ export default function DashboardScreen({
                   onClick={handleDownloadFullJSON}
                   className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-slate-200">Download Full JSON (Private Archive / Diff Baseline)</p>
+                  <p className="font-semibold text-slate-200">Download Full JSON (Private Archive — Unredacted)</p>
                   <p className="text-[11px] text-slate-400">
-                    Complete unredacted local report for private storage or future Scan Diff.
+                    Contains sensitive infrastructure identifiers (Account IDs, ARNs, IPs, names). Keep private for local archive or Scan Diff.
                   </p>
                 </button>
                 <button
@@ -806,9 +864,9 @@ export default function DashboardScreen({
                   onClick={() => handleExportCSV(false)}
                   className="w-full text-left p-3 rounded-xl border border-slate-800 bg-slate-950 hover:bg-slate-800/70 transition-colors cursor-pointer space-y-0.5"
                 >
-                  <p className="font-semibold text-slate-200">Download Full CSV (Private)</p>
+                  <p className="font-semibold text-slate-200">Download Full CSV (Private — Unredacted)</p>
                   <p className="text-[11px] text-slate-400">
-                    Complete unredacted spreadsheet of resources, findings, evidence, and fixes.
+                    Contains sensitive infrastructure identifiers with formula neutralization. Not safe for public sharing.
                   </p>
                 </button>
               </div>

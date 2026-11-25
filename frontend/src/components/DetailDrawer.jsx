@@ -239,6 +239,21 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                   </div>
                 )}
 
+                {history.unverifiedIssues?.length > 0 && (
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold uppercase text-orange-400 tracking-wider block">
+                      Unverified — Incomplete Scan ({history.unverifiedIssues.length})
+                    </span>
+                    {history.unverifiedIssues.map((item, idx) => (
+                      <div key={idx} className="flex items-center gap-2 py-1 px-2 rounded bg-orange-950/30 text-orange-200">
+                        <span className="font-bold shrink-0">?</span>
+                        {item.ruleId && <span className="text-[10px] font-mono shrink-0">{item.ruleId}</span>}
+                        <span className="truncate">{item.title}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 {history.newIssues?.length > 0 && (
                   <div className="space-y-1">
                     <span className="text-[10px] font-bold uppercase text-cyan-400 tracking-wider block">
