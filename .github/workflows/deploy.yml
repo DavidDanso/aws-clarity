@@ -67,6 +67,9 @@ jobs:
           npm run lint
           npm run build
           npm run verify
+          node scripts/verify-phase1-canary.mjs
+          node scripts/verify-phase2-correctness.mjs
+          node scripts/verify-phase3-security.mjs
 
   # -------------------------------------------------------------------------
   # 2. DEPLOY — Terraform apply (S3 + CloudFront) + S3 sync + CF invalidation
