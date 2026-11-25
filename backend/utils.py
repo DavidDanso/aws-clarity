@@ -7,6 +7,7 @@ import boto3
 import botocore.session
 from botocore.config import Config
 from botocore.exceptions import ClientError
+from api_guard import wrap_client_with_guard
 from exceptions import InvalidRoleARNError, AssumeRoleError
 
 ROLE_ARN_PATTERN = re.compile(r"^arn:aws:iam::\d{12}:role/([\w+=,.@-]+/)*[\w+=,.@-]+$")
@@ -14,6 +15,19 @@ EXTERNAL_ID_PATTERN = re.compile(r"^[A-Za-z0-9+=,.@:/_-]{2,128}$")
 DEFAULT_EXTERNAL_ID = "aws-clarity-scan"
 
 CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_CREDENTIAL_VALUE_RE = re.compile(
+    r"(?i)(aws_secret_access_key|aws_session_token|SecretAccessKey|SessionToken|SecurityToken)\s*([:=])\s*([^\s,'\"\}]+)"
+)
+_ACCESS_KEY_ID_RE = re.compile(r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b")
+
+
+def redact_credential_strings(text: str | None) -> str:
+    """Scrub accidental AWS credential/token values before printing errors or logs."""
+    if text is None:
+        return ""
+    cleaned = _CREDENTIAL_VALUE_RE.sub(r"\1\2[REDACTED]", str(text))
+    cleaned = _ACCESS_KEY_ID_RE.sub("[REDACTED-KEY-ID]", cleaned)
+    return cleaned
 
 SCAN_BOTO_CONFIG = Config(
     connect_timeout=1.2,
@@ -64,12 +78,25 @@ class CachedSession:
     concurrently without contending on a single mutex.
     """
 
-    def __init__(self, session: boto3.Session, config: Config = SCAN_BOTO_CONFIG):
+    def __init__(
+        self,
+        session: boto3.Session,
+        config: Config = SCAN_BOTO_CONFIG,
+        enforce_api_allowlist: bool = False,
+        include_s3: bool = True,
+    ):
         self._session = session
         self._config = config
+        self._enforce_api_allowlist = enforce_api_allowlist
+        self._include_s3 = include_s3
         self._locks_guard = threading.Lock()
         self._service_locks: dict[str, threading.Lock] = {}
         self._clients: dict[tuple[str, str | None], object] = {}
+
+    def _maybe_guard(self, client, service_name: str):
+        if not self._enforce_api_allowlist:
+            return client
+        return wrap_client_with_guard(client, service_name, include_s3=self._include_s3)
 
     def _get_service_lock(self, service_name: str) -> threading.Lock:
         lock = self._service_locks.get(service_name)
@@ -84,12 +111,13 @@ class CachedSession:
 
     def client(self, service_name: str, region_name: str | None = None, config: Config | None = None, **kwargs):
         if kwargs:
-            return self._session.client(
+            raw = self._session.client(
                 service_name,
                 region_name=region_name,
                 config=config or self._config,
                 **kwargs,
             )
+            return self._maybe_guard(raw, service_name)
         key = (service_name, region_name)
         cached = self._clients.get(key)
         if cached is not None:
@@ -97,11 +125,12 @@ class CachedSession:
         with self._get_service_lock(service_name):
             cached = self._clients.get(key)
             if cached is None:
-                cached = self._session.client(
+                raw = self._session.client(
                     service_name,
                     region_name=region_name,
                     config=config or self._config,
                 )
+                cached = self._maybe_guard(raw, service_name)
                 self._clients[key] = cached
             return cached
 
