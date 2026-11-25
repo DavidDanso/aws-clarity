@@ -60,7 +60,7 @@ LOCAL_BOTO_CONFIG = Config(
 )
 
 REPORT_SCHEMA_VERSION = "aws-clarity-report/v1"
-CLI_VERSION = "1.0.0"
+CLI_VERSION = "1.1.0"
 
 # Derived directly from `api_guard.ALLOWED_AWS_OPERATIONS` so runtime guard & IAM policy never drift.
 DEFAULT_ZERO_COST_IAM_ACTIONS = get_allowed_iam_actions(include_s3=False)
