@@ -81,6 +81,11 @@ def _minimize_inline_policy_doc(raw_doc) -> dict:
             res = stmt["Resource"]
             res = [res] if isinstance(res, str) else (res if isinstance(res, list) else [])
             entry["Resource"] = ["*" if r == "*" else "[scoped-resource]" for r in res if isinstance(r, str)]
+        if "NotResource" in stmt:
+            nres = stmt["NotResource"]
+            nres = [nres] if isinstance(nres, str) else (nres if isinstance(nres, list) else [])
+            if nres:
+                entry["NotResource"] = ["[not-resource-excluded]"]
         cond = _minimize_condition_keys(stmt.get("Condition"))
         if cond:
             entry["Condition"] = cond
@@ -274,7 +279,22 @@ def _inspect_user(iam, user):
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "AWS error")
             inline_policies = None
-            assessment_errors["IAM-011"] = f"Could not read user inline policies: {code}"
+            prev_err = assessment_errors.get("IAM-011")
+            inline_msg = f"Could not read user inline policies: {code}"
+            assessment_errors["IAM-011"] = f"{prev_err}; {inline_msg}" if prev_err else inline_msg
+
+        # IAM-009 requires knowing whether a non-console user with 0 MFA devices has admin policies.
+        # If policy inspection failed and no console sign-in was recorded, fail closed instead of false PASSED.
+        if (
+            isinstance(mfa_devices, list)
+            and len(mfa_devices) == 0
+            and user.get("PasswordLastUsed") is None
+            and (attached_managed_policies is None or inline_policies is None)
+            and "IAM-009" not in assessment_errors
+        ):
+            assessment_errors["IAM-009"] = (
+                "Could not verify whether user holds admin privileges requiring MFA because policy inspection failed."
+            )
 
     item = {
         "id": user_id,

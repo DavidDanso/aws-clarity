@@ -653,6 +653,55 @@ NULL_IS_EVIDENCE = {
 }
 
 
+# Consequences & dependency disclosures per rule (Phase 2 remediation safety).
+# Every finding includes `impact` alongside `what_found`, `why`, `evidence`, `fix`, and `verify`.
+RULE_REMEDIATION_IMPACT = {
+    "SG-001": "Consequences & dependencies: Removing an all-traffic inbound rule takes effect immediately and will drop legitimate connections unless explicit required ports/CIDRs or security group references are added first.",
+    "SG-002": "Consequences & dependencies: Restricting port 22 immediately terminates new SSH connections from unlisted IPs; ensure your current admin IP, VPN, or AWS SSM Session Manager access works before removing 0.0.0.0/0.",
+    "SG-003": "Consequences & dependencies: Restricting port 3389 immediately blocks RDP from unlisted IPs; verify VPN, bastion, or Fleet Manager/SSM connectivity before modifying the rule.",
+    "SG-004": "Consequences & dependencies: Closing public database ports immediately disconnects external clients or scripts connecting over the public internet; confirm application tiers connect via private VPC CIDRs or security groups first.",
+    "EC2-001": "Consequences & dependencies: Stopped instances may be intentionally paused dev/staging/scheduled servers or hold unbacked EBS data; terminating an instance permanently destroys root/attached volumes marked DeleteOnTermination.",
+    "EC2-002": "Consequences & dependencies: Enforcing IMDSv2 (HttpTokens=required) can break legacy agents, custom scripts, or older AWS SDKs still calling IMDSv1, and containerized apps may require HttpPutResponseHopLimit >= 2; check CloudWatch MetadataNoToken metric and test in staging first.",
+    "EIP-001": "Consequences & dependencies: Releasing an Elastic IP permanently forfeits the static IPv4 address; verify no external partner allowlists, DNS A-records, or firewall rules depend on it.",
+    "VPC-001": "Consequences & dependencies: Migrating EC2 or RDS workloads from the default VPC to a custom VPC requires launching/restoring resources in new subnets and updating DNS, security groups, and IaC state (plan a maintenance window).",
+    "IGW-001": "Consequences & dependencies: Deleting an unattached Internet Gateway has no traffic impact while detached, but verify Terraform/CloudFormation does not manage it for a planned VPC.",
+    "NAT-001": "Consequences & dependencies: Replacing a failed NAT Gateway requires verifying Elastic IP limits and updating private subnet route tables; an active replacement NAT Gateway incurs hourly and per-GB processing charges.",
+    "NAT-002": "Consequences & dependencies: Deleting an actively used NAT Gateway immediately breaks outbound internet access (patches, APIs, container pulls) for private subnets; inspect route tables and NAT traffic metrics before any change.",
+    "S3-002": "Consequences & dependencies: Removing public bucket policy statements immediately blocks anonymous internet access; if hosting a public static website or public downloads, migrate to CloudFront with Origin Access Control (OAC) before restricting the bucket.",
+    "S3-003": "Consequences & dependencies: Disabling ACLs (Bucket owner enforced) or removing public ACL grants immediately blocks legacy anonymous or cross-account ACL access; verify no public website or third-party delivery relies on bucket ACLs.",
+    "S3-004": "Consequences & dependencies: AWS S3 already enforces SSE-S3 encryption by default on all buckets; switching to SSE-KMS adds KMS API charges and requires updating IAM/KMS key policies for all readers and writers.",
+    "S3-005": "Consequences & dependencies: Enabling all four Block Public Access settings immediately blocks public policies and ACLs; confirm the bucket is not intentionally serving direct public web traffic (use CloudFront OAC instead).",
+    "IAM-001": "Consequences & dependencies: Replacing Action: *, iam:*, or NotAction wildcards immediately affects workloads using this role; review CloudTrail and IAM Access Analyzer generated policies first to avoid breaking production API calls.",
+    "IAM-002": "Consequences & dependencies: Narrowing Resource: * on write/mutate actions can break automation if target ARNs are incomplete; confirm all required resource ARNs in CloudTrail/IaC before applying.",
+    "IAM-003": "Consequences & dependencies: Detaching AdministratorAccess immediately revokes permissions not covered by replacement policies; attach a tested least-privilege policy before detaching to avoid service outages or admin lockout.",
+    "IAM-004": "Consequences & dependencies: Detaching IAMFullAccess can break CI/CD or infrastructure-as-code pipelines that provision IAM roles unless scoped IAM permissions are attached first.",
+    "IAM-005": "Consequences & dependencies: Restricting Principal: * immediately blocks unrecognized callers from assuming this role; inventory every legitimate account/service assuming the role via CloudTrail before editing the trust policy.",
+    "IAM-006": "Consequences & dependencies: Replacing service wildcards (e.g., s3:*, ec2:*) with explicit actions can break uninventoried calls; verify active API calls in CloudTrail or IAM Access Analyzer first.",
+    "IAM-007": "Consequences & dependencies: Detaching PowerUserAccess immediately removes permissions not explicitly granted by a replacement policy; test the least-privilege replacement in non-production first.",
+    "IAM-008": "Consequences & dependencies: Adding sts:ExternalId or aws:PrincipalOrgID immediately rejects AssumeRole calls that do not send the matching ExternalId or belong to the Organization; coordinate the change with the calling account/vendor first.",
+    "IAM-009": "Consequences & dependencies: Assigning MFA requires the human user to enroll a hardware key or authenticator app; for non-human automation accounts, migrate workloads to short-lived IAM roles rather than enforcing interactive MFA.",
+    "IAM-010": "Consequences & dependencies: Deleting an active access key immediately breaks scripts, CI/CD jobs, or apps using it; create a replacement key (or migrate to an IAM role), deploy everywhere, deactivate the old key first, and delete only after confirming zero breakage.",
+    "IAM-011": "Consequences & dependencies: Detaching AdministratorAccess directly from an IAM user can lock out the user if they do not have equivalent group/role/SSO access; verify alternate admin access (IAM Identity Center or assumable role) before detaching.",
+    "LAM-001": "Consequences & dependencies: Unmodified functions are often stable production workloads; check CloudWatch invocation metrics and event triggers (API Gateway, EventBridge, SQS, S3) before modifying or removing.",
+    "LAM-002": "Consequences & dependencies: Upgrading a Lambda runtime can introduce language, SDK, or native-dependency breaking changes; test thoroughly in a non-production stage or version/alias before updating production.",
+    "RDS-001": "Consequences & dependencies: Disabling PubliclyAccessible immediately severs external internet connections (remote developers, external services) and may briefly interrupt connectivity; ensure VPN, bastion, or private VPC access is ready first.",
+    "RDS-002": "Consequences & dependencies: RDS cannot encrypt an existing unencrypted DB instance in place; encrypting requires snapshot, encrypted copy, restore to a new instance, and application endpoint cutover with planned downtime.",
+    "RDS-003": "Consequences & dependencies: Enabling deletion protection prevents accidental deletion, including intentional Terraform/CloudFormation destroys until deletion protection is explicitly turned off.",
+    "RDS-004": "Consequences & dependencies: Changing BackupRetentionPeriod from 0 to a positive value triggers a brief RDS DB instance outage/reboot and incurs backup storage charges beyond your free backup allocation; schedule during a maintenance window.",
+    "DDB-001": "Consequences & dependencies: AWS encrypts DynamoDB tables by default with an AWS-owned key; switching to a customer-managed KMS key incurs KMS charges and requires kms:Decrypt/Encrypt permissions for accessing roles.",
+    "DDB-002": "Consequences & dependencies: AWS updates DynamoDB ItemCount only roughly every 6 hours, and up to 25 RCU/WCU falls in the Always-Free tier; switching billing mode is rate-limited (once per 24 hours from On-Demand back to Provisioned), and deleting destroys table data permanently.",
+    "EBS-001": "Consequences & dependencies: Existing unencrypted EBS volumes cannot be encrypted in place; migrating requires stopping/detaching the volume (downtime), snapshotting, copying with KMS encryption, creating a new volume, and reattaching.",
+    "EBS-002": "Consequences & dependencies: Deleting an unattached EBS volume permanently destroys all data on it; check volume ownership/tags and take an EBS snapshot first if data may ever be needed.",
+    "SNAP-001": "Consequences & dependencies: Deleting an EBS snapshot is irreversible and may fail or break recovery if it backs an active AMI, disaster-recovery plan, or compliance archive; verify AMI references before deleting.",
+    "CW-001": "Consequences & dependencies: Re-enabling actions on an alarm currently in ALARM state may immediately send notifications or trigger Auto Scaling/EC2 actions; inspect configured alarm actions before enabling.",
+    "CW-002": "Consequences & dependencies: INSUFFICIENT_DATA is normal for sparse or newly created metrics; deleting an alarm prematurely removes monitoring coverage—inspect dimensions and missing-data treatment first.",
+    "CW-003": "Consequences & dependencies: Setting a retention policy permanently expires logs older than the chosen window; verify compliance, security audit, and debugging retention requirements before shortening retention.",
+    "CT-001": "Consequences & dependencies: Re-enabling logging writes events to the trail's configured S3 bucket (incurring S3 storage costs; additional management-event trails beyond the first also incur CloudTrail fees); verify the target S3 bucket and policy still exist.",
+    "CT-002": "Consequences & dependencies: Converting a single-region trail to multi-region increases S3 log volume across all regions; verify no duplicate multi-region or AWS Organizations trail already provides full coverage before enabling.",
+    "CT-003": "Consequences & dependencies: Enabling log file validation writes small digest files alongside logs in S3 (minimal storage cost) with no service disruption to existing workloads.",
+}
+
+
 def get_rules_catalog() -> list[dict]:
     return [
         {
@@ -671,17 +720,30 @@ def get_rules_catalog() -> list[dict]:
 def _extract_account_from_principal(principal_str: str) -> str | None:
     if not isinstance(principal_str, str):
         return None
-    if principal_str.isdigit() and len(principal_str) == 12:
-        return principal_str
-    match = re.match(r"^arn:aws:iam::(\d{12}):", principal_str)
+    cleaned = principal_str.strip()
+    if cleaned.isdigit() and len(cleaned) == 12:
+        return cleaned
+    match = re.match(r"^arn:aws[a-z-]*:(?:iam|sts)::(\d{12}):", cleaned)
     return match.group(1) if match else None
+
+
+def _is_restrictive_condition_operator(operator: str) -> bool:
+    """Reject negated, Null, or *IfExists operators that do not reliably scope access."""
+    op = str(operator or "").lower()
+    if not op:
+        return False
+    if "null" in op or "not" in op or op.endswith("ifexists"):
+        return False
+    return True
 
 
 def _has_strong_condition(statement: dict) -> bool:
     condition = statement.get("Condition")
     if not isinstance(condition, dict) or not condition:
         return False
-    for _, cond_map in condition.items():
+    for operator, cond_map in condition.items():
+        if not _is_restrictive_condition_operator(operator):
+            continue
         if not isinstance(cond_map, dict):
             continue
         for key in cond_map.keys():
@@ -777,6 +839,7 @@ def _issue(
     what_found: str | None = None,
     what_checked: str | None = None,
     category: str | None = None,
+    impact: str | None = None,
 ) -> dict:
     meta = RULE_METADATA.get(rule_id, {})
     item = {
@@ -786,6 +849,7 @@ def _issue(
         "title": title,
         "what_found": what_found or meta.get("what_found") or title,
         "why": why,
+        "impact": impact or RULE_REMEDIATION_IMPACT.get(rule_id, ""),
         "what_checked": what_checked or meta.get("what_checked") or "Inspected AWS resource configuration.",
         "evidence": evidence,
         "fix": fix,
@@ -805,15 +869,18 @@ def _issue(
 def _parse_datetime(value) -> datetime.datetime | None:
     if isinstance(value, datetime.datetime):
         return value if value.tzinfo else value.replace(tzinfo=datetime.timezone.utc)
-    if not isinstance(value, str) or not value:
+    if not isinstance(value, str) or not value.strip():
         return None
+    text = value.strip()
     try:
-        if "+" in value:
-            time_part = value.split("+")[0]
-            return datetime.datetime.strptime(time_part, "%Y-%m-%dT%H:%M:%S.%f").replace(tzinfo=datetime.timezone.utc)
-        if value.endswith("Z"):
-            return datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return datetime.datetime.fromisoformat(value)
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        # Normalize compact +HHMM / -HHMM offsets (e.g. Lambda '+0000') for Python 3.10+
+        tz_match = re.search(r"([+-])(\d{2})(\d{2})$", text)
+        if tz_match:
+            text = text[:tz_match.start()] + f"{tz_match.group(1)}{tz_match.group(2)}:{tz_match.group(3)}"
+        dt = datetime.datetime.fromisoformat(text)
+        return dt if dt.tzinfo else dt.replace(tzinfo=datetime.timezone.utc)
     except Exception:
         return None
 
@@ -886,6 +953,11 @@ def evaluate(
         s.get("region")
         for s in (scanner_statuses or [])
         if s.get("key") == "ebs_volumes" and s.get("status") != "COMPLETED"
+    }
+    failed_vpc_dep_regions = {
+        s.get("region")
+        for s in (scanner_statuses or [])
+        if s.get("key") in ("ec2_instances", "rds_instances") and s.get("status") != "COMPLETED"
     }
     active_volume_ids = {v["id"] for v in resources.get("ebs_volumes", [])}
 
@@ -1032,68 +1104,77 @@ def evaluate(
                 dangerous_cidrs = {"0.0.0.0/0", "::/0"}
                 for rule in raw.get("ip_permissions", []):
                     protocol = rule.get("IpProtocol")
+                    proto_norm = str(protocol or "").strip().lower()
+                    is_tcp = proto_norm in ("tcp", "6")
+                    is_udp = proto_norm in ("udp", "17")
                     from_port = rule.get("FromPort")
                     to_port = rule.get("ToPort")
+                    # AWS allows IpProtocol='tcp'/'udp' with omitted FromPort/ToPort to mean all ports (0-65535)
+                    if (is_tcp or is_udp) and from_port is None and to_port is None:
+                        eff_from, eff_to = 0, 65535
+                    else:
+                        eff_from, eff_to = from_port, to_port
                     cidrs = [route.get("CidrIp") for route in rule.get("IpRanges", [])]
                     cidrs += [route.get("CidrIpv6") for route in rule.get("Ipv6Ranges", [])]
 
                     for cidr in cidrs:
                         if cidr not in dangerous_cidrs:
                             continue
-                        proto_label = "All protocols" if protocol == "-1" else str(protocol).upper()
+                        proto_label = "All protocols" if proto_norm == "-1" else ("TCP" if is_tcp else ("UDP" if is_udp else str(protocol).upper()))
 
-                        if protocol == "-1":
+                        if proto_norm == "-1":
                             issues.append(_issue(
                                 rule_id="SG-001",
                                 severity="CRITICAL",
                                 title="Security group allows all inbound traffic from the internet",
                                 why="Allowing all protocols and ports from the internet exposes every listening service on attached resources.",
                                 evidence={"SecurityGroup": r["id"], "Protocol": "All", "Ports": "All", "Source": cidr},
-                                fix="Open EC2 → Security Groups → Inbound rules, remove the 'All traffic' rule from 0.0.0.0/0 (or ::/0), and allow only required ports/CIDRs.",
+                                fix="First add explicit inbound rules for required application ports/CIDRs or security groups, then remove the 'All traffic' rule from 0.0.0.0/0 (or ::/0) in EC2 → Security Groups → Inbound rules.",
                                 verify="Inspect inbound rules in EC2 Console and re-scan in AWS Clarity to confirm SG-001 is resolved.",
                                 resource=r,
                             ))
-                        elif from_port is not None and to_port is not None:
-                            if from_port <= 22 <= to_port:
-                                port_range = "22" if from_port == to_port else f"{from_port}-{to_port}"
+                        elif eff_from is not None and eff_to is not None:
+                            if is_tcp and eff_from <= 22 <= eff_to:
+                                port_range = "22" if eff_from == eff_to else f"{eff_from}-{eff_to}"
                                 issues.append(_issue(
                                     rule_id="SG-002",
                                     severity="CRITICAL",
                                     title="SSH (port 22) open to the internet",
                                     why="Publicly exposed SSH invites continuous brute-force and credential-stuffing attacks.",
                                     evidence={"SecurityGroup": r["id"], "Port": port_range, "Protocol": proto_label, "Source": cidr},
-                                    fix="Edit inbound rules to restrict port 22 to your specific IP/VPN CIDR, or remove port 22 and use AWS Systems Manager Session Manager.",
-                                    verify="Confirm no inbound rule allows port 22 from 0.0.0.0/0 or ::/0, then re-scan in AWS Clarity.",
+                                    fix="Verify VPN or AWS Systems Manager Session Manager access first, then edit inbound rules to restrict TCP port 22 to your specific admin/VPN CIDR or remove it.",
+                                    verify="Confirm no inbound rule allows TCP port 22 from 0.0.0.0/0 or ::/0, then re-scan in AWS Clarity.",
                                     resource=r,
                                 ))
-                            if from_port <= 3389 <= to_port:
-                                port_range = "3389" if from_port == to_port else f"{from_port}-{to_port}"
+                            if (is_tcp or is_udp) and eff_from <= 3389 <= eff_to:
+                                port_range = "3389" if eff_from == eff_to else f"{eff_from}-{eff_to}"
                                 issues.append(_issue(
                                     rule_id="SG-003",
                                     severity="CRITICAL",
                                     title="RDP (port 3389) open to the internet",
                                     why="Publicly exposed Remote Desktop is a primary ransomware and credential-compromise vector.",
                                     evidence={"SecurityGroup": r["id"], "Port": port_range, "Protocol": proto_label, "Source": cidr},
-                                    fix="Restrict port 3389 to your organization's static IP/VPN CIDR or connect privately via AWS Systems Manager.",
+                                    fix="Verify VPN, bastion, or AWS Systems Manager connectivity first, then restrict port 3389 to your organization's static IP/VPN CIDR or remove public access.",
                                     verify="Confirm port 3389 is no longer open to 0.0.0.0/0 or ::/0, then re-scan in AWS Clarity.",
                                     resource=r,
                                 ))
-                            exposed_db = [
-                                f"{port} ({db_name})"
-                                for port, db_name in SENSITIVE_DB_PORTS.items()
-                                if from_port <= port <= to_port
-                            ]
-                            if exposed_db:
-                                issues.append(_issue(
-                                    rule_id="SG-004",
-                                    severity="CRITICAL",
-                                    title="Database port open to the internet",
-                                    why="Database ports exposed to 0.0.0.0/0 allow external attackers to directly probe and attack your data tier.",
-                                    evidence={"SecurityGroup": r["id"], "ExposedPorts": ", ".join(exposed_db), "Protocol": proto_label, "Source": cidr},
-                                    fix="Change the inbound rule source from 0.0.0.0/0 (or ::/0) to the specific application security group ID or private VPC CIDR.",
-                                    verify="Confirm database ports only accept traffic from private security groups/CIDRs, then re-scan in AWS Clarity.",
-                                    resource=r,
-                                ))
+                            if is_tcp:
+                                exposed_db = [
+                                    f"{port} ({db_name})"
+                                    for port, db_name in SENSITIVE_DB_PORTS.items()
+                                    if eff_from <= port <= eff_to
+                                ]
+                                if exposed_db:
+                                    issues.append(_issue(
+                                        rule_id="SG-004",
+                                        severity="CRITICAL",
+                                        title="Database port open to the internet",
+                                        why="Database ports exposed to 0.0.0.0/0 allow external attackers to directly probe and attack your data tier.",
+                                        evidence={"SecurityGroup": r["id"], "ExposedPorts": ", ".join(exposed_db), "Protocol": proto_label, "Source": cidr},
+                                        fix="Verify all legitimate application clients connect via private VPC CIDRs or security groups, then replace 0.0.0.0/0 (or ::/0) with the specific application security group ID or private VPC CIDR.",
+                                        verify="Confirm database ports only accept traffic from private security groups/CIDRs, then re-scan in AWS Clarity.",
+                                        resource=r,
+                                    ))
 
             # ------------------------------------------------------------------
             # EC2 Instances
@@ -1125,7 +1206,7 @@ def evaluate(
                         title="EC2 instance does not enforce IMDSv2",
                         why="Allowing IMDSv1 makes instance IAM role credentials easier to exfiltrate via SSRF vulnerabilities.",
                         evidence={"Instance": r["id"], "HttpTokens": str(http_tokens), "Expected": "required"},
-                        fix="Run `aws ec2 modify-instance-metadata-options --instance-id " + r["id"] + " --http-tokens required` or update via EC2 Console → Actions → Instance settings → Modify instance metadata options.",
+                        fix="First check CloudWatch MetadataNoToken metric and test in staging (older SDKs/scripts may break, and containers may need --http-put-response-hop-limit 2). Then run `aws ec2 modify-instance-metadata-options --instance-id " + r["id"] + " --http-tokens required` or update via EC2 Console → Actions → Instance settings → Modify instance metadata options.",
                         verify="Verify `HttpTokens` is `required` in EC2 instance metadata options, then re-scan in AWS Clarity.",
                         resource=r,
                     ))
@@ -1151,9 +1232,12 @@ def evaluate(
             # ------------------------------------------------------------------
             elif r_type == "vpcs":
                 vpc_id = r["id"]
+                vpc_region = r.get("region")
                 exposed = public_workloads_by_vpc.get(vpc_id, [])
                 # A default VPC existing by itself is NOT a security vulnerability;
                 # only flag when active public-facing workloads are running inside it.
+                # If EC2 or RDS discovery failed in this region and no public workload was
+                # observed, mark VPC-001 CHECK_FAILED rather than falsely reporting HEALTHY.
                 if raw.get("is_default") is True and exposed:
                     issues.append(_issue(
                         rule_id="VPC-001",
@@ -1166,10 +1250,14 @@ def evaluate(
                             "CidrBlock": str(raw.get("cidr_block") or "unknown"),
                             "PublicWorkloads": ", ".join(exposed[:5]),
                         },
-                        fix="Migrate production compute and database workloads into a custom VPC with isolated private subnets and explicit route tables.",
+                        fix="Plan a migration window to move production compute and database workloads into a custom VPC with isolated private subnets and explicit route tables.",
                         verify="Re-scan in AWS Clarity once public workloads are moved out of the default VPC and confirm VPC-001 passes.",
                         resource=r,
                     ))
+                elif raw.get("is_default") is True and vpc_region in failed_vpc_dep_regions:
+                    rule_errors["VPC-001"] = (
+                        "Could not verify public workloads in default VPC because EC2 or RDS discovery failed in this region."
+                    )
 
             elif r_type == "internet_gateways":
                 igw_id = r["id"]
@@ -1314,7 +1402,7 @@ def evaluate(
                         title="RDS automated backups are disabled",
                         why="A 0-day backup retention period disables automated snapshots and point-in-time recovery.",
                         evidence={"Database": r["id"], "Engine": engine, "BackupRetentionDays": "0"},
-                        fix="Open RDS → Databases → Select DB → Modify → Backup → set Backup retention period to at least 7 days.",
+                        fix="Schedule a maintenance window (changing retention from 0 to >0 causes a brief DB reboot/outage on RDS), then open RDS → Databases → Select DB → Modify → Backup → set Backup retention period to at least 7 days.",
                         verify="Confirm Backup retention period > 0 in RDS Console, then re-scan in AWS Clarity.",
                         resource=r,
                     ))
@@ -1426,12 +1514,17 @@ def evaluate(
                                 resources_list = stmt.get("Resource", [])
                                 if isinstance(resources_list, str):
                                     resources_list = [resources_list]
-                                has_star_resource = "*" in resources_list
+                                not_resources_list = stmt.get("NotResource", [])
+                                if isinstance(not_resources_list, str):
+                                    not_resources_list = [not_resources_list]
+                                has_star_resource = ("*" in resources_list) or bool(not_resources_list)
+                                actions_lower = [str(a).lower() for a in actions]
 
-                                # IAM-001: Action: *, iam:*, or Allow+NotAction on Resource: * without strong condition
+                                # IAM-001: Action: *, iam:* (case-insensitive), or Allow+NotAction on Resource: * / NotResource without strong condition
+                                has_iam_star = "iam:*" in actions_lower
                                 is_admin_wildcard = (
-                                    "*" in actions
-                                    or "iam:*" in actions
+                                    "*" in actions_lower
+                                    or has_iam_star
                                     or (bool(not_actions) and has_star_resource)
                                 )
                                 if is_admin_wildcard and has_star_resource and not has_condition and not seen_wildcard_action:
@@ -1444,18 +1537,18 @@ def evaluate(
                                         evidence={
                                             "Role": role_name,
                                             "Policy": policy_name,
-                                            "Action": "*" if "*" in actions else ("iam:*" if "iam:*" in actions else f"NotAction:{not_actions[0]}"),
-                                            "Resource": ", ".join(resources_list[:5]),
+                                            "Action": "*" if "*" in actions_lower else ("iam:*" if has_iam_star else f"NotAction:{not_actions[0]}"),
+                                            "Resource": ", ".join((resources_list or not_resources_list)[:5]),
                                             "Condition": "None",
                                         },
-                                        fix="Replace the wildcard statement in IAM → Roles → Permissions with explicit least-privilege actions, specific ARNs, and scoping conditions.",
+                                        fix="Review CloudTrail / IAM Access Analyzer usage first, then replace the wildcard statement in IAM → Roles → Permissions with explicit least-privilege actions, specific ARNs, and scoping conditions.",
                                         verify="Re-scan in AWS Clarity after updating the inline policy to confirm IAM-001 is resolved.",
                                         resource=r,
                                     ))
 
-                                # IAM-006: Broad service wildcard (e.g. s3:*, ec2:*) on Resource: * without strong condition
+                                # IAM-006: Broad service wildcard (e.g. s3:*, ec2:*) on Resource: * / NotResource without strong condition
                                 broad_service_actions = [
-                                    a for a in actions if a.endswith(":*") and a not in ("iam:*", "*")
+                                    a for a in actions if str(a).lower().endswith(":*") and str(a).lower() not in ("iam:*", "*")
                                 ]
                                 if (
                                     broad_service_actions
@@ -1474,10 +1567,10 @@ def evaluate(
                                             "Role": role_name,
                                             "Policy": policy_name,
                                             "Actions": ", ".join(broad_service_actions[:5]),
-                                            "Resource": "*",
+                                            "Resource": "*" if "*" in resources_list else "NotResource",
                                             "Condition": "None",
                                         },
-                                        fix="Replace service wildcards with only the specific API actions required and restrict Resource to target ARNs.",
+                                        fix="Review active API usage in CloudTrail / IAM Access Analyzer first, then replace service wildcards with only the specific API actions required and restrict Resource to target ARNs.",
                                         verify="Re-scan in AWS Clarity and confirm IAM-006 passes.",
                                         resource=r,
                                     ))
@@ -1487,9 +1580,9 @@ def evaluate(
                                 write_actions = [
                                     a
                                     for a in actions
-                                    if ":" in a
-                                    and not a.endswith(":*")
-                                    and a != "*"
+                                    if ":" in str(a)
+                                    and not str(a).lower().endswith(":*")
+                                    and str(a) != "*"
                                     and not _is_read_only_action(a)
                                 ]
                                 if write_actions and has_star_resource and not has_condition:
@@ -1568,10 +1661,14 @@ def evaluate(
                             continue
                         principal = stmt.get("Principal", {})
                         has_trust_condition = _has_strong_condition(stmt)
+                        aws_raw = principal.get("AWS") if isinstance(principal, dict) else None
+                        aws_list = aws_raw if isinstance(aws_raw, list) else ([aws_raw] if aws_raw is not None else [])
+                        svc_raw = principal.get("Service") if isinstance(principal, dict) else None
+                        svc_list = svc_raw if isinstance(svc_raw, list) else ([svc_raw] if svc_raw is not None else [])
                         is_public = (
                             principal == "*"
-                            or (isinstance(principal, dict) and principal.get("AWS") == "*")
-                            or (isinstance(principal, dict) and principal.get("Service") == "*")
+                            or "*" in aws_list
+                            or "*" in svc_list
                         )
                         if is_public and not has_trust_condition:
                             issues.append(_issue(
@@ -1580,25 +1677,24 @@ def evaluate(
                                 title="IAM role trust policy allows anyone (*)",
                                 why="A trust policy with Principal: * and no scoping condition allows any external AWS account to assume this role.",
                                 evidence={"Role": role_name, "Principal": "*", "Condition": "None"},
-                                fix="Edit IAM → Roles → Trust relationships and replace Principal: '*' with the exact AWS account ID, role ARN, or service principal.",
+                                fix="Inventory legitimate callers via CloudTrail first, then edit IAM → Roles → Trust relationships and replace Principal: '*' with the exact AWS account ID, role ARN, or service principal.",
                                 verify="Confirm Principal: '*' is removed in Trust relationships, then re-scan in AWS Clarity.",
                                 resource=r,
                             ))
                             break
 
-                        if isinstance(principal, dict) and "AWS" in principal:
-                            aws_p = principal["AWS"]
-                            aws_principals = aws_p if isinstance(aws_p, list) else [aws_p]
+                        if aws_list:
                             condition = stmt.get("Condition") or {}
                             has_ext_or_org = any(
-                                any(
+                                _is_restrictive_condition_operator(op)
+                                and isinstance(cv, dict)
+                                and any(
                                     str(ck).lower() in ("sts:externalid", "aws:principalorgid")
                                     for ck in cv.keys()
                                 )
-                                for cv in condition.values()
-                                if isinstance(cv, dict)
+                                for op, cv in condition.items()
                             )
-                            for p_arn in aws_principals:
+                            for p_arn in aws_list:
                                 trusted_account = _extract_account_from_principal(p_arn)
                                 if not trusted_account:
                                     continue
@@ -1640,10 +1736,22 @@ def evaluate(
                             acts = stmt.get("Action", [])
                             if isinstance(acts, str):
                                 acts = [acts]
+                            acts_lower = [str(a).lower() for a in acts]
+                            nacts = stmt.get("NotAction", [])
+                            if isinstance(nacts, str):
+                                nacts = [nacts]
                             res_list = stmt.get("Resource", [])
                             if isinstance(res_list, str):
                                 res_list = [res_list]
-                            if stmt.get("Effect") == "Allow" and "*" in acts and "*" in res_list:
+                            nres_list = stmt.get("NotResource", [])
+                            if isinstance(nres_list, str):
+                                nres_list = [nres_list]
+                            has_star_res = ("*" in res_list) or bool(nres_list)
+                            if stmt.get("Effect") == "Allow" and has_star_res and (
+                                "*" in acts_lower
+                                or "iam:*" in acts_lower
+                                or (bool(nacts) and not _has_strong_condition(stmt))
+                            ):
                                 has_admin_inline = True
 
                 # IAM-009: Console user or admin user without MFA
@@ -1658,7 +1766,7 @@ def evaluate(
                             "MFADevices": "0",
                             "ConsoleActivity": str(raw.get("password_last_used") or "Admin privileges"),
                         },
-                        fix="Open IAM → Users → Select User → Security credentials → Assign MFA device (hardware key or authenticator app).",
+                        fix="Open IAM → Users → Select User → Security credentials → Assign MFA device (hardware key or authenticator app). For non-human automation users, migrate to short-lived IAM roles.",
                         verify="Confirm at least one MFA device is active for this user, then re-scan in AWS Clarity.",
                         resource=r,
                     ))
@@ -1667,13 +1775,19 @@ def evaluate(
                 access_keys = raw.get("access_keys")
                 if isinstance(access_keys, list):
                     stale_keys = []
+                    unparseable_key_date = False
                     now = datetime.datetime.now(datetime.timezone.utc)
                     for k in access_keys:
                         if k.get("status") != "Active":
                             continue
                         created = _parse_datetime(k.get("create_date"))
-                        if created is not None and (now - created).days > 90:
+                        if created is None:
+                            unparseable_key_date = True
+                            continue
+                        if (now - created).days > 90:
                             stale_keys.append(f"{k.get('access_key_id')} ({(now - created).days}d)")
+                    if unparseable_key_date and not stale_keys:
+                        rule_errors["IAM-010"] = "Could not parse CreateDate on an active IAM access key."
                     if stale_keys:
                         issues.append(_issue(
                             rule_id="IAM-010",
