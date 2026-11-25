@@ -605,16 +605,41 @@ def run_local_scan(
     ct_statuses = [s for s in scanner_statuses if s["key"] == "cloudtrail_trails"]
     ct_all_ok = bool(ct_statuses) and all(s["status"] == "COMPLETED" for s in ct_statuses)
     account_advisories = []
-    if ct_all_ok and len(resources.get("cloudtrail_trails", [])) == 0:
+    # Only emit account-wide CT-000 when all enabled regions were discovered & scanned cleanly.
+    # On user-selected partial region subsets, a multi-region trail may live in another HomeRegion.
+    if (
+        scan_all_regions
+        and region_discovery.get("status") == "COMPLETE"
+        and ct_all_ok
+        and len(resources.get("cloudtrail_trails", [])) == 0
+    ):
         account_advisories.append({
             "rule_id": "CT-000",
             "severity": "CRITICAL",
             "category": "Security Risk",
             "service": "CloudTrail",
             "title": "No CloudTrail trails configured in this AWS account",
-            "why": "Without an active multi-region CloudTrail trail, API events older than 90 days are not archived to S3 and unauthorized changes are difficult to audit.",
-            "fix": "Open CloudTrail → Trails → Create trail, enable 'Apply trail to all regions', and enable log file validation.",
-            "verify": "Re-run `aws-clarity scan` and import the new report to confirm an active multi-region CloudTrail trail appears.",
+            "why": (
+                "Without an active multi-region CloudTrail trail, management API events older than 90 days are not "
+                "archived to S3 and unauthorized changes are difficult to investigate."
+            ),
+            "evidence": {
+                "RegionsChecked": str(len(target_regions)),
+                "TrailsFound": "0",
+                "Scope": "All enabled regions (DescribeTrails includeShadowTrails=False)",
+            },
+            "impact": (
+                "Your first trail delivering a copy of management events is free in CloudTrail (S3 bucket storage costs "
+                "still apply); additional management-event trails incur CloudTrail fees. Dependency check: if this is "
+                "an AWS Organizations member account covered by a management-account Organization trail or CloudTrail "
+                "Lake Event Data Store, confirm that coverage before creating a duplicate trail."
+            ),
+            "fix": (
+                "First verify whether an AWS Organizations trail or CloudTrail Lake Event Data Store already covers "
+                "this account. If not, open CloudTrail → Trails → Create trail, enable 'Apply trail to all regions', "
+                "and enable log file validation."
+            ),
+            "verify": "Re-run `aws-clarity scan` across all enabled regions and import the new report to confirm an active multi-region CloudTrail trail appears.",
         })
 
     is_incomplete = len(coverage_failures) > 0 or any(
@@ -623,15 +648,25 @@ def run_local_scan(
     )
 
     all_issues = [issue for r in all_resources for issue in r.get("issues", [])]
+    finding_counts = {
+        "critical": sum(1 for i in all_issues if i.get("severity") == "CRITICAL")
+        + sum(1 for a in account_advisories if a.get("severity") == "CRITICAL"),
+        "warning": sum(1 for i in all_issues if i.get("severity") == "WARNING")
+        + sum(1 for a in account_advisories if a.get("severity") == "WARNING"),
+        "unused": sum(1 for i in all_issues if i.get("severity") == "UNUSED"),
+        "info": sum(1 for i in all_issues if i.get("severity") == "INFO"),
+    }
     summary = {
         "total_resources": len(all_resources),
         "critical_issues": sum(1 for r in all_resources if r.get("status") == "CRITICAL"),
         "warnings": sum(1 for r in all_resources if r.get("status") == "WARNING"),
         "unused": sum(1 for r in all_resources if r.get("status") == "UNUSED"),
         "info_observations": sum(1 for i in all_issues if i.get("severity") == "INFO"),
+        "finding_counts": finding_counts,
         "healthy": sum(1 for r in all_resources if r.get("status") == "HEALTHY"),
         "incomplete_resources": sum(1 for r in all_resources if r.get("status") == "INCOMPLETE"),
-        "security_risks": sum(1 for i in all_issues if i.get("category") == "Security Risk"),
+        "security_risks": sum(1 for i in all_issues if i.get("category") == "Security Risk")
+        + sum(1 for a in account_advisories if a.get("category") == "Security Risk"),
         "operational_concerns": sum(1 for i in all_issues if i.get("category") == "Operational Concern"),
         "potential_cost_waste": sum(1 for i in all_issues if i.get("category") == "Potential Cost Waste"),
         "cost_risk_findings": sum(
