@@ -1,5 +1,6 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+from utils import sanitize_metadata_text
 
 
 def scan(session, region="us-east-1"):
@@ -10,8 +11,16 @@ def scan(session, region="us-east-1"):
         for page in paginator.paginate():
             for igw in page.get("InternetGateways", []):
                 igw_id = igw.get("InternetGatewayId")
+                # Data minimization: extract only Name tag for display; discard all other tag values.
                 tags = igw.get("Tags", [])
-                name = next((t["Value"] for t in tags if t["Key"] == "Name"), igw_id)
+                raw_name = next((t.get("Value") for t in tags if t.get("Key") == "Name"), None)
+                name = sanitize_metadata_text(raw_name, max_length=128) if raw_name else igw_id
+
+                attachments = [
+                    {"VpcId": a.get("VpcId"), "State": a.get("State")}
+                    for a in igw.get("Attachments", [])
+                    if isinstance(a, dict)
+                ]
 
                 resources.append({
                     "id": igw_id,
@@ -22,8 +31,7 @@ def scan(session, region="us-east-1"):
                     "issues": [],
                     "region": region,
                     "raw": {
-                        "attachments": igw.get("Attachments", []),
-                        "tags": tags,
+                        "attachments": attachments,
                     },
                 })
     except ClientError as e:

@@ -22,15 +22,17 @@ def scan(session, region="us-east-1"):
         assessment_errors = {}
 
         is_logging = None
-        latest_delivery_error = None
+        has_delivery_error = False
         try:
             status_resp = ct.get_trail_status(Name=trail_arn)
             is_logging = status_resp.get("IsLogging")
-            latest_delivery_error = status_resp.get("LatestDeliveryError")
+            has_delivery_error = bool(status_resp.get("LatestDeliveryError"))
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "AWS error")
             assessment_errors["CT-001"] = f"Could not inspect trail logging status: {code}"
 
+        # Data minimization: keep has_kms_key & has_delivery_error booleans instead of
+        # full KMS key ARNs or free-text delivery error messages.
         item = {
             "id": trail_arn,
             "name": trail_name,
@@ -46,10 +48,10 @@ def scan(session, region="us-east-1"):
                 "is_multi_region_trail": trail.get("IsMultiRegionTrail"),
                 "log_file_validation_enabled": trail.get("LogFileValidationEnabled"),
                 "include_global_service_events": trail.get("IncludeGlobalServiceEvents"),
-                "kms_key_id": trail.get("KmsKeyId"),
+                "has_kms_key": bool(trail.get("KmsKeyId")),
                 "is_organization_trail": trail.get("IsOrganizationTrail", False),
                 "is_logging": is_logging,
-                "latest_delivery_error": latest_delivery_error,
+                "has_delivery_error": has_delivery_error,
             },
         }
         if assessment_errors:

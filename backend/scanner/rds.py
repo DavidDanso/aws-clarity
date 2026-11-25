@@ -15,14 +15,16 @@ def scan(session, region="us-east-1"):
                 subnet_ids = [
                     s.get("SubnetIdentifier")
                     for s in subnet_group.get("Subnets", [])
-                    if s.get("SubnetIdentifier")
+                    if isinstance(s, dict) and s.get("SubnetIdentifier")
                 ]
                 sec_groups = [
                     sg.get("VpcSecurityGroupId")
                     for sg in db.get("VpcSecurityGroups", [])
-                    if sg.get("VpcSecurityGroupId")
+                    if isinstance(sg, dict) and sg.get("VpcSecurityGroupId")
                 ]
 
+                # Data minimization: explicitly drop Endpoint.Address, MasterUsername,
+                # TagList, KmsKeyId, and parameter/option group details.
                 resources.append({
                     "id": db_id,
                     "name": db_id,

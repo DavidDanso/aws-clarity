@@ -1,5 +1,6 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+from utils import sanitize_metadata_text
 
 
 def scan(session, region="us-east-1"):
@@ -10,8 +11,10 @@ def scan(session, region="us-east-1"):
         for page in paginator.paginate(OwnerIds=["self"]):
             for snap in page.get("Snapshots", []):
                 snap_id = snap.get("SnapshotId")
+                # Data minimization: discard free-text Description and all non-Name tags.
                 tags = snap.get("Tags", [])
-                name = next((t["Value"] for t in tags if t["Key"] == "Name"), snap_id)
+                raw_name = next((t.get("Value") for t in tags if t.get("Key") == "Name"), None)
+                name = sanitize_metadata_text(raw_name, max_length=128) if raw_name else snap_id
                 resources.append({
                     "id": snap_id,
                     "name": name,
@@ -25,8 +28,6 @@ def scan(session, region="us-east-1"):
                         "start_time": snap.get("StartTime"),
                         "volume_size": snap.get("VolumeSize"),
                         "encrypted": snap.get("Encrypted"),
-                        "description": snap.get("Description"),
-                        "tags": tags,
                     },
                 })
     except ClientError as e:

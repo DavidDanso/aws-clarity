@@ -1,5 +1,6 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+from utils import sanitize_metadata_text
 
 
 def scan(session, region="us-east-1"):
@@ -11,8 +12,10 @@ def scan(session, region="us-east-1"):
             for reservation in page.get("Reservations", []):
                 for instance in reservation.get("Instances", []):
                     instance_id = instance.get("InstanceId")
+                    # Data minimization: extract only the Name tag for display; discard all other tag values.
                     tags = instance.get("Tags", [])
-                    name = next((t["Value"] for t in tags if t["Key"] == "Name"), instance_id)
+                    raw_name = next((t.get("Value") for t in tags if t.get("Key") == "Name"), None)
+                    name = sanitize_metadata_text(raw_name, max_length=128) if raw_name else instance_id
 
                     ebs_volumes = [
                         b["Ebs"]["VolumeId"]
@@ -23,6 +26,7 @@ def scan(session, region="us-east-1"):
                     iam_profile = instance.get("IamInstanceProfile", {})
                     iam_role_arn = iam_profile.get("Arn") or iam_profile.get("Id")
                     metadata_options = instance.get("MetadataOptions") or {}
+                    public_ip = instance.get("PublicIpAddress")
 
                     resources.append({
                         "id": instance_id,
@@ -34,7 +38,7 @@ def scan(session, region="us-east-1"):
                         "region": region,
                         "raw": {
                             "instance_type": instance.get("InstanceType"),
-                            "state": instance.get("State", {}).get("Name"),
+                            "state": (instance.get("State") or {}).get("Name"),
                             "launch_time": instance.get("LaunchTime"),
                             "vpc_id": instance.get("VpcId"),
                             "subnet_id": instance.get("SubnetId"),
@@ -46,9 +50,8 @@ def scan(session, region="us-east-1"):
                             "ebs_volumes": ebs_volumes,
                             "iam_instance_profile": iam_role_arn,
                             "http_tokens": metadata_options.get("HttpTokens"),
-                            "public_ip": instance.get("PublicIpAddress"),
-                            "private_ip": instance.get("PrivateIpAddress"),
-                            "tags": tags,
+                            "has_public_ip": bool(public_ip),
+                            "public_ip": public_ip,
                         },
                     })
     except ClientError as e:

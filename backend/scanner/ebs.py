@@ -1,5 +1,6 @@
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+from utils import sanitize_metadata_text
 
 
 def scan(session, region="us-east-1"):
@@ -10,8 +11,15 @@ def scan(session, region="us-east-1"):
         for page in paginator.paginate():
             for volume in page.get("Volumes", []):
                 vol_id = volume.get("VolumeId")
+                # Data minimization: extract only Name tag for display; discard all other tag values.
                 tags = volume.get("Tags", [])
-                name = next((t["Value"] for t in tags if t["Key"] == "Name"), vol_id)
+                raw_name = next((t.get("Value") for t in tags if t.get("Key") == "Name"), None)
+                name = sanitize_metadata_text(raw_name, max_length=128) if raw_name else vol_id
+                attachments = [
+                    {"InstanceId": a.get("InstanceId"), "State": a.get("State")}
+                    for a in volume.get("Attachments", [])
+                    if isinstance(a, dict)
+                ]
                 resources.append({
                     "id": vol_id,
                     "name": name,
@@ -25,8 +33,7 @@ def scan(session, region="us-east-1"):
                         "state": volume.get("State"),
                         "encrypted": volume.get("Encrypted"),
                         "volume_type": volume.get("VolumeType"),
-                        "attachments": volume.get("Attachments", []),
-                        "tags": tags,
+                        "attachments": attachments,
                         "create_time": volume.get("CreateTime"),
                     },
                 })

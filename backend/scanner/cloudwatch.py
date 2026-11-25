@@ -11,6 +11,7 @@ def scan_alarms(session, region="us-east-1"):
             for alarm in page.get("MetricAlarms", []):
                 alarm_name = alarm.get("AlarmName")
                 alarm_arn = alarm.get("AlarmArn")
+                # Data minimization: drop AlarmDescription, Dimensions, and raw action ARNs.
                 resources.append({
                     "id": alarm_name,
                     "name": alarm_name,
@@ -26,9 +27,7 @@ def scan_alarms(session, region="us-east-1"):
                         "metric_name": alarm.get("MetricName"),
                         "state_value": alarm.get("StateValue"),
                         "actions_enabled": alarm.get("ActionsEnabled"),
-                        "alarm_actions": alarm.get("AlarmActions", []),
-                        "ok_actions": alarm.get("OKActions", []),
-                        "insufficient_data_actions": alarm.get("InsufficientDataActions", []),
+                        "alarm_actions_count": len(alarm.get("AlarmActions", []) or []),
                     },
                 })
             for alarm in page.get("CompositeAlarms", []):
@@ -47,9 +46,7 @@ def scan_alarms(session, region="us-east-1"):
                         "alarm_type": "CompositeAlarm",
                         "state_value": alarm.get("StateValue"),
                         "actions_enabled": alarm.get("ActionsEnabled"),
-                        "alarm_actions": alarm.get("AlarmActions", []),
-                        "ok_actions": alarm.get("OKActions", []),
-                        "insufficient_data_actions": alarm.get("InsufficientDataActions", []),
+                        "alarm_actions_count": len(alarm.get("AlarmActions", []) or []),
                     },
                 })
     except ClientError as e:
@@ -65,6 +62,7 @@ def scan_log_groups(session, region="us-east-1"):
         for page in paginator.paginate():
             for lg in page.get("logGroups", []):
                 lg_name = lg.get("logGroupName")
+                # Data minimization: keep has_kms_key boolean instead of full kmsKeyId ARN.
                 resources.append({
                     "id": lg_name,
                     "name": lg_name,
@@ -77,7 +75,7 @@ def scan_log_groups(session, region="us-east-1"):
                         "arn": lg.get("arn"),
                         "retention_in_days": lg.get("retentionInDays"),
                         "stored_bytes": lg.get("storedBytes", 0),
-                        "kms_key_id": lg.get("kmsKeyId"),
+                        "has_kms_key": bool(lg.get("kmsKeyId")),
                         "log_group_class": lg.get("logGroupClass", "STANDARD"),
                         "creation_time": lg.get("creationTime"),
                     },

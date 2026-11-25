@@ -14,6 +14,10 @@ def scan(session, region="us-east-1"):
                 vpc_id = vpc_config.get("VpcId") or None
                 subnet_ids = vpc_config.get("SubnetIds", [])
                 sec_groups = vpc_config.get("SecurityGroupIds", [])
+                # Data minimization: explicitly drop Environment.Variables (both keys and values)
+                # and free-text Description. Keep only a boolean indicating whether env vars exist.
+                env_vars = (fn.get("Environment") or {}).get("Variables")
+                has_env_vars = isinstance(env_vars, dict) and len(env_vars) > 0
 
                 resources.append({
                     "id": fn_name,
@@ -36,6 +40,7 @@ def scan(session, region="us-east-1"):
                         "subnet_id": ", ".join(subnet_ids) if subnet_ids else None,
                         "subnet_ids": subnet_ids,
                         "security_groups": sec_groups,
+                        "has_environment_variables": has_env_vars,
                     },
                 })
     except ClientError as e:

@@ -1,8 +1,11 @@
 import concurrent.futures
 import json
+import re
 import urllib.parse
 from botocore.exceptions import ClientError
 from exceptions import ScannerError
+
+_AWS_ACCOUNT_OR_ARN_RE = re.compile(r"^(?:\*|\d{12}|arn:aws[a-z-]*:(?:iam|sts)::\d{12}:[^\s]+)$")
 
 
 def _paginate_policy_names(iam_client, paginator_name, **kwargs):
@@ -34,18 +37,113 @@ def _decode_policy_doc(raw_doc):
     return raw_doc if isinstance(raw_doc, dict) else {}
 
 
+def _minimize_condition_keys(condition) -> dict:
+    """Keep ONLY condition operator & key names; discard all literal condition values immediately."""
+    if not isinstance(condition, dict) or not condition:
+        return {}
+    minimized = {}
+    for op, cond_map in condition.items():
+        if not isinstance(cond_map, dict):
+            continue
+        keys_only = {str(k): True for k in cond_map.keys()}
+        if keys_only:
+            minimized[str(op)] = keys_only
+    return minimized
+
+
+def _minimize_inline_policy_doc(raw_doc) -> dict:
+    """Extract only structural statement facts required by IAM-001/002/006/011.
+
+    Drops Sid text, literal Condition values, and specific non-wildcard Resource ARNs
+    so secret-like strings inside inline IAM policies are discarded at the collector boundary.
+    """
+    doc = _decode_policy_doc(raw_doc)
+    raw_stmts = doc.get("Statement", [])
+    if isinstance(raw_stmts, dict):
+        raw_stmts = [raw_stmts]
+    if not isinstance(raw_stmts, list):
+        return {"Statement": []}
+
+    minimized_stmts = []
+    for stmt in raw_stmts:
+        if not isinstance(stmt, dict):
+            continue
+        entry = {"Effect": stmt.get("Effect")}
+        if "Action" in stmt:
+            acts = stmt["Action"]
+            acts = [acts] if isinstance(acts, str) else (acts if isinstance(acts, list) else [])
+            entry["Action"] = [str(a) for a in acts if isinstance(a, str)]
+        if "NotAction" in stmt:
+            nacts = stmt["NotAction"]
+            nacts = [nacts] if isinstance(nacts, str) else (nacts if isinstance(nacts, list) else [])
+            entry["NotAction"] = [str(a) for a in nacts if isinstance(a, str)]
+        if "Resource" in stmt:
+            res = stmt["Resource"]
+            res = [res] if isinstance(res, str) else (res if isinstance(res, list) else [])
+            entry["Resource"] = ["*" if r == "*" else "[scoped-resource]" for r in res if isinstance(r, str)]
+        cond = _minimize_condition_keys(stmt.get("Condition"))
+        if cond:
+            entry["Condition"] = cond
+        minimized_stmts.append(entry)
+    return {"Statement": minimized_stmts}
+
+
+def _minimize_trust_policy_doc(raw_doc) -> dict:
+    """Extract only Principal & Condition key names required by IAM-005/008.
+
+    Drops Sid text and all Condition values (including sts:ExternalId secret values).
+    """
+    doc = _decode_policy_doc(raw_doc)
+    raw_stmts = doc.get("Statement", [])
+    if isinstance(raw_stmts, dict):
+        raw_stmts = [raw_stmts]
+    if not isinstance(raw_stmts, list):
+        return {"Statement": []}
+
+    minimized_stmts = []
+    for stmt in raw_stmts:
+        if not isinstance(stmt, dict):
+            continue
+        principal = stmt.get("Principal")
+        min_principal = {}
+        if principal == "*":
+            min_principal = "*"
+        elif isinstance(principal, dict):
+            if "AWS" in principal:
+                aws_p = principal["AWS"]
+                aws_list = [aws_p] if isinstance(aws_p, str) else (aws_p if isinstance(aws_p, list) else [])
+                kept = [p for p in aws_list if isinstance(p, str) and _AWS_ACCOUNT_OR_ARN_RE.match(p.strip())]
+                if kept:
+                    min_principal["AWS"] = kept[0] if len(kept) == 1 else kept
+            if "Service" in principal:
+                svc_p = principal["Service"]
+                if svc_p == "*" or isinstance(svc_p, str):
+                    min_principal["Service"] = svc_p
+                elif isinstance(svc_p, list):
+                    min_principal["Service"] = [s for s in svc_p if isinstance(s, str)]
+        entry = {
+            "Effect": stmt.get("Effect"),
+            "Principal": min_principal,
+        }
+        cond = _minimize_condition_keys(stmt.get("Condition"))
+        if cond:
+            entry["Condition"] = cond
+        minimized_stmts.append(entry)
+    return {"Statement": minimized_stmts}
+
+
 def _inspect_role(iam, role):
     role_name = role.get("RoleName")
     role_id = role.get("RoleId")
     role_path = role.get("Path", "/")
     assessment_errors = {}
 
-    # Paginated inline policies
+    # Paginated inline policies (minimized immediately at collector boundary)
     inline_policies = {}
     try:
         for policy_name in _paginate_policy_names(iam, "list_role_policies", RoleName=role_name):
             policy_doc_resp = iam.get_role_policy(RoleName=role_name, PolicyName=policy_name)
-            inline_policies[policy_name] = _decode_policy_doc(policy_doc_resp.get("PolicyDocument", {}))
+            inline_policies[policy_name] = _minimize_inline_policy_doc(policy_doc_resp.get("PolicyDocument", {}))
     except ClientError as e:
         code = e.response.get("Error", {}).get("Code", "AWS error")
         inline_policies = None
@@ -63,7 +161,7 @@ def _inspect_role(iam, role):
         for rule_id in ("IAM-003", "IAM-004", "IAM-007"):
             assessment_errors[rule_id] = f"Could not list attached policies: {code}"
 
-    trust_policy = _decode_policy_doc(role.get("AssumeRolePolicyDocument", {}))
+    trust_policy = _minimize_trust_policy_doc(role.get("AssumeRolePolicyDocument", {}))
 
     item = {
         "id": role_id,
@@ -141,7 +239,7 @@ def _inspect_user(iam, user):
         docs = {}
         for policy_name in _paginate_policy_names(iam, "list_user_policies", UserName=user_name):
             policy_doc_resp = iam.get_user_policy(UserName=user_name, PolicyName=policy_name)
-            docs[policy_name] = _decode_policy_doc(policy_doc_resp.get("PolicyDocument", {}))
+            docs[policy_name] = _minimize_inline_policy_doc(policy_doc_resp.get("PolicyDocument", {}))
         return docs
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as ex:

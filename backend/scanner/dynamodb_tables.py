@@ -9,9 +9,13 @@ def _inspect_table(client, name, region):
         table_info = client.describe_table(TableName=name).get("Table", {})
         # AWS encrypts all DynamoDB tables at rest by default using an AWS-owned key.
         # When AWS-owned encryption is active, AWS omits SSEDescription entirely.
+        # Data minimization: keep only Status and SSEType (discard KMSMasterKeyArn).
         raw_sse = table_info.get("SSEDescription")
-        if raw_sse:
-            sse_desc = raw_sse
+        if isinstance(raw_sse, dict) and raw_sse:
+            sse_desc = {
+                "Status": raw_sse.get("Status"),
+                "SSEType": raw_sse.get("SSEType"),
+            }
         else:
             sse_desc = {"Status": "ENABLED", "SSEType": "AWS_OWNED"}
 
