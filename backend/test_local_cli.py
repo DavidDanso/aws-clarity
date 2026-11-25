@@ -159,10 +159,10 @@ class TestLocalFirstScannerAndCLI(unittest.TestCase):
                  patch("aws_clarity_cli.run_local_scan", return_value=fake_report), \
                  redirect_stdout(stdout_buf), \
                  redirect_stderr(stderr_buf):
-                rc = aws_clarity_cli.main(["scan", "--profile", "dev", "--output", out_path])
+                rc = aws_clarity_cli.main(["scan", "--profile", "dev", "--yes", "--output", out_path])
 
             self.assertEqual(rc, 0)
-            self.assertIn("123456789012", stderr_buf.getvalue())
+            self.assertIn("********9012", stderr_buf.getvalue())
             # Ensure output file has owner-only 0600 permissions on POSIX (Windows uses ACLs)
             if os.name == "posix":
                 file_mode = stat.S_IMODE(os.stat(out_path).st_mode)

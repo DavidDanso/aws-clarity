@@ -5,8 +5,10 @@ rule engine (`scanner/misconfig.py`) directly on the customer's workstation
 using the standard AWS SDK credential provider chain (AWS CLI profiles,
 IAM Identity Center / SSO, environment credentials, or a customer-owned role).
 
-Privacy & cost guarantees:
+Privacy, safety & cost guarantees:
 - Communicates ONLY with official AWS service endpoints via boto3/botocore.
+- Enforces an explicit client-layer AWS API operation allowlist (`api_guard.py`).
+- Refuses AWS account root credentials unless `--allow-root` is explicitly passed.
 - Never sends credentials, metadata, or reports to AWS Clarity servers.
 - Never prints or writes AWS access keys, secret keys, or session tokens.
 - Skips S3 API checks by default (`SKIPPED_OPTIONAL`) because AWS S3 bills
@@ -16,12 +18,18 @@ Privacy & cost guarantees:
 
 import concurrent.futures
 import datetime
+import re
 import time
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound, TokenRetrievalError
 
-from exceptions import AssumeRoleError, InvalidRoleARNError, ScannerError
+from api_guard import (
+    ALLOWED_AWS_OPERATIONS,
+    get_allowed_iam_actions,
+    wrap_client_with_guard,
+)
+from exceptions import AssumeRoleError, InvalidRoleARNError, RootIdentityBlockedError, ScannerError
 from lambda_handler import (
     CORE_PERMISSIONS,
     OUT_OF_SCOPE_DISCLOSURES,
@@ -35,7 +43,13 @@ from lambda_handler import (
 )
 from scanner import iam, s3
 from scanner.misconfig import SERVICE_COVERAGE_MATRIX, evaluate, get_rules_catalog
-from utils import CachedSession, SCAN_BOTO_CONFIG, validate_external_id, validate_role_arn
+from utils import (
+    CachedSession,
+    SCAN_BOTO_CONFIG,
+    redact_credential_strings,
+    validate_external_id,
+    validate_role_arn,
+)
 
 # Workstation-friendly timeouts & pool size (avoids false timeouts on home/office broadband)
 LOCAL_BOTO_CONFIG = Config(
@@ -48,44 +62,10 @@ LOCAL_BOTO_CONFIG = Config(
 REPORT_SCHEMA_VERSION = "aws-clarity-report/v1"
 CLI_VERSION = "1.0.0"
 
-DEFAULT_ZERO_COST_IAM_ACTIONS = [
-    "sts:GetCallerIdentity",
-    "ec2:DescribeRegions",
-    "ec2:DescribeInstances",
-    "ec2:DescribeAddresses",
-    "ec2:DescribeSecurityGroups",
-    "ec2:DescribeVpcs",
-    "ec2:DescribeInternetGateways",
-    "ec2:DescribeNatGateways",
-    "ec2:DescribeVolumes",
-    "ec2:DescribeSnapshots",
-    "iam:ListRoles",
-    "iam:ListRolePolicies",
-    "iam:GetRolePolicy",
-    "iam:ListAttachedRolePolicies",
-    "iam:ListUsers",
-    "iam:ListMFADevices",
-    "iam:ListAccessKeys",
-    "iam:ListAttachedUserPolicies",
-    "iam:ListUserPolicies",
-    "iam:GetUserPolicy",
-    "lambda:ListFunctions",
-    "rds:DescribeDBInstances",
-    "dynamodb:ListTables",
-    "dynamodb:DescribeTable",
-    "cloudwatch:DescribeAlarms",
-    "logs:DescribeLogGroups",
-    "cloudtrail:DescribeTrails",
-    "cloudtrail:GetTrailStatus",
-]
-
+# Derived directly from `api_guard.ALLOWED_AWS_OPERATIONS` so runtime guard & IAM policy never drift.
+DEFAULT_ZERO_COST_IAM_ACTIONS = get_allowed_iam_actions(include_s3=False)
 OPTIONAL_S3_IAM_ACTIONS = [
-    "s3:ListAllMyBuckets",
-    "s3:GetBucketLocation",
-    "s3:GetBucketPolicyStatus",
-    "s3:GetBucketAcl",
-    "s3:GetEncryptionConfiguration",
-    "s3:GetBucketPublicAccessBlock",
+    entry.iam_action for entry in ALLOWED_AWS_OPERATIONS if entry.optional_s3
 ]
 
 S3_OPTIONAL_COST_NOTICE = (
@@ -96,14 +76,123 @@ S3_OPTIONAL_COST_NOTICE = (
     "No s3:ListBucket or s3:GetObject calls are ever made."
 )
 
+_ROOT_ARN_RE = re.compile(r"^arn:aws[a-z-]*:iam::\d{12}:root$")
+_ACCOUNT_IN_ARN_RE = re.compile(r"(arn:aws[a-z-]*:[a-z0-9-]+:[a-z0-9-]*:)(\d{12})(:)")
+_IDENTITY_NAME_RE = re.compile(
+    r"^arn:aws[a-z-]*:(?:iam|sts)::\d{12}:(?:user|role|assumed-role|federated-user)/(.+)$"
+)
+
+
+def mask_account_id(account_id: str | None) -> str:
+    """Mask a 12-digit AWS account ID for safer terminal display (e.g. ********9012)."""
+    raw = str(account_id or "").strip()
+    if len(raw) == 12 and raw.isdigit():
+        return f"********{raw[-4:]}"
+    if len(raw) > 4:
+        return f"{'*' * (len(raw) - 4)}{raw[-4:]}"
+    return raw or "unknown"
+
+
+def mask_caller_arn(caller_arn: str | None) -> str:
+    """Mask the 12-digit AWS account ID inside a caller ARN."""
+    raw = str(caller_arn or "").strip()
+    if not raw:
+        return "unknown"
+    return _ACCOUNT_IN_ARN_RE.sub(lambda m: f"{m.group(1)}********{m.group(2)[-4:]}{m.group(3)}", raw)
+
+
+def is_root_arn(caller_arn: str | None) -> bool:
+    """Return True strictly when sts:GetCallerIdentity Arn is the AWS account root user."""
+    return bool(_ROOT_ARN_RE.match(str(caller_arn or "").strip()))
+
+
+def is_likely_admin_name_heuristic(caller_arn: str | None) -> bool:
+    """NAME HEURISTIC ONLY: checks whether the user/role/assumed-role name contains 'admin'.
+
+    Makes zero extra IAM or AWS API calls. Never determines effective permissions,
+    and never assumes any non-matching role name (including 'ReadOnly') is actually read-only.
+    """
+    raw = str(caller_arn or "").strip()
+    match = _IDENTITY_NAME_RE.match(raw)
+    if not match:
+        return False
+    identity_tail = match.group(1)
+    # Check user name, role path/name, or assumed-role name (exclude session name after second slash if assumed-role)
+    parts = identity_tail.split("/")
+    if ":assumed-role/" in raw and len(parts) >= 2:
+        name_to_check = parts[0]
+    else:
+        name_to_check = identity_tail
+    return "admin" in name_to_check.lower()
+
+
+def format_root_refusal_message(caller_arn: str) -> str:
+    return (
+        f"Refused to run with AWS account root credentials ({mask_caller_arn(caller_arn)}).\n"
+        "  Why: The AWS account root user has unrestricted control over your entire account and billing.\n"
+        "  AWS best practice is to never use root credentials for routine tools or assessments.\n"
+        "  Recommended: Sign in with a dedicated read-only IAM role or IAM Identity Center (SSO) profile.\n"
+        "    Inspect exact read-only permissions : aws-clarity policy --zero-cost-only\n"
+        "    Least-privilege CloudFormation role : infra/aws-clarity-readonly-role.yaml\n"
+        "  If you understand the risk and explicitly choose to proceed anyway, pass --allow-root."
+    )
+
+
+def format_admin_heuristic_warning(caller_arn: str) -> str:
+    return (
+        f"WARNING (name heuristic only): Your caller ARN ({mask_caller_arn(caller_arn)}) includes 'admin' in its name.\n"
+        "  Recommended: Use a dedicated read-only IAM role instead of a high-privilege identity.\n"
+        "    Inspect exact read-only permissions : aws-clarity policy --zero-cost-only\n"
+        "    Least-privilege CloudFormation role : infra/aws-clarity-readonly-role.yaml\n"
+        "  Note: This check is a NAME HEURISTIC ONLY based solely on your caller ARN. AWS Clarity makes\n"
+        "  zero extra IAM API calls to evaluate effective permissions, cannot prove this identity is an\n"
+        "  administrator, and never assumes a role is read-only because its name contains 'ReadOnly'\n"
+        "  (SCPs, permission boundaries, and session policies determine actual access)."
+    )
+
+
+def describe_credential_source(
+    session,
+    profile: str | None = None,
+    role_arn: str | None = None,
+) -> str:
+    """Describe the active credential source metadata without ever reading secret values."""
+    if role_arn:
+        base_desc = f"profile '{profile}'" if profile else "default AWS credential chain"
+        return f"assumed customer role via {base_desc} (local STS AssumeRole)"
+
+    method = ""
+    try:
+        bc_sess = getattr(session, "_session", None)
+        if bc_sess is not None and hasattr(bc_sess, "get_credentials"):
+            creds = bc_sess.get_credentials()
+            method = str(getattr(creds, "method", "") or "").strip()
+    except Exception:
+        method = ""
+
+    if profile and method:
+        return f"AWS CLI profile '{profile}' ({method})"
+    if profile:
+        return f"AWS CLI profile '{profile}'"
+    if method:
+        return f"default AWS credential chain ({method})"
+    return "default AWS credential chain"
+
+
+def enforce_identity_guards(identity: dict, allow_root: bool = False) -> dict:
+    """Enforce root block (unless allow_root=True) and compute admin name-heuristic status."""
+    caller_arn = str(identity.get("caller_arn") or "")
+    if is_root_arn(caller_arn) and not allow_root:
+        raise RootIdentityBlockedError(format_root_refusal_message(caller_arn))
+    return {
+        "is_root": is_root_arn(caller_arn),
+        "admin_name_heuristic": is_likely_admin_name_heuristic(caller_arn),
+    }
+
 
 def build_policy_document(include_s3: bool = True) -> dict:
-    """Return the exact least-privilege read-only IAM policy JSON."""
-    actions = list(DEFAULT_ZERO_COST_IAM_ACTIONS)
-    if include_s3:
-        # Insert S3 actions right after ec2:DescribeSnapshots to match infra/iam.tf order
-        insert_at = actions.index("ec2:DescribeSnapshots") + 1
-        actions[insert_at:insert_at] = OPTIONAL_S3_IAM_ACTIONS
+    """Return the exact least-privilege read-only IAM policy JSON derived from api_guard."""
+    actions = get_allowed_iam_actions(include_s3=include_s3)
     return {
         "Version": "2012-10-17",
         "Statement": [
@@ -127,6 +216,8 @@ def create_local_session(
 
     Supports AWS CLI profiles, IAM Identity Center / SSO sessions, environment
     credentials, and optional customer-owned read-only role assumption.
+    Never silently falls back to ambient credentials when an explicit profile or
+    role ARN fails.
     """
     try:
         base_session = (
@@ -136,14 +227,16 @@ def create_local_session(
         )
     except ProfileNotFound as exc:
         raise RuntimeError(
-            f"AWS CLI profile '{profile}' was not found in ~/.aws/config or ~/.aws/credentials."
+            f"AWS CLI profile '{profile}' was not found in ~/.aws/config or ~/.aws/credentials. "
+            "Refusing to fall back to default credentials."
         ) from exc
 
     if not role_arn:
         return base_session
 
     validated_arn = validate_role_arn(role_arn)
-    sts = base_session.client("sts", region_name=region_name, config=SCAN_BOTO_CONFIG)
+    raw_sts = base_session.client("sts", region_name=region_name, config=SCAN_BOTO_CONFIG)
+    sts = wrap_client_with_guard(raw_sts, "sts", include_s3=False, allow_assume_role=True)
     assume_kwargs = {
         "RoleArn": validated_arn,
         "RoleSessionName": "AWSClarityLocalScan",
@@ -170,7 +263,8 @@ def create_local_session(
 def verify_identity(session) -> dict:
     """Verify active local AWS identity via sts:GetCallerIdentity (never returns credentials)."""
     try:
-        sts = session.client("sts", region_name="us-east-1", config=SCAN_BOTO_CONFIG)
+        raw_sts = session.client("sts", region_name="us-east-1", config=SCAN_BOTO_CONFIG)
+        sts = wrap_client_with_guard(raw_sts, "sts", include_s3=False)
         ident = sts.get_caller_identity()
         return {
             "account_id": str(ident["Account"]),
@@ -187,16 +281,53 @@ def verify_identity(session) -> dict:
         ) from exc
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "AuthError")
-        raise RuntimeError(f"AWS identity check failed ({code}): {exc}") from exc
+        raise RuntimeError(f"AWS identity check failed ({code}): {redact_credential_strings(str(exc))}") from exc
+
+
+def _minimize_report_resources_post_eval(resources: dict) -> None:
+    """Prune bulky/sensitive policy & ingress structures after deterministic rule evaluation.
+
+    Findings already retain the exact structured `evidence` fields needed by the user.
+    """
+    for role in resources.get("iam_roles", []) or []:
+        raw = role.get("raw")
+        if not isinstance(raw, dict):
+            continue
+        inline = raw.pop("inline_policies", None)
+        if isinstance(inline, dict):
+            raw["inline_policy_names"] = sorted(str(k) for k in inline.keys())
+            raw["inline_policy_count"] = len(inline)
+        trust = raw.pop("trust_policy", None)
+        if isinstance(trust, dict):
+            stmts = trust.get("Statement", [])
+            if isinstance(stmts, dict):
+                stmts = [stmts]
+            raw["trust_statement_count"] = len(stmts) if isinstance(stmts, list) else 0
+
+    for user in resources.get("iam_users", []) or []:
+        raw = user.get("raw")
+        if not isinstance(raw, dict):
+            continue
+        inline = raw.pop("inline_policies", None)
+        if isinstance(inline, dict):
+            raw["inline_policy_names"] = sorted(str(k) for k in inline.keys())
+            raw["inline_policy_count"] = len(inline)
 
 
 def run_doctor(
     session,
     include_s3_checks: bool = False,
+    allow_root: bool = False,
 ) -> dict:
     """Verify active AWS identity, enabled regions, and exact read-only permissions."""
-    cached = CachedSession(session)
+    cached = CachedSession(
+        session,
+        config=SCAN_BOTO_CONFIG,
+        enforce_api_allowlist=True,
+        include_s3=include_s3_checks,
+    )
     identity = verify_identity(cached)
+    guard_info = enforce_identity_guards(identity, allow_root=allow_root)
     enabled_regions, region_discovery = discover_enabled_regions(cached)
 
     permission_checks = {}
@@ -235,7 +366,7 @@ def run_doctor(
                 "required_permission": spec["action"],
                 "capability": spec["capability"],
                 "error_code": type(exc).__name__,
-                "message": str(exc),
+                "message": redact_credential_strings(str(exc)),
             }
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(CORE_PERMISSIONS)) as ex:
@@ -251,6 +382,7 @@ def run_doctor(
         "status": "OK" if not missing and region_discovery.get("status") == "COMPLETE" else "INCOMPLETE",
         "account_id": identity["account_id"],
         "caller_arn": identity["caller_arn"],
+        "admin_name_heuristic": guard_info["admin_name_heuristic"],
         "enabled_regions": enabled_regions,
         "region_discovery": region_discovery,
         "include_s3_checks": include_s3_checks,
@@ -265,6 +397,7 @@ def run_local_scan(
     include_s3_checks: bool = False,
     confirm_s3_request_costs: bool = False,
     deadline_s: float = 90.0,
+    allow_root: bool = False,
 ) -> dict:
     """Execute a complete local-first multi-region read-only assessment.
 
@@ -279,9 +412,15 @@ def run_local_scan(
 
     scan_started = time.monotonic()
     is_real_boto_session = isinstance(session, boto3.Session)
-    cached = CachedSession(session, config=LOCAL_BOTO_CONFIG)
+    cached = CachedSession(
+        session,
+        config=LOCAL_BOTO_CONFIG,
+        enforce_api_allowlist=True,
+        include_s3=include_s3_checks,
+    )
 
     identity = verify_identity(cached)
+    enforce_identity_guards(identity, allow_root=allow_root)
     account_id = identity["account_id"]
     caller_arn = identity["caller_arn"]
 
@@ -394,21 +533,23 @@ def run_local_scan(
                 except ScannerError as exc:
                     resources[key].extend(exc.resources)
                     state = "INCOMPLETE" if exc.resources else "FAILED"
-                    scanner_statuses.append(_scanner_status_entry(key, region, state, len(exc.resources), str(exc)))
+                    reason = redact_credential_strings(str(exc))
+                    scanner_statuses.append(_scanner_status_entry(key, region, state, len(exc.resources), reason))
                     coverage_failures.append({
                         "service": meta["service"],
                         "label": meta["label"],
                         "region": region,
-                        "reason": str(exc),
+                        "reason": reason,
                         "required_permission": meta["permission"],
                     })
                 except Exception as exc:
-                    scanner_statuses.append(_scanner_status_entry(key, region, "FAILED", 0, str(exc)))
+                    reason = redact_credential_strings(str(exc))
+                    scanner_statuses.append(_scanner_status_entry(key, region, "FAILED", 0, reason))
                     coverage_failures.append({
                         "service": meta["service"],
                         "label": meta["label"],
                         "region": region,
-                        "reason": str(exc),
+                        "reason": reason,
                         "required_permission": meta["permission"],
                     })
         except concurrent.futures.TimeoutError:
@@ -436,6 +577,9 @@ def run_local_scan(
 
     # Run the single shared deterministic rule engine
     resources = evaluate(cached, resources, account_id=account_id, scanner_statuses=scanner_statuses)
+
+    # Prune raw policy documents after evaluation so full reports remain minimal
+    _minimize_report_resources_post_eval(resources)
 
     all_resources = [
         r
