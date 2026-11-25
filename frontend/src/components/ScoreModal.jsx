@@ -134,7 +134,7 @@ export default function ScoreModal({
           <div className="p-3 rounded-lg bg-slate-900/60 border border-slate-800/80 text-[11px] text-slate-400 leading-relaxed space-y-1.5">
             <p className="font-semibold text-slate-300">Important Clarification</p>
             <p>
-              This score is an operational visibility metric derived strictly from deterministic checks across executed services. It is not a security certification or compliance audit.
+              This score describes <strong>only AWS Clarity&apos;s supported v1 checks and available evidence</strong> across executed services. It is an operational visibility metric—never a security certification, compliance audit, or guarantee that your entire AWS account is secure.
             </p>
             {skippedOptionalServices.length > 0 && (
               <p className="text-sky-300">

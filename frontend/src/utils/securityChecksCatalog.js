@@ -75,7 +75,13 @@ export const SECURITY_CHECKS = [
  * Evaluate the live scan status of a deterministic check against scanned resources.
  * Status values: VIOLATED | REVIEW | PASSED | CHECK_FAILED | SKIPPED_OPTIONAL | NOT_APPLICABLE
  */
-export function evaluateCheckStatus(check, allResources = [], skippedOptionalServices = []) {
+export function evaluateCheckStatus(
+  check,
+  allResources = [],
+  skippedOptionalServices = [],
+  coverageFailures = [],
+  scannerStatuses = []
+) {
   if (Array.isArray(skippedOptionalServices) && skippedOptionalServices.includes(check.service)) {
     return {
       status: "SKIPPED_OPTIONAL",
@@ -88,7 +94,27 @@ export function evaluateCheckStatus(check, allResources = [], skippedOptionalSer
 
   const applicableResources = allResources.filter((r) => r.type === check.resourceType);
 
+  const serviceCollectionFailed =
+    (Array.isArray(scannerStatuses) &&
+      scannerStatuses.some(
+        (s) =>
+          s?.service === check.service &&
+          s?.status !== "COMPLETED" &&
+          s?.status !== "SKIPPED_OPTIONAL"
+      )) ||
+    (Array.isArray(coverageFailures) &&
+      coverageFailures.some((f) => f?.service === check.service));
+
   if (applicableResources.length === 0) {
+    if (serviceCollectionFailed) {
+      return {
+        status: "CHECK_FAILED",
+        flaggedCount: 0,
+        failedCount: 1,
+        flaggedResources: [],
+        label: "Check failed (collection error)",
+      };
+    }
     return {
       status: "NOT_APPLICABLE",
       flaggedCount: 0,
@@ -140,25 +166,27 @@ export function evaluateCheckStatus(check, allResources = [], skippedOptionalSer
     };
   }
 
-  if (failedCount === applicableResources.length) {
+  if (failedCount > 0 || serviceCollectionFailed) {
+    const passedCount = applicableResources.length - failedCount;
     return {
       status: "CHECK_FAILED",
       flaggedCount: 0,
-      failedCount,
+      failedCount: failedCount || 1,
       flaggedResources: [],
-      label: `Check failed (${failedCount})`,
+      label:
+        failedCount > 0 && passedCount > 0
+          ? `Check failed (${passedCount} verified, ${failedCount} failed)`
+          : failedCount > 0
+          ? `Check failed (${failedCount})`
+          : `Check failed (partial region/service error)`,
     };
   }
 
-  const passedCount = applicableResources.length - failedCount;
   return {
     status: "PASSED",
     flaggedCount: 0,
-    failedCount,
+    failedCount: 0,
     flaggedResources: [],
-    label:
-      failedCount > 0
-        ? `Passed (${passedCount} verified, ${failedCount} failed)`
-        : `Passed (${applicableResources.length} verified)`,
+    label: `Passed (${applicableResources.length} verified)`,
   };
 }

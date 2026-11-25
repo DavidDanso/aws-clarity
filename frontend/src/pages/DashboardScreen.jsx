@@ -99,7 +99,7 @@ export default function DashboardScreen({
   const diffFileInputRef = useRef(null);
 
   const coverage = useMemo(() => scanResults?.coverage || {}, [scanResults]);
-  const coverageFailures = coverage?.failures || [];
+  const coverageFailures = useMemo(() => coverage?.failures || [], [coverage]);
   const skippedOptionalServices = useMemo(
     () =>
       Array.isArray(coverage?.services_skipped_optional)
@@ -116,7 +116,7 @@ export default function DashboardScreen({
   const regionsScanned = coverage?.regions_scanned || scanResults?.regions || [];
   const regionsFailed = coverage?.regions_failed || [];
   const regionsSucceededCount = Math.max(0, regionsScanned.length - regionsFailed.length);
-  const accountAdvisories = scanResults?.account_advisories || [];
+  const accountAdvisories = useMemo(() => scanResults?.account_advisories || [], [scanResults]);
 
   const handleDiffFileSelected = async (e) => {
     const file = e.target.files?.[0];
@@ -157,8 +157,8 @@ export default function DashboardScreen({
   );
 
   const scoreData = useMemo(
-    () => computeScore(allResources, isIncompleteScan),
-    [allResources, isIncompleteScan]
+    () => computeScore(allResources, isIncompleteScan, accountAdvisories),
+    [allResources, isIncompleteScan, accountAdvisories]
   );
 
   const previousScanIncomplete =
@@ -178,9 +178,15 @@ export default function DashboardScreen({
     () =>
       activeCatalog.map((check) => ({
         ...check,
-        eval: evaluateCheckStatus(check, allResources, skippedOptionalServices),
+        eval: evaluateCheckStatus(
+          check,
+          allResources,
+          skippedOptionalServices,
+          coverageFailures,
+          coverage?.scanner_statuses || []
+        ),
       })),
-    [activeCatalog, allResources, skippedOptionalServices]
+    [activeCatalog, allResources, skippedOptionalServices, coverageFailures, coverage]
   );
 
   // Up to 4 highest-priority actionable findings (Critical -> Unused/Cost -> Warning)
@@ -325,6 +331,11 @@ export default function DashboardScreen({
                       </summary>
                       <div className="pt-3 pl-4 space-y-1.5 text-slate-300 leading-relaxed">
                         <p>{adv.why}</p>
+                        {adv.impact && (
+                          <p className="text-amber-200/90">
+                            <strong className="text-amber-300">Impact &amp; Dependencies:</strong> {adv.impact}
+                          </p>
+                        )}
                         <p className="text-teal-300">
                           <strong className="text-teal-400">Fix:</strong> {adv.fix}
                         </p>

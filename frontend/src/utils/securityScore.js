@@ -35,7 +35,7 @@ export function normalizeCategory(category, severity) {
   return "Operational Concern";
 }
 
-export function computeScore(allResources = [], isIncompleteCoverage = false) {
+export function computeScore(allResources = [], isIncompleteCoverage = false, accountAdvisories = []) {
   let critical = 0;
   let warning = 0;
   let unused = 0;
@@ -68,6 +68,18 @@ export function computeScore(allResources = [], isIncompleteCoverage = false) {
       else if (cat === "Potential Cost Waste") potentialCostWaste++;
       else operationalConcerns++;
     }
+  }
+
+  for (const adv of Array.isArray(accountAdvisories) ? accountAdvisories : []) {
+    const sev = adv?.severity || "";
+    if (sev === "CRITICAL") critical++;
+    else if (sev === "WARNING") warning++;
+    else if (sev === "INFO") info++;
+
+    const cat = normalizeCategory(adv?.category, sev);
+    if (cat === "Security Risk") securityRisks++;
+    else if (cat === "Potential Cost Waste") potentialCostWaste++;
+    else operationalConcerns++;
   }
 
   const totalFindings = critical + warning + unused;

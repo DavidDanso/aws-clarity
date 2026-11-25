@@ -383,6 +383,17 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                           </div>
                         )}
 
+                        {issue.impact && (
+                          <div>
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 block mb-1">
+                              Before You Change (Impact &amp; Dependencies)
+                            </span>
+                            <div className="p-2.5 rounded-lg bg-amber-950/20 border border-amber-500/20 text-amber-200/90 leading-relaxed text-[11px] break-words">
+                              {issue.impact}
+                            </div>
+                          </div>
+                        )}
+
                         {issue.fix && (
                           <div className="pt-1">
                             <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
