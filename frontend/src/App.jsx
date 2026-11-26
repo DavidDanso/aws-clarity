@@ -177,7 +177,7 @@ function App() {
                 </svg>
                 <div>
                   <p className="text-xs font-medium text-slate-200 group-hover:text-white">Report a Bug</p>
-                  <p className="text-xs text-slate-500">Open a GitHub issue</p>
+                  <p className="text-xs text-slate-400">Open a GitHub issue</p>
                 </div>
               </a>
               <a
@@ -193,7 +193,7 @@ function App() {
                 </svg>
                 <div>
                   <p className="text-xs font-medium text-slate-200 group-hover:text-white">Request a Feature</p>
-                  <p className="text-xs text-slate-500">Share an idea</p>
+                  <p className="text-xs text-slate-400">Share an idea</p>
                 </div>
               </a>
               <a
@@ -209,7 +209,7 @@ function App() {
                 </svg>
                 <div>
                   <p className="text-xs font-medium text-slate-200 group-hover:text-white">Report Security Issue</p>
-                  <p className="text-xs text-slate-500">Private GitHub advisory</p>
+                  <p className="text-xs text-slate-400">Private GitHub advisory</p>
                 </div>
               </a>
             </div>

@@ -441,7 +441,7 @@ export default function SetupScreen({
                             Install from source checkout (available now):
                           </p>
                           <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
-                            <pre className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
+                            <pre tabIndex={0} className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
                               {tab.installCmd}
                             </pre>
                             <button
@@ -458,7 +458,7 @@ export default function SetupScreen({
                             After v{PROPOSED_VERSION} is published &amp; verified locally (not yet published):
                           </p>
                           <div className="relative rounded-xl bg-slate-950/70 border border-slate-800/80 p-3 pr-20">
-                            <pre className="text-xs text-slate-300 font-mono overflow-x-auto leading-relaxed">
+                            <pre tabIndex={0} className="text-xs text-slate-300 font-mono overflow-x-auto leading-relaxed">
                               {tab.releaseWheelCmd}
                             </pre>
                             <button
@@ -509,7 +509,7 @@ export default function SetupScreen({
                           {copiedKey === item.id ? "Copied ✓" : "Copy"}
                         </button>
                       </div>
-                      <pre className="text-[11px] text-slate-100 font-mono overflow-x-auto leading-relaxed">
+                      <pre tabIndex={0} className="text-[11px] text-slate-100 font-mono overflow-x-auto leading-relaxed">
                         {item.cmd}
                       </pre>
                       <p className="text-[11px] text-slate-400">{item.note}</p>
@@ -598,7 +598,7 @@ export default function SetupScreen({
               </div>
 
               <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
-                <pre className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
+                <pre tabIndex={0} className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
                   <span>{activeInstall.cliPrefix} scan</span>
                   {includeS3 && (
                     <span className="mx-1 px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-400/40 text-sky-200 font-semibold">
@@ -710,7 +710,7 @@ export default function SetupScreen({
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-xs sm:text-sm font-semibold cursor-pointer transition-colors"
+                    className="px-5 py-2.5 rounded-lg bg-teal-500 hover:bg-teal-400 active:bg-teal-300 text-slate-950 text-xs sm:text-sm font-bold cursor-pointer transition-colors"
                   >
                     Choose Local Report File
                   </button>
@@ -893,7 +893,7 @@ export default function SetupScreen({
                   </div>
 
                   {showPolicyJson && (
-                    <pre className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-48 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
+                    <pre tabIndex={0} className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-48 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
                       {activePolicyJson}
                     </pre>
                   )}
@@ -961,7 +961,7 @@ export default function SetupScreen({
               Trust &amp; Privacy Centre
             </button>
           </div>
-          <p className="text-[11px] text-slate-500 text-center">
+          <p className="text-[11px] text-slate-400 text-center">
             Local-only execution · Strictly read-only · Zero backend data collection
           </p>
         </footer>

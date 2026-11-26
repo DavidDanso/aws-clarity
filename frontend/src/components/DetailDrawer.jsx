@@ -140,7 +140,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
               <span className="text-[11px] font-semibold text-teal-400 uppercase tracking-wider">
                 {serviceName}
               </span>
-              <span className="text-slate-600">·</span>
+              <span className="text-slate-400" aria-hidden="true">·</span>
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 {RESOURCE_TYPE_LABELS[resource.type] || resource.type}
               </span>
@@ -152,7 +152,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
             </div>
             <h2 className="text-base sm:text-lg font-bold text-white truncate">{resource.name}</h2>
             <div className="flex items-center gap-2 mt-0.5 min-w-0">
-              <p className="text-xs text-slate-500 font-mono truncate">{resource.id}</p>
+              <p className="text-xs text-slate-400 font-mono truncate">{resource.id}</p>
               <button
                 type="button"
                 onClick={() => handleCopy("id", resource.id)}
@@ -178,11 +178,11 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
           {/* Context Strip */}
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded-lg p-3">
             <div>
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">AWS Region</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">AWS Region</span>
               <span className="font-mono text-slate-200">{resource.region || "global"}</span>
             </div>
             <div className="sm:text-right">
-              <span className="text-slate-500 block text-[10px] uppercase font-semibold">Last Inspected</span>
+              <span className="text-slate-400 block text-[10px] uppercase font-semibold">Last Inspected</span>
               <span className="font-mono text-slate-200">{formatLastChecked(resolvedScannedAt)}</span>
             </div>
           </div>
@@ -196,20 +196,20 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
               <div className="bg-slate-950/60 rounded-xl border border-slate-800/80 p-3.5 space-y-3 text-xs">
                 <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-800/60">
                   <div>
-                    <span className="text-slate-500 block text-[10px] uppercase font-semibold mb-1">Current</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-1">Current</span>
                     <span className={`font-bold px-2 py-0.5 rounded text-[11px] bg-slate-800/80 ${STATUS_COLOR[displayedStatus] || "text-slate-300"}`}>
                       {displayedStatus}
                     </span>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px] uppercase font-semibold mb-1">Previous</span>
+                    <span className="text-slate-400 block text-[10px] uppercase font-semibold mb-1">Previous</span>
                     {history.previousStatus ? (
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className={`font-bold px-2 py-0.5 rounded text-[11px] bg-slate-800/80 ${STATUS_COLOR[history.previousStatus] || "text-slate-300"}`}>
                           {history.previousStatus}
                         </span>
                         {previousScannedAt && (
-                          <span className="text-slate-500 text-[10px] font-mono">
+                          <span className="text-slate-400 text-[10px] font-mono">
                             {formatLastChecked(previousScannedAt)}
                           </span>
                         )}
@@ -268,7 +268,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 )}
 
                 {!history.isNew && !history.resolvedIssues?.length && !history.newIssues?.length && (
-                  <p className="text-slate-500 italic">No finding changes since the previous scan.</p>
+                  <p className="text-slate-400 italic">No finding changes since the previous scan.</p>
                 )}
               </div>
             </div>
@@ -280,7 +280,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
               <h3 className="text-sm font-semibold text-slate-200">
                 Findings ({resource.issues?.length || 0})
               </h3>
-              <span className="text-[11px] text-slate-500">Deterministic rule evaluation</span>
+              <span className="text-[11px] text-slate-400">Deterministic rule evaluation</span>
             </div>
 
             {failedChecks.length > 0 && (
@@ -443,7 +443,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                           </div>
                         )}
 
-                        <p className="text-[10px] text-slate-500">Checked: {issue.what_checked}</p>
+                        <p className="text-[10px] text-slate-400">Checked: {issue.what_checked}</p>
                       </div>
                     </div>
                   );
@@ -453,7 +453,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
 
             {passedChecks.length > 0 && (
               <div className="mt-4 pt-3 border-t border-slate-800/60">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                   Verified Passing Checks ({passedChecks.length})
                 </p>
                 <div className="flex flex-wrap gap-1.5">
@@ -496,11 +496,16 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                 className="flex items-center justify-between w-full text-left text-xs font-semibold text-slate-400 hover:text-slate-300 py-1 cursor-pointer bg-transparent border-none"
               >
                 <span>Raw AWS Configuration Attributes ({rawEntries.length})</span>
-                <span className="font-mono text-slate-500">{rawExpanded ? "▲ Hide" : "▼ Show"}</span>
+                <span className="font-mono text-slate-400">{rawExpanded ? "▲ Hide" : "▼ Show"}</span>
               </button>
 
               {rawExpanded && (
-                <div className="mt-2.5 bg-slate-950 rounded-lg border border-slate-800/80 divide-y divide-slate-800/60 max-h-64 overflow-y-auto">
+                <div
+                  tabIndex={0}
+                  role="region"
+                  aria-label="Raw AWS configuration attributes"
+                  className="mt-2.5 bg-slate-950 rounded-lg border border-slate-800/80 divide-y divide-slate-800/60 max-h-64 overflow-y-auto"
+                >
                   {rawEntries.map(([key, value]) => (
                     <div key={key} className="flex flex-col sm:flex-row sm:justify-between sm:gap-2 px-3 py-1.5 text-[11px]">
                       <span className="text-slate-400 font-mono shrink-0">{key}</span>

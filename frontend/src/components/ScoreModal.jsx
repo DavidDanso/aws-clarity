@@ -45,7 +45,12 @@ export default function ScoreModal({
           </button>
         </div>
 
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Health score calculation details"
+          className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs"
+        >
           <div className="p-3.5 sm:p-4 rounded-xl bg-slate-950 border border-slate-800 space-y-2.5">
             <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
               Scoring Formula
@@ -115,19 +120,19 @@ export default function ScoreModal({
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-500 uppercase font-semibold block">Total Scanned</span>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Scanned</span>
               <span className="text-base font-bold text-white font-mono">{scoreData.totalResources}</span>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-500 uppercase font-semibold block">Verified Healthy</span>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Verified Healthy</span>
               <span className="text-base font-bold text-emerald-400 font-mono">{scoreData.healthy}</span>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-500 uppercase font-semibold block">Need Attention</span>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Need Attention</span>
               <span className="text-base font-bold text-amber-400 font-mono">{scoreData.needsAttention}</span>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800">
-              <span className="text-[10px] text-slate-500 uppercase font-semibold block">Cost / Unused</span>
+              <span className="text-[10px] text-slate-400 uppercase font-semibold block">Cost / Unused</span>
               <span className="text-base font-bold text-sky-300 font-mono">{scoreData.costAndUnusedFindings}</span>
             </div>
           </div>

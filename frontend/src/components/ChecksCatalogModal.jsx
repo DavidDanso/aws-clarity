@@ -124,9 +124,14 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
           </div>
         </div>
 
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-3 text-xs flex-1">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Security and cost rules list"
+          className="p-4 sm:p-5 overflow-y-auto space-y-3 text-xs flex-1"
+        >
           {filteredChecks.length === 0 ? (
-            <div className="text-center py-8 text-slate-500">No checks match the current filter.</div>
+            <div className="text-center py-8 text-slate-400">No checks match the current filter.</div>
           ) : (
             filteredChecks.map((check) => {
               const status = check.eval.status;
@@ -175,7 +180,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                   <p className="text-slate-400 text-[11px] leading-relaxed">{check.whatItChecks}</p>
 
                   <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1 text-[11px] border-t border-slate-800/60">
-                    <span className="text-slate-500">Live Status:</span>
+                    <span className="text-slate-400">Live Status:</span>
                     <div className="flex items-center gap-1.5">
                       {isViolated && (
                         <span className="font-medium text-red-400 flex items-center gap-1">
@@ -208,7 +213,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
                         </span>
                       )}
                       {!isViolated && !isReview && !isPassed && !isFailed && !isSkippedOptional && (
-                        <span className="text-slate-500 font-mono text-[10px]">— No resources in account</span>
+                        <span className="text-slate-400 font-mono text-[10px]">— No resources in account</span>
                       )}
                     </div>
                   </div>
@@ -219,7 +224,7 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
         </div>
 
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[11px] text-slate-400">
             Deterministic rules backed by real AWS API evidence
           </span>
           <button

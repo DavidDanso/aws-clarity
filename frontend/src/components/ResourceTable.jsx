@@ -214,7 +214,7 @@ export default function ResourceTable({
               type="button"
               onClick={() => setSearchQuery("")}
               aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-200 cursor-pointer bg-transparent border-0 p-1 text-sm"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 cursor-pointer bg-transparent border-0 p-1 text-sm"
             >
               ×
             </button>
@@ -407,11 +407,11 @@ export default function ResourceTable({
                   >
                     <th scope="row" className="px-4 py-3 font-normal text-left max-w-[240px]">
                       <p className="font-medium text-slate-100 truncate text-[13px]">{resource.name}</p>
-                      <p className="text-[11px] font-mono text-slate-500 truncate mt-0.5">{resource.id}</p>
+                      <p className="text-[11px] font-mono text-slate-400 truncate mt-0.5">{resource.id}</p>
                     </th>
                     <td data-label="Service" className="px-3 py-3 whitespace-nowrap">
                       <span className="text-xs text-slate-200 font-medium">{svc}</span>
-                      <span className="text-[11px] text-slate-500 block">{typeLabel}</span>
+                      <span className="text-[11px] text-slate-400 block">{typeLabel}</span>
                     </td>
                     <td data-label="Region" className="px-3 py-3 text-xs font-mono text-slate-400 whitespace-nowrap">
                       {resource.region || "global"}
@@ -435,7 +435,7 @@ export default function ResourceTable({
                         <span className="text-xs text-slate-300 truncate block">
                           {topIssue.title}
                           {issues.length > 1 && (
-                            <span className="text-[11px] font-mono text-slate-500 ml-1.5">
+                            <span className="text-[11px] font-mono text-slate-400 ml-1.5">
                               +{issues.length - 1}
                             </span>
                           )}
@@ -443,7 +443,7 @@ export default function ResourceTable({
                       ) : status === "INCOMPLETE" ? (
                         <span className="text-xs text-orange-300/80">Check incomplete</span>
                       ) : (
-                        <span className="text-xs text-slate-500">All checks passed</span>
+                        <span className="text-xs text-slate-400">All checks passed</span>
                       )}
                     </td>
                     <td data-action="true" className="px-4 py-3 text-right whitespace-nowrap">
@@ -469,7 +469,7 @@ export default function ResourceTable({
       {/* Clean Pagination */}
       {totalResources > 0 && (
         <nav aria-label="Resource pagination" className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 pt-1">
-          <p className="text-xs text-slate-500">{rangeText}</p>
+          <p className="text-xs text-slate-400">{rangeText}</p>
           {totalPages > 1 && (
             <div className="flex items-center gap-1 flex-wrap">
               <button
@@ -482,7 +482,7 @@ export default function ResourceTable({
               </button>
               {pageNumbers.map((p, idx) =>
                 p === "..." ? (
-                  <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-600">
+                  <span key={`ellipsis-${idx}`} className="px-1 text-xs text-slate-400" aria-hidden="true">
                     …
                   </span>
                 ) : (

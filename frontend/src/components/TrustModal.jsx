@@ -87,7 +87,12 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
         </div>
 
         {/* Scrollable Body */}
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-6 text-xs leading-relaxed">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Trust and privacy details"
+          className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-6 text-xs leading-relaxed"
+        >
           {/* 1. Privacy-First Local Architecture */}
           <section className="space-y-2">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
@@ -123,7 +128,7 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
                 <div key={grp.service} className="p-3 space-y-1">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-semibold text-slate-200">{grp.service}</span>
-                    <span className="text-[10px] font-mono text-slate-500">
+                    <span className="text-[10px] font-mono text-slate-400">
                       {grp.actions.length} read-only action{grp.actions.length === 1 ? "" : "s"}
                     </span>
                   </div>
@@ -192,7 +197,10 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
             </div>
 
             {showPolicyJson && (
-              <pre className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-52 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800">
+              <pre
+                tabIndex={0}
+                className="text-[10px] text-slate-300 p-3 overflow-x-auto max-h-52 font-mono leading-relaxed bg-slate-950 rounded-lg border border-slate-800"
+              >
                 {activePolicyJson}
               </pre>
             )}
@@ -298,8 +306,8 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
                   </button>
                 </div>
               )}
-              <p className="text-[11px] text-slate-500">
-                To remove report files from disk, delete your local <code className="text-slate-400">aws-clarity-report.json</code>{" "}
+              <p className="text-[11px] text-slate-400">
+                To remove report files from disk, delete your local <code className="text-slate-300">aws-clarity-report.json</code>{" "}
                 file. To remove IAM permissions in AWS, detach the read-only policy from your IAM role or permission set.
               </p>
             </div>
@@ -327,7 +335,7 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
 
         {/* Footer */}
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
-          <span className="text-[11px] text-slate-500">
+          <span className="text-[11px] text-slate-400">
             Local-only execution · Zero report uploads · Strictly read-only
           </span>
           <button

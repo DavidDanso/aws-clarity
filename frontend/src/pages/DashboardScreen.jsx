@@ -642,7 +642,7 @@ export default function DashboardScreen({
                               ? "text-emerald-400"
                               : comparison.scoreDelta < 0
                               ? "text-red-400"
-                              : "text-slate-500"
+                              : "text-slate-400"
                           }
                         >
                           ({comparison.scoreDelta > 0 ? `+${comparison.scoreDelta}` : comparison.scoreDelta} pts)
@@ -698,20 +698,20 @@ export default function DashboardScreen({
                   <div className="text-xs space-y-1.5 max-h-48 overflow-y-auto pr-1">
                     {progressTab === "resolved" &&
                       (comparison.resolvedCount === 0 ? (
-                        <p className="text-slate-500 py-1">No findings verified as resolved since the previous scan.</p>
+                        <p className="text-slate-400 py-1">No findings verified as resolved since the previous scan.</p>
                       ) : (
                         comparison.resolved.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-emerald-950/25">
                             <span className="text-emerald-400 font-bold shrink-0">✓</span>
                             {item.ruleId && <span className="text-[11px] font-mono text-emerald-400 shrink-0">{item.ruleId}</span>}
                             <span className="text-slate-200 truncate">{item.title}</span>
-                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                            <span className="text-slate-400 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
                           </div>
                         ))
                       ))}
                     {progressTab === "unverified" &&
                       (comparison.unverifiedCount === 0 ? (
-                        <p className="text-slate-500 py-1">No unverified findings.</p>
+                        <p className="text-slate-400 py-1">No unverified findings.</p>
                       ) : (
                         comparison.unverified.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-orange-950/25">
@@ -724,33 +724,33 @@ export default function DashboardScreen({
                       ))}
                     {progressTab === "new" &&
                       (comparison.newCount === 0 ? (
-                        <p className="text-slate-500 py-1">No new findings discovered.</p>
+                        <p className="text-slate-400 py-1">No new findings discovered.</p>
                       ) : (
                         comparison.newFindings.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-cyan-950/25">
                             <span className="text-cyan-400 font-bold shrink-0">+</span>
                             {item.ruleId && <span className="text-[11px] font-mono text-cyan-400 shrink-0">{item.ruleId}</span>}
                             <span className="text-slate-200 truncate">{item.title}</span>
-                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                            <span className="text-slate-400 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
                           </div>
                         ))
                       ))}
                     {progressTab === "stillOpen" &&
                       (comparison.stillOpenCount === 0 ? (
-                        <p className="text-slate-500 py-1">No findings carried over.</p>
+                        <p className="text-slate-400 py-1">No findings carried over.</p>
                       ) : (
                         comparison.stillOpen.map((item, idx) => (
                           <div key={idx} className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-amber-950/20">
                             <span className="text-amber-400 font-bold shrink-0">•</span>
                             {item.ruleId && <span className="text-[11px] font-mono text-amber-400 shrink-0">{item.ruleId}</span>}
                             <span className="text-slate-200 truncate">{item.title}</span>
-                            <span className="text-slate-500 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
+                            <span className="text-slate-400 text-[11px] truncate ml-auto shrink-0">{item.resourceName}</span>
                           </div>
                         ))
                       ))}
                     {progressTab === "newResources" &&
                       (comparison.newResourcesCount === 0 ? (
-                        <p className="text-slate-500 py-1">No new resources discovered.</p>
+                        <p className="text-slate-400 py-1">No new resources discovered.</p>
                       ) : (
                         comparison.newResources.map((item, idx) => (
                           <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-sky-950/20">
@@ -766,7 +766,7 @@ export default function DashboardScreen({
                       ))}
                     {progressTab === "removedResources" &&
                       (comparison.removedResourcesCount === 0 ? (
-                        <p className="text-slate-500 py-1">No resources removed.</p>
+                        <p className="text-slate-400 py-1">No resources removed.</p>
                       ) : (
                         comparison.removedResources.map((item, idx) => (
                           <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-rose-950/20">
@@ -774,20 +774,20 @@ export default function DashboardScreen({
                               <span className="text-[10px] font-mono text-rose-400 mr-2 uppercase">{item.type}</span>
                               {item.name || item.id}
                             </span>
-                            <span className="text-[11px] text-slate-500 font-mono">Removed</span>
+                            <span className="text-[11px] text-slate-400 font-mono">Removed</span>
                           </div>
                         ))
                       ))}
                     {progressTab === "statusChanges" &&
                       (comparison.statusChangesCount === 0 ? (
-                        <p className="text-slate-500 py-1">No resource status changes.</p>
+                        <p className="text-slate-400 py-1">No resource status changes.</p>
                       ) : (
                         comparison.statusChanges.map((item, idx) => (
                           <div key={idx} className="flex items-center justify-between py-1.5 px-2.5 rounded-lg bg-indigo-950/20">
                             <span className="text-slate-200 truncate">{item.resourceName}</span>
                             <span className="flex items-center gap-1.5 shrink-0 text-[11px] font-mono">
                               <span className={STATUS_COLOR[item.previousStatus] || "text-slate-400"}>{item.previousStatus}</span>
-                              <span className="text-slate-500">→</span>
+                              <span className="text-slate-400">→</span>
                               <span className={STATUS_COLOR[item.currentStatus] || "text-slate-400"}>{item.currentStatus}</span>
                             </span>
                           </div>
@@ -806,7 +806,7 @@ export default function DashboardScreen({
                     What to fix first
                   </h2>
                   {topPriorityItems.length > 0 && (
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-slate-400">
                       Click any item for AWS evidence &amp; step-by-step fix
                     </span>
                   )}
@@ -840,7 +840,7 @@ export default function DashboardScreen({
                               {" · "}
                               <span className="text-slate-300">{resource.name}</span>
                               {" · "}
-                              <span className="font-mono text-slate-500">{resource.region || "global"}</span>
+                              <span className="font-mono text-slate-400">{resource.region || "global"}</span>
                             </p>
                           </div>
                         </div>

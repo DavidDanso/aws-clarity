@@ -70,29 +70,34 @@ export default function CoverageModal({
           </button>
         </div>
 
-        <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs">
+        <div
+          tabIndex={0}
+          role="region"
+          aria-label="Coverage report details"
+          className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-5 text-xs"
+        >
           {/* Top Stats */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Regions Completed</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400">Regions Completed</p>
               <p className="text-sm font-bold text-slate-100 mt-0.5">
                 {regionsSucceeded.length} / {regionsScanned.length}
               </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Services Complete</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400">Services Complete</p>
               <p className="text-sm font-bold text-teal-400 mt-0.5">
                 {serviceSummary.length > 0 ? `${servicesCompleteCount} / ${servicesAssessedTotal}` : "10 / 10"}
               </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Resources Discovered</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400">Resources Discovered</p>
               <p className="text-sm font-bold text-slate-100 mt-0.5">
                 {coverage?.resources_inspected ?? allResourcesCount}
               </p>
             </div>
             <div className="p-2.5 rounded-lg bg-slate-950 border border-slate-800 text-center">
-              <p className="text-[10px] uppercase font-semibold text-slate-500">Collection Failures</p>
+              <p className="text-[10px] uppercase font-semibold text-slate-400">Collection Failures</p>
               <p className={`text-sm font-bold mt-0.5 ${failures.length > 0 ? "text-orange-400" : "text-emerald-400"}`}>
                 {failures.length}
               </p>
@@ -105,7 +110,12 @@ export default function CoverageModal({
               <h4 className="text-[11px] font-semibold uppercase tracking-wider text-orange-400 mb-2">
                 Incomplete Regions, Services & Permission Failures ({failures.length})
               </h4>
-              <div className="max-h-52 overflow-y-auto rounded-lg bg-orange-950/20 border border-orange-500/30 divide-y divide-orange-500/20">
+              <div
+                tabIndex={0}
+                role="region"
+                aria-label="Incomplete regions and permission failures"
+                className="max-h-52 overflow-y-auto rounded-lg bg-orange-950/20 border border-orange-500/30 divide-y divide-orange-500/20"
+              >
                 {failures.map((f, idx) => (
                   <div key={idx} className="p-2.5 space-y-1 text-[11px]">
                     <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -182,7 +192,7 @@ export default function CoverageModal({
                           {ok ? "✓" : skipped ? "○" : "⚠"}
                         </span>
                         <span className="font-semibold text-slate-200">{svc.service}</span>
-                        <span className="text-[10px] text-slate-500">({svc.scope})</span>
+                        <span className="text-[10px] text-slate-400">({svc.scope})</span>
                       </div>
                       <p className="text-[10px] text-slate-400 mt-0.5 pl-5">
                         Resource types: {(svc.resource_types || []).map((rt) => rt.label).join(", ")}
@@ -242,7 +252,7 @@ export default function CoverageModal({
                 {coverage.unsupported_services.map((item, idx) => (
                   <div key={idx} className="p-2.5 flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1">
                     <span className="font-semibold text-slate-300 shrink-0">{item.service}</span>
-                    <span className="text-slate-500 text-[11px] sm:text-right">{item.reason}</span>
+                    <span className="text-slate-400 text-[11px] sm:text-right">{item.reason}</span>
                   </div>
                 ))}
               </div>

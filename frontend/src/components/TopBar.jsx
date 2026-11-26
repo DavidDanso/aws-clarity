@@ -76,7 +76,7 @@ export default function TopBar({
             className="text-xs font-mono text-slate-400 truncate"
           >
             Account {maskAccountId(accountId)}
-            {timeLabel && <span className="hidden md:inline text-slate-500"> · {timeLabel}</span>}
+            {timeLabel && <span className="hidden md:inline text-slate-400"> · {timeLabel}</span>}
           </span>
         )}
       </div>
