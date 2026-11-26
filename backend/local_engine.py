@@ -227,8 +227,10 @@ def create_local_session(
         )
     except ProfileNotFound as exc:
         raise RuntimeError(
-            f"AWS CLI profile '{profile}' was not found in ~/.aws/config or ~/.aws/credentials. "
-            "Refusing to fall back to default credentials."
+            f"AWS CLI profile '{profile}' was not found in ~/.aws/config or ~/.aws/credentials.\n"
+            "  Why: The profile name may be misspelled or not configured in your local AWS CLI config.\n"
+            "  Refusing to fall back to default credentials so AWS Clarity never scans the wrong account.\n"
+            "  Next: Run `aws configure list-profiles` to view configured profiles, then re-run with `--profile <name>`."
         ) from exc
 
     if not role_arn:
@@ -249,7 +251,12 @@ def create_local_session(
         resp = sts.assume_role(**assume_kwargs)
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "AccessDenied")
-        raise AssumeRoleError(f"Could not assume role '{validated_arn}' ({code}).") from exc
+        raise AssumeRoleError(
+            f"Could not assume role '{mask_caller_arn(validated_arn)}' ({code}).\n"
+            "  Why: Your active AWS identity may lack sts:AssumeRole permission, the role trust policy may not allow it, "
+            "or a required External ID may be missing.\n"
+            "  Next: Verify the role ARN, trust policy (see infra/aws-clarity-readonly-role.yaml), and `--external-id` if configured."
+        ) from exc
 
     creds = resp["Credentials"]
     return boto3.Session(
@@ -273,15 +280,23 @@ def verify_identity(session) -> dict:
         }
     except NoCredentialsError as exc:
         raise RuntimeError(
-            "No active AWS credentials found. Run `aws sso login --profile <name>` or configure an AWS CLI profile first."
+            "No active AWS credentials found.\n"
+            "  Why: No AWS CLI profile, IAM Identity Center (SSO) session, or AWS environment credentials are active.\n"
+            "  Next: Run `aws sso login --profile <name>` or configure a read-only AWS CLI profile, then retry."
         ) from exc
     except TokenRetrievalError as exc:
         raise RuntimeError(
-            "Your AWS SSO / IAM Identity Center token has expired. Run `aws sso login --profile <name>` and retry."
+            "Your AWS SSO / IAM Identity Center token has expired or could not be retrieved.\n"
+            "  Why: Short-lived AWS SSO sessions expire periodically for security.\n"
+            "  Next: Run `aws sso login --profile <name>`, verify with `aws sts get-caller-identity`, and retry."
         ) from exc
     except ClientError as exc:
         code = exc.response.get("Error", {}).get("Code", "AuthError")
-        raise RuntimeError(f"AWS identity check failed ({code}): {redact_credential_strings(str(exc))}") from exc
+        raise RuntimeError(
+            f"AWS identity check failed ({code}): {redact_credential_strings(str(exc))}\n"
+            "  Why: Your session may have expired, credentials may be invalid, or AWS STS may be unreachable.\n"
+            "  Next: Verify credentials with `aws sts get-caller-identity` (or refresh via `aws sso login --profile <name>`) and retry."
+        ) from exc
 
 
 def _minimize_report_resources_post_eval(resources: dict) -> None:
@@ -398,6 +413,7 @@ def run_local_scan(
     confirm_s3_request_costs: bool = False,
     deadline_s: float = 90.0,
     allow_root: bool = False,
+    progress_callback=None,
 ) -> dict:
     """Execute a complete local-first multi-region read-only assessment.
 
@@ -410,7 +426,15 @@ def run_local_scan(
             "(pass confirm_s3_request_costs=True or confirm interactively in the CLI)."
         )
 
+    def _emit(stage: str, message: str, **meta) -> None:
+        if callable(progress_callback):
+            try:
+                progress_callback({"stage": stage, "message": message, **meta})
+            except Exception:
+                pass
+
     scan_started = time.monotonic()
+    _emit("start", "Starting local read-only AWS configuration scan...")
     is_real_boto_session = isinstance(session, boto3.Session)
     cached = CachedSession(
         session,
@@ -423,6 +447,11 @@ def run_local_scan(
     enforce_identity_guards(identity, allow_root=allow_root)
     account_id = identity["account_id"]
     caller_arn = identity["caller_arn"]
+    _emit(
+        "identity",
+        f"Confirmed AWS identity for account {mask_account_id(account_id)} (read-only allowlist active).",
+        account_masked=mask_account_id(account_id),
+    )
 
     scan_all_regions = regions is None or regions == "all" or regions == ["all"]
     regional_scanners = _get_regional_scanners()
@@ -458,6 +487,25 @@ def run_local_scan(
             "reason": region_discovery.get("reason", "Could not list enabled regions"),
             "required_permission": "ec2:DescribeRegions",
         })
+
+    region_preview = ", ".join(target_regions[:6]) + (
+        f", +{len(target_regions) - 6} more" if len(target_regions) > 6 else ""
+    )
+    _emit(
+        "regions",
+        f"Target regions ({len(target_regions)}, discovery {region_discovery.get('status', 'COMPLETE')}): {region_preview}",
+        region_count=len(target_regions),
+        discovery_status=region_discovery.get("status", "COMPLETE"),
+    )
+    _emit(
+        "collect_start",
+        (
+            "Collecting read-only metadata across 10 AWS services (optional S3 enabled)..."
+            if include_s3_checks
+            else "Collecting read-only metadata across 9 AWS services (S3 skipped by default)..."
+        ),
+        include_s3=include_s3_checks,
+    )
 
     global_executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
     global_futures = {
@@ -574,6 +622,36 @@ def run_local_scan(
 
     for key in list(resources.keys()):
         resources[key] = _deduplicate_resources(resources[key])
+
+    for svc_entry in SERVICE_COVERAGE_MATRIX:
+        svc_name = svc_entry["service"]
+        keys = [rt["key"] for rt in svc_entry["resource_types"]]
+        svc_statuses = [s for s in scanner_statuses if s["key"] in keys]
+        svc_resources_count = sum(len(resources.get(k, [])) for k in keys)
+        svc_failures = [f for f in coverage_failures if f.get("service") == svc_name]
+        if svc_statuses and all(s["status"] == "SKIPPED_OPTIONAL" for s in svc_statuses):
+            display_state = "SKIPPED_OPTIONAL"
+        elif svc_statuses and all(s["status"] in ("FAILED", "TIMED_OUT") for s in svc_statuses):
+            display_state = "FAILED"
+        elif svc_failures or any(s["status"] not in ("COMPLETED", "SKIPPED_OPTIONAL") for s in svc_statuses):
+            display_state = "INCOMPLETE"
+        else:
+            display_state = "COMPLETED"
+        _emit(
+            "collect_service",
+            f"{svc_name}: {display_state}",
+            service=svc_name,
+            status=display_state,
+            resource_count=svc_resources_count,
+            failure_count=len(svc_failures),
+        )
+
+    total_collected = sum(len(v) for v in resources.values() if isinstance(v, list))
+    _emit(
+        "evaluate",
+        f"Evaluating 43 deterministic rules across {total_collected} discovered resource(s)...",
+        resource_count=total_collected,
+    )
 
     # Run the single shared deterministic rule engine
     resources = evaluate(cached, resources, account_id=account_id, scanner_statuses=scanner_statuses)

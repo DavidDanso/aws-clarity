@@ -189,6 +189,114 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 0
 
 
+def _resolve_dashboard_url() -> str | None:
+    """Return an optional user-configured dashboard URL if explicitly set and safe."""
+    raw = os.environ.get("AWS_CLARITY_DASHBOARD_URL", "").strip()
+    if raw.startswith("https://") or raw.startswith("http://localhost") or raw.startswith("http://127.0.0.1"):
+        return raw
+    return None
+
+
+def _format_cli_progress(event: dict) -> str:
+    """Render a calm, non-sensitive progress line for stderr (zero raw ARNs or account IDs)."""
+    stage = event.get("stage", "")
+    msg = redact_credential_strings(str(event.get("message", "")))
+    if stage == "start":
+        return f"[1/5] {msg}"
+    if stage == "identity":
+        return f"[2/5] {msg}"
+    if stage == "regions":
+        return f"[3/5] {msg}"
+    if stage == "collect_start":
+        return f"[4/5] {msg}"
+    if stage == "collect_service":
+        svc = event.get("service", "")
+        status = event.get("status", "INCOMPLETE")
+        count = int(event.get("resource_count", 0) or 0)
+        failures = int(event.get("failure_count", 0) or 0)
+        if status == "COMPLETED":
+            return f"      [DONE]       {svc:<11} {count} resource(s) collected"
+        if status == "SKIPPED_OPTIONAL":
+            return f"      [SKIPPED]    {svc:<11} optional check not enabled (not marked healthy)"
+        if status == "FAILED":
+            return f"      [FAILED]     {svc:<11} {failures} collection failure(s)"
+        return f"      [INCOMPLETE] {svc:<11} {count} resource(s), {failures} failure(s)"
+    if stage == "evaluate":
+        return f"[5/5] {msg}"
+    return f"      {msg}"
+
+
+def _print_final_scan_summary(report: dict, output_path: str, include_s3: bool) -> None:
+    """Print an honest, structured final assessment summary to stderr."""
+    s = report.get("summary") or {}
+    cov = report.get("coverage") or {}
+    fc = s.get("finding_counts") or {}
+    duration_s = float(report.get("scan_duration_ms", 0) or 0) / 1000.0
+    cov_status = cov.get("status", "INCOMPLETE" if report.get("partial") else "COMPLETE")
+    is_incomplete = cov_status != "COMPLETE" or bool(report.get("partial"))
+
+    crit_count = fc.get("critical", s.get("critical_issues", 0))
+    warn_count = fc.get("warning", s.get("warnings", 0))
+    unused_count = fc.get("unused", s.get("unused", 0))
+    info_count = fc.get("info", s.get("info_observations", 0))
+    total_findings = crit_count + warn_count + unused_count + info_count
+
+    status_banner = (
+        "INCOMPLETE — coverage gaps detected (health score withheld)"
+        if is_incomplete
+        else (
+            "COMPLETE — findings detected for review"
+            if total_findings > 0
+            else "COMPLETE — no findings detected across scanned services"
+        )
+    )
+
+    regions_failed = cov.get("regions_failed") or []
+    regions_scanned = cov.get("regions_scanned") or report.get("regions") or []
+    skipped_optional = cov.get("services_skipped_optional") or []
+    s3_status = (
+        "ENABLED (with explicit consent)"
+        if include_s3 and "S3" not in skipped_optional
+        else "SKIPPED_OPTIONAL (not evaluated; not marked healthy)"
+    )
+
+    print(f"\nAWS Clarity Scan Summary ({duration_s:.1f}s)", file=sys.stderr)
+    print(f"  Assessment Result   : {status_banner}", file=sys.stderr)
+    print(f"  Discovered Resources: {s.get('total_resources', 0)}", file=sys.stderr)
+    print(
+        f"  Findings (Severity) : Critical: {crit_count} | Warning: {warn_count} | "
+        f"Unused: {unused_count} | Info: {info_count}",
+        file=sys.stderr,
+    )
+    if any(k in s for k in ("security_risks", "operational_concerns", "potential_cost_waste")):
+        print(
+            f"  Findings (Category) : Security Risk: {s.get('security_risks', 0)} | "
+            f"Operational Concern: {s.get('operational_concerns', 0)} | "
+            f"Potential Cost Waste: {s.get('potential_cost_waste', 0)}",
+            file=sys.stderr,
+        )
+    print(
+        f"  Coverage Status     : {cov_status} "
+        f"({max(0, len(regions_scanned) - len(regions_failed))}/{len(regions_scanned)} region(s) succeeded)",
+        file=sys.stderr,
+    )
+    print(
+        f"  Failed Regions      : {', '.join(regions_failed) if regions_failed else 'None'}",
+        file=sys.stderr,
+    )
+    print(f"  Optional S3 Checks  : {s3_status}", file=sys.stderr)
+
+    perm_note = "mode 0600" if os.name == "posix" else "standard Windows user directory ACLs (0600 N/A on Windows)"
+    abs_path = os.path.abspath(output_path)
+    print(f"  Local Report Written: {abs_path} ({perm_note}; not uploaded anywhere)", file=sys.stderr)
+
+    dashboard_url = _resolve_dashboard_url()
+    if dashboard_url:
+        print(f"  Next: open {dashboard_url} and import {output_path}.", file=sys.stderr)
+    else:
+        print(f"  Next: open the AWS Clarity dashboard and import {output_path}.", file=sys.stderr)
+
+
 def cmd_scan(args: argparse.Namespace) -> int:
     include_s3 = bool(args.include_s3_checks)
     s3_confirmed = False
@@ -237,6 +345,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
         print("Scan cancelled before calling any AWS service collectors.", file=sys.stderr)
         return 2
 
+    def _emit_progress(event: dict) -> None:
+        print(_format_cli_progress(event), file=sys.stderr)
+
     try:
         report = run_local_scan(
             session,
@@ -244,6 +355,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
             include_s3_checks=include_s3,
             confirm_s3_request_costs=s3_confirmed,
             allow_root=args.allow_root,
+            progress_callback=_emit_progress,
         )
     except RootIdentityBlockedError as exc:
         print(f"Error: {exc}", file=sys.stderr)
@@ -256,23 +368,9 @@ def cmd_scan(args: argparse.Namespace) -> int:
     if output_path == "-":
         print(json.dumps(report, default=str, indent=2 if not args.compact else None))
     else:
+        print(f"  Writing local report to {output_path}...", file=sys.stderr)
         _write_secure_json(output_path, report, pretty=not args.compact)
-        s = report["summary"]
-        cov = report["coverage"]
-        print(
-            f"\nScan complete ({report['scan_duration_ms'] / 1000:.1f}s) — Coverage: {cov['status']} | "
-            f"Resources: {s['total_resources']} | Critical: {s['critical_issues']} | "
-            f"Warnings: {s['warnings']} | Unused: {s['unused']} | Info: {s['info_observations']}",
-            file=sys.stderr,
-        )
-        if cov.get("services_skipped_optional"):
-            print(
-                f"  Skipped optional services (not marked healthy): {', '.join(cov['services_skipped_optional'])}",
-                file=sys.stderr,
-            )
-        perm_note = "mode 0600" if os.name == "posix" else "standard Windows user directory ACLs (0600 N/A on Windows)"
-        print(f"  Saved local report ({perm_note}): {os.path.abspath(output_path)}", file=sys.stderr)
-        print("  Next step: Open the AWS Clarity website and drop this file to inspect it locally.", file=sys.stderr)
+        _print_final_scan_summary(report, output_path, include_s3=include_s3)
 
     return 0
 
