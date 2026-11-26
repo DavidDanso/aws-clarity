@@ -1,16 +1,13 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CATEGORY_BADGE } from "../utils/constants";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = [] }) {
+  const dialogRef = useRef(null);
   const [catalogFilter, setCatalogFilter] = useState("all");
   const [catalogSearch, setCatalogSearch] = useState("");
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose]);
+  useDialogFocus(isOpen, onClose, dialogRef);
 
   const checkCounts = useMemo(() => ({
     total: evaluatedChecks.length,
@@ -55,7 +52,11 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
       aria-labelledby="checks-catalog-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl focus:outline-none"
+      >
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-start sm:items-center justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <h3 id="checks-catalog-title" className="text-sm sm:text-base font-bold text-white">
@@ -76,12 +77,16 @@ export default function ChecksCatalogModal({ isOpen, onClose, evaluatedChecks = 
         </div>
 
         <div className="px-4 sm:px-5 pt-3.5 pb-3 border-b border-slate-800 space-y-3 bg-slate-950/40 shrink-0">
+          <label htmlFor="checks-catalog-search" className="sr-only">
+            Filter checks by rule ID, name, service, or category
+          </label>
           <input
+            id="checks-catalog-search"
             type="text"
             value={catalogSearch}
             onChange={(e) => setCatalogSearch(e.target.value)}
             placeholder="Filter checks by rule ID, name, service, or category…"
-            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+            className="w-full bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 sm:py-1.5 text-base sm:text-xs text-slate-200 placeholder-slate-400 focus:border-teal-500 transition-colors"
           />
 
           <div className="flex items-center gap-1.5 overflow-x-auto sm:overflow-visible sm:flex-wrap pb-0.5 sm:pb-0 no-scrollbar">

@@ -1,25 +1,20 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import {
   IAM_POLICY_DEFAULT_JSON,
   IAM_POLICY_JSON,
   PERMISSION_PREVIEW_GROUPS,
 } from "../utils/constants";
 import { downloadLocalFile } from "../utils/reportSanitizer";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 export default function TrustModal({ isOpen, onClose, dataControls = null }) {
+  const dialogRef = useRef(null);
   const [policyVariant, setPolicyVariant] = useState("default");
   const [showPolicyJson, setShowPolicyJson] = useState(false);
   const [copiedPolicy, setCopiedPolicy] = useState(false);
   const [dataNotice, setDataNotice] = useState("");
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose]);
+  useDialogFocus(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -54,7 +49,11 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden flex flex-col">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden flex flex-col focus:outline-none"
+      >
         {/* Header */}
         <div className="flex items-start sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-slate-800 shrink-0">
           <div className="flex items-center gap-2.5 min-w-0">

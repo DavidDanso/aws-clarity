@@ -5,6 +5,7 @@ import {
   RESOURCE_TYPE_LABELS,
   STATUS_COLOR,
 } from "../utils/constants";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 const SEVERITY_STYLE = {
   CRITICAL: {
@@ -75,18 +76,14 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     }
   };
 
+  useDialogFocus(Boolean(resource), onClose, drawerRef);
+
   useEffect(() => {
     const handleClick = (e) => {
       if (drawerRef.current && !drawerRef.current.contains(e.target)) onClose();
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [onClose]);
-
-  useEffect(() => {
-    const handleKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", handleKey);
-    return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
   if (!resource || typeof resource !== "object") return null;
@@ -133,7 +130,8 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
     >
       <div
         ref={drawerRef}
-        className="absolute right-0 top-0 h-[100dvh] w-full sm:w-[500px] md:w-[580px] max-w-full bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in flex flex-col"
+        tabIndex={-1}
+        className="absolute right-0 top-0 h-[100dvh] w-full sm:w-[500px] md:w-[580px] max-w-full bg-slate-900 border-l border-slate-700/50 shadow-2xl overflow-y-auto animate-slide-in flex flex-col focus:outline-none"
       >
         {/* Sticky Header so Close button stays reachable on mobile */}
         <div className="sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md flex items-start justify-between p-4 sm:p-6 border-b border-slate-700/50 shrink-0">
@@ -334,7 +332,7 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                       className={`rounded-xl border ${style.border} border-l-4 ${style.left} bg-slate-900/90 overflow-hidden shadow-sm`}
                     >
                       <div className="px-4 py-2.5 bg-slate-800/40 border-b border-slate-800/60 flex items-center justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           {issue.rule_id && (
                             <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded shrink-0 ${style.badge}`}>
                               {issue.rule_id}
@@ -346,9 +344,14 @@ export default function DetailDrawer({ resource, onClose, scannedAt, history, pr
                             {issue.category}
                           </span>
                           <span className={`text-[11px] font-bold uppercase tracking-wider ${style.badge.split(" ")[0]}`}>
-                            {issue.severity}
+                            {issue.severity === "INFO" ? "INFO · Review Note" : issue.severity}
                           </span>
                         </div>
+                        {issue.severity === "INFO" && (
+                          <span className="text-[10px] text-slate-400">
+                            0 score impact · often legitimate
+                          </span>
+                        )}
                       </div>
 
                       <div className="p-4 space-y-3 text-xs">

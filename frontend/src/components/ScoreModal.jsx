@@ -1,4 +1,5 @@
-import { useEffect } from "react";
+import { useRef } from "react";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 export default function ScoreModal({
   isOpen,
@@ -7,12 +8,8 @@ export default function ScoreModal({
   coverageFailuresCount = 0,
   skippedOptionalServices = [],
 }) {
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose]);
+  const dialogRef = useRef(null);
+  useDialogFocus(isOpen, onClose, dialogRef);
 
   if (!isOpen || !scoreData) return null;
 
@@ -24,7 +21,11 @@ export default function ScoreModal({
       aria-labelledby="score-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full max-h-[92dvh] sm:max-h-[90dvh] overflow-hidden flex flex-col shadow-2xl focus:outline-none"
+      >
         <div className="p-4 sm:p-5 border-b border-slate-800 flex items-start sm:items-center justify-between gap-3 shrink-0">
           <div className="min-w-0">
             <h3 id="score-modal-title" className="text-sm sm:text-base font-bold text-white">

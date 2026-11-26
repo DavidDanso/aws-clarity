@@ -37,17 +37,20 @@ export default function TopBar({
     .join(" · ");
 
   return (
-    <header className="flex items-center justify-between gap-3 py-3 border-b border-slate-800/70">
+    <header className="flex flex-wrap items-center justify-between gap-2 sm:gap-3 py-3 border-b border-slate-800/70">
       {/* Left: Brand (click to go Home) + Single Calm Context Pill */}
-      <div className="flex items-center gap-3 min-w-0">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <button
           type="button"
           onClick={isDemoMode ? onExitDemo : onReturnHome}
           title="Return to Home & Getting Started"
           className="flex items-center gap-2 shrink-0 bg-transparent border-0 p-0 cursor-pointer group"
         >
-          <span className="w-7 h-7 rounded-lg bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400 group-hover:bg-teal-500/25 transition-colors">
-            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <span
+            aria-hidden="true"
+            className="w-7 h-7 rounded-lg bg-teal-500/15 border border-teal-500/30 flex items-center justify-center text-teal-400 group-hover:bg-teal-500/25 transition-colors"
+          >
+            <svg aria-hidden="true" className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
                 strokeLinecap="round"
                 strokeLinejoin="round"

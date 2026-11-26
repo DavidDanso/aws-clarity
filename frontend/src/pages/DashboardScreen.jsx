@@ -24,6 +24,7 @@ import {
   downloadLocalFile,
   sanitizeReportForSharing,
 } from "../utils/reportSanitizer";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 function ScoreRing({ score, label, labelColor }) {
   const r = 30;
@@ -50,13 +51,13 @@ function ScoreRing({ score, label, labelColor }) {
           strokeLinecap="round"
           strokeDasharray={circ}
           strokeDashoffset={offset}
-          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+          className="clarity-score-progress"
         />
       </svg>
       <div className="flex flex-col">
         <span className={`text-3xl font-bold tabular-nums leading-none tracking-tight ${labelColor}`}>
           {score}
-          <span className="text-sm font-normal text-slate-500 ml-0.5">/100</span>
+          <span className="text-sm font-normal text-slate-400 ml-0.5">/100</span>
         </span>
         <span className={`text-xs font-semibold mt-1 leading-none ${labelColor}`}>{label}</span>
       </div>
@@ -99,8 +100,12 @@ export default function DashboardScreen({
   const [progressTab, setProgressTab] = useState("resolved");
   const [tableStatusFilter, setTableStatusFilter] = useState("ALL");
 
+  const mainRef = useRef(null);
   const inventorySectionRef = useRef(null);
   const diffFileInputRef = useRef(null);
+  const exportDialogRef = useRef(null);
+
+  useDialogFocus(exportModalOpen, () => setExportModalOpen(false), exportDialogRef);
 
   const coverage = useMemo(() => scanResults?.coverage || {}, [scanResults]);
   const coverageFailures = useMemo(() => coverage?.failures || [], [coverage]);
@@ -145,7 +150,13 @@ export default function DashboardScreen({
 
   const jumpToInventory = (statusFilter) => {
     setTableStatusFilter(statusFilter);
-    inventorySectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+    inventorySectionRef.current?.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
   };
 
   const previousAllResources = useMemo(() => {
@@ -244,6 +255,33 @@ export default function DashboardScreen({
     return items.slice(0, 4);
   }, [allResources]);
 
+  // Straightforward lower-risk quick wins (unused resources or cost/hygiene items not already in topPriorityItems)
+  const quickWinItems = useMemo(() => {
+    const shownKeys = new Set(topPriorityItems.map(({ resource, issue }) => `${issue.rule_id || issue.title}::${resource.id}`));
+    const wins = [];
+    for (const r of allResources) {
+      for (const issue of r.issues || []) {
+        if (issue.severity !== "UNUSED" && issue.severity !== "WARNING") continue;
+        if (issue.severity === "WARNING" && issue.category === "Security Risk") continue;
+        const key = `${issue.rule_id || issue.title}::${r.id}`;
+        if (shownKeys.has(key)) continue;
+        shownKeys.add(key);
+        wins.push({ resource: r, issue });
+        if (wins.length >= 4) return wins;
+      }
+    }
+    return wins;
+  }, [allResources, topPriorityItems]);
+
+  const showVerifiedImprovementBanner = Boolean(
+    comparison.hasPrevious &&
+      comparison.isComparable &&
+      !isIncompleteScan &&
+      !previousScanIncomplete &&
+      comparison.resolvedCount > 0 &&
+      comparison.unverifiedCount === 0
+  );
+
   const handleDownloadFullJSON = () => {
     const date = new Date().toISOString().slice(0, 10);
     const filename = `aws-clarity-report-${scanResults?.account_id || "account"}-${date}.json`;
@@ -276,7 +314,15 @@ export default function DashboardScreen({
 
   return (
     <div className="min-h-[100dvh] bg-slate-950 text-white">
-      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-5 pb-20 max-w-6xl mx-auto w-full">
+      <button
+        type="button"
+        onClick={() => mainRef.current?.focus()}
+        className="skip-link"
+      >
+        Skip to main content
+      </button>
+
+      <div className="px-4 sm:px-6 lg:px-8 py-3 sm:py-5 pb-24 max-w-6xl mx-auto w-full">
         <input
           ref={diffFileInputRef}
           type="file"
@@ -298,18 +344,46 @@ export default function DashboardScreen({
           onOpenTrust={() => setTrustModalOpen(true)}
         />
 
-        <main className="mt-6 space-y-8">
+        <main ref={mainRef} id="main-content" tabIndex={-1} className="mt-6 space-y-8 focus:outline-none">
           {/* Import Diff Error */}
           {diffImportError && (
-            <div className="flex items-start justify-between gap-3 border border-red-800/50 rounded-xl px-4 py-2.5 text-xs text-red-300 bg-red-950/30">
+            <div
+              role="alert"
+              className="flex items-start justify-between gap-3 border border-red-800/50 rounded-xl px-4 py-2.5 text-xs text-red-200 bg-red-950/35"
+            >
               <span>⚠ {diffImportError}</span>
               <button
                 type="button"
                 onClick={() => setDiffImportError("")}
-                aria-label="Dismiss error"
+                aria-label="Dismiss comparison error"
                 className="text-red-300 hover:text-white bg-transparent border-0 p-0 cursor-pointer shrink-0"
               >
                 ✕
+              </button>
+            </div>
+          )}
+
+          {/* Subtle Verified Progress Banner (ONLY on complete, verified comparisons with resolved findings) */}
+          {showVerifiedImprovementBanner && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="rounded-xl border border-emerald-500/35 bg-emerald-950/25 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-200"
+            >
+              <p>
+                <strong className="text-emerald-300">Verified progress:</strong>{" "}
+                {comparison.resolvedCount} finding{comparison.resolvedCount === 1 ? "" : "s"} resolved since your previous complete scan
+                {comparison.scoreDelta !== null && comparison.scoreDelta > 0
+                  ? ` (+${comparison.scoreDelta} score points)`
+                  : ""}
+                .
+              </p>
+              <button
+                type="button"
+                onClick={() => setComparisonExpanded(true)}
+                className="text-xs font-semibold text-emerald-300 hover:text-emerald-200 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
+              >
+                View verified changes →
               </button>
             </div>
           )}
@@ -370,9 +444,21 @@ export default function DashboardScreen({
 
               {/* LEVEL 1 — UNIFIED ACCOUNT OVERVIEW */}
               <section
-                aria-label="Account health overview"
+                aria-labelledby="overview-heading"
                 className="rounded-2xl border border-slate-800/90 bg-slate-900/50 p-5 sm:p-6 space-y-5"
               >
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h1 id="overview-heading" className="text-base sm:text-lg font-bold text-white tracking-tight">
+                    Account Overview
+                  </h1>
+                  <span className="text-[11px] text-slate-400">
+                    {isIncompleteScan ? "Coverage: INCOMPLETE" : "Coverage: COMPLETE"}
+                    {skippedOptionalServices.length > 0
+                      ? ` · ${skippedOptionalServices.join(", ")} skipped (optional)`
+                      : ""}
+                  </span>
+                </div>
+
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
                   {/* Left: Honest Health Score OR Clear Incomplete Explanation */}
                   {scoreData.isAvailable ? (
@@ -385,20 +471,20 @@ export default function DashboardScreen({
                       <button
                         type="button"
                         onClick={() => setScoreModalOpen(true)}
-                        className="text-[11px] text-slate-400 hover:text-teal-300 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                        className="text-[11px] text-slate-300 hover:text-teal-300 transition-colors bg-transparent border-0 p-0 cursor-pointer"
                       >
-                        How this score is calculated →
+                        How this score is calculated (not a certification) →
                       </button>
                     </div>
                   ) : (
                     <div className="space-y-1.5 max-w-md">
                       <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full bg-orange-400 shrink-0" />
-                        <h1 className="text-sm sm:text-base font-bold text-orange-200">
+                        <span aria-hidden="true" className="w-2.5 h-2.5 rounded-full bg-orange-400 shrink-0" />
+                        <h2 className="text-sm sm:text-base font-bold text-orange-200">
                           Health score unavailable — assessment incomplete
-                        </h1>
+                        </h2>
                       </div>
-                      <p className="text-xs text-slate-400 leading-relaxed">
+                      <p className="text-xs text-slate-300 leading-relaxed">
                         {regionsFailed.length > 0
                           ? `${regionsFailed.length} region${regionsFailed.length === 1 ? "" : "s"} couldn't be reached (${regionsFailed.join(", ")}), so we withhold the numeric score rather than guessing.`
                           : `${coverageFailures.length || "Some"} check${coverageFailures.length === 1 ? "" : "s"} couldn't finish, so we withhold the numeric score rather than guessing.`}
@@ -423,7 +509,7 @@ export default function DashboardScreen({
                       <span className="text-xl sm:text-2xl font-bold tabular-nums text-red-400 block leading-none">
                         {scoreData.critical}
                       </span>
-                      <span className="text-[11px] text-slate-400 mt-1.5 block">Critical</span>
+                      <span className="text-[11px] text-slate-300 mt-1.5 block">Critical</span>
                     </button>
 
                     <button
@@ -434,7 +520,7 @@ export default function DashboardScreen({
                       <span className="text-xl sm:text-2xl font-bold tabular-nums text-amber-400 block leading-none">
                         {scoreData.warning}
                       </span>
-                      <span className="text-[11px] text-slate-400 mt-1.5 block">Warnings</span>
+                      <span className="text-[11px] text-slate-300 mt-1.5 block">Warnings</span>
                     </button>
 
                     <button
@@ -445,7 +531,7 @@ export default function DashboardScreen({
                       <span className="text-xl sm:text-2xl font-bold tabular-nums text-sky-300 block leading-none">
                         {scoreData.potentialCostWaste}
                       </span>
-                      <span className="text-[11px] text-slate-400 mt-1.5 block">Cost / Review</span>
+                      <span className="text-[11px] text-slate-300 mt-1.5 block">Unused / Cost</span>
                     </button>
 
                     <button
@@ -456,20 +542,21 @@ export default function DashboardScreen({
                       <span className="text-xl sm:text-2xl font-bold tabular-nums text-emerald-400 block leading-none">
                         {scoreData.healthy}
                       </span>
-                      <span className="text-[11px] text-slate-400 mt-1.5 block">Healthy</span>
+                      <span className="text-[11px] text-slate-300 mt-1.5 block">Healthy</span>
                     </button>
                   </div>
                 </div>
 
                 {/* Quiet Single-Line Transparency Footer */}
-                <div className="pt-3.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                <div className="pt-3.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                     <button
                       type="button"
                       onClick={() => setCoverageModalOpen(true)}
                       className="inline-flex items-center gap-1.5 hover:text-white transition-colors bg-transparent border-0 p-0 cursor-pointer"
                     >
                       <span
+                        aria-hidden="true"
                         className={`w-1.5 h-1.5 rounded-full shrink-0 ${
                           isIncompleteScan ? "bg-orange-400" : "bg-emerald-400"
                         }`}
@@ -480,7 +567,7 @@ export default function DashboardScreen({
                         {regionsScanned.length > 0 ? ` · ${regionsSucceededCount}/${regionsScanned.length} regions` : ""}
                       </span>
                     </button>
-                    <span className="text-slate-700">·</span>
+                    <span aria-hidden="true" className="text-slate-700">·</span>
                     <button
                       type="button"
                       onClick={() => setCatalogModalOpen(true)}
@@ -488,10 +575,34 @@ export default function DashboardScreen({
                     >
                       {activeCatalog.length} rules checked
                     </button>
+                    {scoreData.info > 0 && (
+                      <>
+                        <span aria-hidden="true" className="text-slate-700">·</span>
+                        <button
+                          type="button"
+                          onClick={() => jumpToInventory("INFO")}
+                          className="text-slate-400 hover:text-slate-200 transition-colors bg-transparent border-0 p-0 cursor-pointer"
+                        >
+                          {scoreData.info} INFO review note{scoreData.info === 1 ? "" : "s"} (0 pts)
+                        </button>
+                      </>
+                    )}
+                    {scoreData.incomplete > 0 && (
+                      <>
+                        <span aria-hidden="true" className="text-slate-700">·</span>
+                        <button
+                          type="button"
+                          onClick={() => jumpToInventory("INCOMPLETE")}
+                          className="text-orange-300 hover:text-orange-200 transition-colors bg-transparent border-0 p-0 cursor-pointer font-medium"
+                        >
+                          {scoreData.incomplete} incomplete resource{scoreData.incomplete === 1 ? "" : "s"}
+                        </button>
+                      </>
+                    )}
                     {typeof scanResults?.scan_duration_ms === "number" && (
                       <>
-                        <span className="text-slate-700 hidden sm:inline">·</span>
-                        <span className="font-mono text-slate-500 hidden sm:inline">
+                        <span aria-hidden="true" className="text-slate-700 hidden sm:inline">·</span>
+                        <span className="font-mono text-slate-400 hidden sm:inline">
                           {(scanResults.scan_duration_ms / 1000).toFixed(1)}s
                         </span>
                       </>
@@ -501,6 +612,7 @@ export default function DashboardScreen({
                   {comparison.hasPrevious && (
                     <button
                       type="button"
+                      aria-expanded={comparisonExpanded}
                       onClick={() => setComparisonExpanded((prev) => !prev)}
                       className="text-xs font-semibold text-teal-300 hover:text-teal-200 bg-teal-500/10 border border-teal-500/30 px-2.5 py-1 rounded-lg cursor-pointer transition-colors"
                     >
@@ -739,14 +851,48 @@ export default function DashboardScreen({
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-emerald-500/25 bg-emerald-950/15 px-4 py-3 flex items-center gap-2.5 text-xs text-emerald-300">
-                    <span className="font-bold">✓</span>
+                  <div
+                    className={`rounded-xl border px-4 py-3 flex items-center gap-2.5 text-xs ${
+                      isIncompleteScan
+                        ? "border-orange-500/30 bg-orange-950/20 text-orange-200"
+                        : "border-emerald-500/25 bg-emerald-950/15 text-emerald-300"
+                    }`}
+                  >
+                    <span aria-hidden="true" className="font-bold">
+                      {isIncompleteScan ? "!" : "✓"}
+                    </span>
                     <span>
                       {isIncompleteScan
-                        ? "No critical or warning findings in completed checks (some regions were incomplete — inspect coverage above)."
+                        ? "No critical or warning findings in completed checks, but some regions or checks were incomplete—inspect Scan Coverage before treating the account as clear."
                         : "No critical security risks or unused cost waste detected across your scanned services."}
                     </span>
                   </div>
+                )}
+
+                {quickWinItems.length > 0 && (
+                  <details className="clarity-disclosure rounded-xl border border-slate-800/80 bg-slate-900/35 px-4 py-3 text-xs">
+                    <summary className="font-medium text-slate-300 hover:text-white transition-colors">
+                      <span>Quick wins &amp; straightforward cleanups ({quickWinItems.length})</span>
+                    </summary>
+                    <div className="pt-3 mt-2.5 border-t border-slate-800/70 divide-y divide-slate-800/60">
+                      {quickWinItems.map(({ resource, issue }, idx) => (
+                        <button
+                          type="button"
+                          key={`qw-${issue.rule_id}-${resource.id}-${idx}`}
+                          onClick={() => setSelectedResource(resource)}
+                          className="w-full text-left py-2.5 hover:bg-slate-800/35 transition-colors cursor-pointer flex items-center justify-between gap-3 bg-transparent border-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium text-slate-200 truncate">{issue.title || issue.message}</p>
+                            <p className="text-[11px] text-slate-400 truncate">
+                              {issue.severity} · {RESOURCE_TYPE_LABELS[resource.type] || resource.type} · {resource.name}
+                            </p>
+                          </div>
+                          <span className="text-[11px] font-semibold text-teal-400 shrink-0">Inspect →</span>
+                        </button>
+                      ))}
+                    </div>
+                  </details>
                 )}
               </section>
 
@@ -756,7 +902,7 @@ export default function DashboardScreen({
                   <h2 id="inventory-heading" className="text-sm font-bold text-white">
                     All Resources
                   </h2>
-                  <span className="text-xs text-slate-500">
+                  <span className="text-xs text-slate-400">
                     {allResources.length} discovered
                   </span>
                 </div>
@@ -764,6 +910,9 @@ export default function DashboardScreen({
                 <ResourceTable
                   resources={allResources}
                   initialStatusFilter={tableStatusFilter}
+                  isIncompleteScan={isIncompleteScan}
+                  skippedOptionalServices={skippedOptionalServices}
+                  onOpenCoverage={() => setCoverageModalOpen(true)}
                   onInspect={(resource) => setSelectedResource(resource)}
                 />
               </section>
@@ -798,7 +947,11 @@ export default function DashboardScreen({
             if (e.target === e.currentTarget) setExportModalOpen(false);
           }}
         >
-          <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col">
+          <div
+            ref={exportDialogRef}
+            tabIndex={-1}
+            className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-lg w-full max-h-[92dvh] overflow-y-auto flex flex-col focus:outline-none"
+          >
             <div className="p-4 sm:p-5 border-b border-slate-800 flex items-center justify-between gap-3">
               <div>
                 <h3 id="export-modal-title" className="text-sm sm:text-base font-bold text-white">

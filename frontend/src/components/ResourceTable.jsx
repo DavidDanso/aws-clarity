@@ -46,6 +46,9 @@ export default function ResourceTable({
   resources = [],
   onInspect,
   initialStatusFilter = "ALL",
+  isIncompleteScan = false,
+  skippedOptionalServices = [],
+  onOpenCoverage = null,
 }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [serviceFilter, setServiceFilter] = useState("ALL");
@@ -183,8 +186,11 @@ export default function ResourceTable({
       {/* Single Compact Filter & Search Toolbar */}
       <div className="flex flex-col lg:flex-row gap-2">
         <div className="relative flex-1 min-w-0">
+          <label htmlFor="search-input" className="sr-only">
+            Search discovered AWS resources by name, ID, service, region, or finding
+          </label>
           <svg
-            className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none"
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none"
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
             fill="none"
@@ -201,7 +207,7 @@ export default function ResourceTable({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search by name, ID, service, region, or finding…"
-            className="w-full bg-slate-900/70 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-teal-500/60 transition-colors"
+            className="w-full bg-slate-900/70 border border-slate-800 rounded-xl pl-9 pr-8 py-2 text-sm sm:text-xs text-slate-200 placeholder-slate-400 focus:border-teal-500/60 transition-colors"
           />
           {searchQuery.length > 0 && (
             <button
@@ -332,14 +338,57 @@ export default function ResourceTable({
           <tbody>
             {resources.length === 0 ? (
               <tr data-empty="true">
-                <td colSpan={6} className="py-12 px-4 text-center text-slate-500 text-sm">
-                  No resources discovered across the scanned AWS services.
+                <td colSpan={6} className="py-10 px-4 text-center text-sm space-y-2">
+                  {isIncompleteScan ? (
+                    <div className="max-w-md mx-auto space-y-2 text-orange-200">
+                      <p className="font-semibold text-orange-300">
+                        No resources collected — assessment was incomplete
+                      </p>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        One or more AWS regions or read permissions failed during collection, so an empty
+                        inventory does not mean the account has zero resources.
+                      </p>
+                      {typeof onOpenCoverage === "function" && (
+                        <button
+                          type="button"
+                          onClick={onOpenCoverage}
+                          className="text-xs font-semibold text-orange-300 hover:text-orange-200 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
+                        >
+                          Inspect Scan Coverage &amp; Failures →
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="max-w-md mx-auto space-y-1.5 text-slate-300">
+                      <p className="font-semibold text-slate-200">
+                        No supported AWS resources found in the scanned regions
+                      </p>
+                      <p className="text-xs text-slate-400 leading-relaxed">
+                        Collection completed with 0 resources across the inspected services.
+                        {skippedOptionalServices.length > 0
+                          ? ` Note: optional service(s) (${skippedOptionalServices.join(", ")}) were skipped by default and not inspected.`
+                          : ""}
+                      </p>
+                    </div>
+                  )}
                 </td>
               </tr>
             ) : sortedResources.length === 0 ? (
               <tr data-empty="true">
-                <td colSpan={6} className="py-12 px-4 text-center text-slate-500 text-sm">
-                  No resources match your current filters.
+                <td colSpan={6} className="py-10 px-4 text-center text-sm space-y-2">
+                  <p className="text-slate-300 font-medium">No resources match your current filters.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setServiceFilter("ALL");
+                      setRegionFilter("ALL");
+                      setStatusFilter("ALL");
+                    }}
+                    className="text-xs font-semibold text-teal-400 hover:text-teal-300 underline underline-offset-2 bg-transparent border-0 p-0 cursor-pointer"
+                  >
+                    Clear all filters
+                  </button>
                 </td>
               </tr>
             ) : (
@@ -375,6 +424,11 @@ export default function ResourceTable({
                       >
                         {status}
                       </span>
+                      {status === "HEALTHY" && hasInfoObservation(resource) && (
+                        <span className="ml-1.5 inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-800 text-slate-300 border border-slate-700">
+                          INFO note
+                        </span>
+                      )}
                     </td>
                     <td data-label="Finding" className="px-3 py-3 max-w-[280px]">
                       {topIssue ? (

@@ -1,5 +1,6 @@
-import { useEffect } from "react";
+import { useRef } from "react";
 import { SERVICE_COVERAGE_MATRIX } from "../utils/constants";
+import { useDialogFocus } from "../utils/useDialogFocus";
 
 export default function CoverageModal({
   isOpen,
@@ -7,12 +8,8 @@ export default function CoverageModal({
   coverage = {},
   allResourcesCount = 0,
 }) {
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [isOpen, onClose]);
+  const dialogRef = useRef(null);
+  useDialogFocus(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -40,7 +37,11 @@ export default function CoverageModal({
       aria-labelledby="coverage-modal-title"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden flex flex-col">
+      <div
+        ref={dialogRef}
+        tabIndex={-1}
+        className="bg-slate-900 border border-slate-700/60 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[92dvh] sm:max-h-[88dvh] overflow-hidden flex flex-col focus:outline-none"
+      >
         <div className="flex items-start sm:items-center justify-between gap-3 p-4 sm:p-5 border-b border-slate-800 shrink-0">
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -250,8 +251,8 @@ export default function CoverageModal({
         </div>
 
         <div className="p-4 border-t border-slate-800 bg-slate-900/50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 shrink-0">
-          <span className="text-[11px] text-slate-500">
-            Strictly read-only · Full API pagination · Zero paid AWS APIs
+          <span className="text-[11px] text-slate-400">
+            Strictly read-only · Full API pagination · $0 AWS API fees by default (S3 opt-in)
           </span>
           <button
             type="button"

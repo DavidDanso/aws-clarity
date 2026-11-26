@@ -2,12 +2,79 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  html,
-  body {
-    overflow-x: clip;
-    -webkit-text-size-adjust: 100%;
+:root {
+  --target-size: 24px;
+}
+
+@media (pointer: coarse) {
+  :root {
+    --target-size: 44px;
   }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  body {
+    overflow-wrap: break-word;
+  }
+
+  :where(a, code) {
+    overflow-wrap: anywhere;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  /* High-contrast visible keyboard focus outline that survives Forced Colors Mode */
+  :where(a:any-link, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid #2dd4bf;
+    outline-offset: 2px;
+  }
+
+  /* WCAG 2.5.8 minimum target sizes (24px fine pointer, 44px coarse/touch pointer) */
+  :where(button, select, input:not([type="checkbox"], [type="radio"]), label:has(input[type="checkbox"], input[type="radio"])) {
+    min-block-size: var(--target-size);
+  }
+}
+
+/* Visually hidden skip link that reveals cleanly on keyboard focus */
+.skip-link:where(:not(:focus-within, :active)) {
+  position: absolute !important;
+  clip-path: inset(50%) !important;
+  overflow: hidden !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  white-space: nowrap !important;
+}
+
+.skip-link:focus-visible {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top, 0px));
+  left: max(0.75rem, env(safe-area-inset-left, 0px));
+  z-index: 60;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 2px solid #2dd4bf;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  text-decoration: none;
 }
 
 @keyframes slide-in {
@@ -19,13 +86,14 @@
   }
 }
 
-.animate-slide-in {
-  animation: slide-in 0.25s ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
+/* Opt in to spatial motion only when user has no reduced-motion preference (modern-web-guidance: motion) */
+@media (prefers-reduced-motion: no-preference) {
   .animate-slide-in {
-    animation: none;
+    animation: slide-in 0.25s ease-out;
+  }
+
+  .clarity-score-progress {
+    transition: stroke-dashoffset 0.6s ease;
   }
 }
 
