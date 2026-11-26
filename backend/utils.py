@@ -4,7 +4,6 @@ import re
 import secrets
 import threading
 import boto3
-import botocore.session
 from botocore.config import Config
 from botocore.exceptions import ClientError
 from api_guard import wrap_client_with_guard
@@ -39,24 +38,22 @@ SCAN_BOTO_CONFIG = Config(
 _STS_CLIENT = None
 _STS_LOCK = threading.Lock()
 
-# Static botocore JSON service definitions & endpoint rules (zero credentials or tenant state).
-# Reusing these across warm Lambda invocations avoids re-parsing ~10 MB of AWS API JSON specs per scan.
-_SHARED_STATIC_BC = botocore.session.get_session()
-_SHARED_DATA_LOADER = _SHARED_STATIC_BC.get_component("data_loader")
-_SHARED_ENDPOINT_RESOLVER = _SHARED_STATIC_BC.get_component("endpoint_resolver")
+def build_isolated_session(
+    access_key_id: str,
+    secret_access_key: str,
+    session_token: str,
+    region_name: str = "us-east-1",
+) -> boto3.Session:
+    """Create a tenant-isolated boto3.Session using only the public boto3 Session API.
 
-
-def build_isolated_session(access_key_id: str, secret_access_key: str, session_token: str, region_name: str = "us-east-1") -> boto3.Session:
-    """Create a tenant-isolated boto3.Session backed by the shared static AWS JSON loader."""
-    bc_session = botocore.session.Session()
-    bc_session.register_component("data_loader", _SHARED_DATA_LOADER)
-    bc_session.register_component("endpoint_resolver", _SHARED_ENDPOINT_RESOLVER)
+    Avoids deprecated internal botocore `get_component("endpoint_resolver")` hooks
+    while keeping credentials strictly isolated per session instance.
+    """
     return boto3.Session(
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
         aws_session_token=session_token,
         region_name=region_name,
-        botocore_session=bc_session,
     )
 
 
