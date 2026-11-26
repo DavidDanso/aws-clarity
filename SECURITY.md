@@ -24,10 +24,15 @@ AWS Clarity is designed around a **local-first** model:
 - AWS Clarity does not operate a central scanning backend, does not assume cross-account roles into customer accounts, and does not store customer inventories.
 - The static web dashboard parses imported `.json` reports strictly in browser memory and enforces `Content-Security-Policy: connect-src 'none'` on production builds.
 
-**What this does and does not guarantee:**
+## Security Assurance and Limitations
+
+AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing, and release verification. However, it has **not** undergone an independent third-party penetration test or received a formal security certification.
+
+AWS Clarity provides visibility and assessment of supported AWS configurations. It does not guarantee that an AWS account is secure, replace AWS security services, or substitute for an independent professional security assessment. Users should independently validate important findings and carefully review remediation guidance before making changes to their AWS environments.
+
+**Operational boundaries:**
 - Local-first eliminates central backend credential exposure and central customer database compromises.
-- It does **not** make breaches impossible: compromised workstations, malicious software supply-chain updates, overly broad local credentials, or careless sharing of unredacted report files remain real risks.
-- AWS Clarity is an independent open-source project and has **not** undergone third-party penetration testing or SOC 2 / ISO 27001 certification.
+- It does **not** eliminate workstation compromise, malicious supply-chain updates, overly broad local credentials, or careless sharing of unredacted report files.
 
 ## Verifying Releases, Checksums & Build Provenance
 

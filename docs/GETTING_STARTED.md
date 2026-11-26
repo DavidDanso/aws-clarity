@@ -148,3 +148,9 @@ You can turn off your Wi-Fi before dropping your report file. It works the same.
 - Individual engineers and teams can run `aws-clarity scan` locally using their own authorized AWS CLI / IAM Identity Center profiles.
 - Use **Export → Download Sanitized JSON** (or **Download Sanitized CSV**) when sharing findings. Sanitized exports use best-effort redaction and are **not** guaranteed to be completely anonymous—always inspect the file before sharing. Full exports contain sensitive infrastructure identifiers and should remain private.
 - AWS Clarity v1 intentionally does **not** include user login, shared team databases, multi-account org dashboards, or automatic remediation.
+
+## Security Assurance and Limitations
+
+AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing, and release verification. However, it has **not** undergone an independent third-party penetration test or received a formal security certification.
+
+AWS Clarity provides visibility and assessment of supported AWS configurations. It does not guarantee that an AWS account is secure, replace AWS security services, or substitute for an independent professional security assessment. Users should independently validate important findings and carefully review remediation guidance before making changes to their AWS environments.

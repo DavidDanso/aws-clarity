@@ -231,20 +231,27 @@ export default function TrustModal({ isOpen, onClose, dataControls = null }) {
             </div>
           </section>
 
-          {/* 4. Honest Security Boundaries */}
+          {/* 4. Security Assurance & Limitations */}
           <section className="space-y-2">
             <h4 className="text-[11px] font-semibold uppercase tracking-wider text-teal-400">
-              4. Honest Security Boundaries &amp; Verification
+              4. Security Assurance and Limitations
             </h4>
-            <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2 text-[11px] text-slate-300">
+            <div className="p-3.5 rounded-xl bg-slate-950 border border-amber-500/30 space-y-2 text-xs text-slate-300 leading-relaxed">
               <p>
-                No software can promise zero breach risk. Local-first substantially reduces blast radius by removing
-                central credential access and central customer databases, <strong>however</strong>:
+                AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing,
+                and release verification. However, it has <strong>not</strong> undergone an independent
+                third-party penetration test or received a formal security certification.
               </p>
-              <ul className="list-disc pl-4 space-y-1 text-slate-400">
+              <p>
+                AWS Clarity provides visibility and assessment of supported AWS configurations. It does not
+                guarantee that an AWS account is secure, replace AWS security services, or substitute for an
+                independent professional security assessment. Users should independently validate important
+                findings and carefully review remediation guidance before making changes to their AWS
+                environments.
+              </p>
+              <ul className="list-disc pl-4 space-y-1 text-slate-300 text-[11px]">
                 <li>Read-only access prevents resource modification, but does not prevent metadata disclosure if your workstation or local report file is compromised.</li>
-                <li>Software supply-chain attacks or malicious updates remain possible—always inspect releases and verify SHA-256 checksums in <code className="text-slate-300">SHA256SUMS.txt</code> against public source code.</li>
-                <li>AWS Clarity is an independent open-source project and has not undergone third-party SOC 2 / penetration-test certification.</li>
+                <li>Software supply-chain risks remain possible—always verify SHA-256 checksums in <code className="text-slate-200">SHA256SUMS.txt</code> and GitHub build provenance (<code className="text-slate-200">gh attestation verify</code>) before installing releases.</li>
               </ul>
             </div>
           </section>

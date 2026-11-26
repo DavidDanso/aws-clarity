@@ -173,5 +173,35 @@ class TestFrontendAccessibilityGuardrails(unittest.TestCase):
             self.assertIn('role="region"', text, f"{modal_file} missing region role on scrollable body")
 
 
+class TestPyPIWorkflowAndSecurityDisclosures(unittest.TestCase):
+    def test_publish_pypi_workflow_is_controlled_oidc_and_reuses_verified_release_assets(self):
+        wf = (REPO_ROOT / ".github" / "workflows" / "publish-pypi.yml").read_text(encoding="utf-8")
+        # Must NOT trigger automatically on release events
+        self.assertNotIn("types: [published]", wf)
+        self.assertIn("workflow_dispatch:", wf)
+        self.assertIn("gh release download", wf)
+        self.assertIn("sha256sum -c", wf)
+        self.assertIn("gh attestation verify", wf)
+        self.assertIn("name: pypi", wf)
+        self.assertIn("id-token: write", wf)
+        self.assertIn("pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086", wf)
+        self.assertNotIn("python -m build", wf)
+
+    def test_security_assurance_disclosure_present_across_frontend_and_docs(self):
+        targets = [
+            REPO_ROOT / "frontend" / "src" / "pages" / "SetupScreen.jsx",
+            REPO_ROOT / "frontend" / "src" / "components" / "TrustModal.jsx",
+            REPO_ROOT / "README.md",
+            REPO_ROOT / "SECURITY.md",
+            REPO_ROOT / "docs" / "GETTING_STARTED.md",
+            REPO_ROOT / "docs" / "SUPPORTED_SERVICES_AND_RULES.md",
+        ]
+        for path in targets:
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            self.assertIn("Security Assurance and Limitations", flat, f"Missing heading in {path.name}")
+            self.assertIn("independent third-party penetration test", flat.lower(), f"Missing disclosure in {path.name}")
+            self.assertIn("formal security certification", flat.lower(), f"Missing certification disclosure in {path.name}")
+
+
 if __name__ == "__main__":
     unittest.main()

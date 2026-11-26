@@ -113,4 +113,27 @@ for (const topic of [
 }
 assert.ok(troubleDoc.includes("Python 3.10+ Is Missing") && troubleDoc.includes("pipx"));
 
+// 6. Mandatory Security Assurance & Independent-Testing Disclosure across UI & docs
+const trustSrc = fs.readFileSync(path.join(frontendRoot, "src", "components", "TrustModal.jsx"), "utf8");
+const securityDoc = fs.readFileSync(path.join(repoRoot, "SECURITY.md"), "utf8");
+const gettingStartedDoc = fs.readFileSync(path.join(repoRoot, "docs", "GETTING_STARTED.md"), "utf8");
+for (const [label, content] of [
+  ["SetupScreen.jsx", setupFlat],
+  ["TrustModal.jsx", trustSrc.replace(/\s+/g, " ")],
+  ["README.md", readme.replace(/\s+/g, " ")],
+  ["SECURITY.md", securityDoc.replace(/\s+/g, " ")],
+  ["docs/GETTING_STARTED.md", gettingStartedDoc.replace(/\s+/g, " ")],
+  ["docs/SUPPORTED_SERVICES_AND_RULES.md", rulesDoc.replace(/\s+/g, " ")],
+]) {
+  assert.ok(
+    content.includes("Security Assurance and Limitations"),
+    `${label} must include the Security Assurance and Limitations heading`
+  );
+  assert.ok(
+    content.toLowerCase().includes("independent third-party penetration test") &&
+      content.toLowerCase().includes("formal security certification"),
+    `${label} must disclose lack of independent third-party penetration test and formal certification`
+  );
+}
+
 console.log("All Phase 5 usability, onboarding, accessibility, and documentation static checks passed.");

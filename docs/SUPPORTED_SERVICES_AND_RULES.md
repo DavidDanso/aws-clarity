@@ -53,4 +53,9 @@ Score = max(0, 100 - [10 * Critical + 4 * Warnings + 1 * Unused])
 - **Optional S3 request charges:** Default scans skip S3 (`SKIPPED_OPTIONAL`) to stay at `$0` AWS API fees. Opting in with `--include-s3-checks` calls `s3:ListAllMyBuckets` plus 5 `GetBucket*` APIs per bucket, which may incur small AWS S3 LIST/GET request charges outside the 12-month S3 Free Tier.
 - **No AWS cost estimation or automatic remediation:** Does not call AWS Cost Explorer or modify AWS resources. All remediation is manual.
 - **What the health score does not mean:** The numeric score summarizes only AWS Clarity's supported v1 rules and available evidence—it is never a security certification, compliance audit, or guarantee that an AWS account is secure.
-- **No independent penetration test or certification:** AWS Clarity is an independent open-source project and has not undergone a third-party penetration test, SOC 2 audit, or formal security certification.
+
+### Security Assurance and Limitations
+
+AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing, and release verification. However, it has **not** undergone an independent third-party penetration test or received a formal security certification.
+
+AWS Clarity provides visibility and assessment of supported AWS configurations. It does not guarantee that an AWS account is secure, replace AWS security services, or substitute for an independent professional security assessment. Users should independently validate important findings and carefully review remediation guidance before making changes to their AWS environments.

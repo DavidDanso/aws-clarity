@@ -331,6 +331,11 @@ try {
   assert.ok(setupText.includes("Recommended: use a dedicated read-only role first"));
   assert.ok(setupText.includes("You can turn off your Wi-Fi before dropping your report file. It works the same."));
   assert.ok(setupText.includes("Can I use AWS Clarity with a production AWS account?"));
+  assert.ok(
+    setupText.includes("Security Assurance and Limitations") &&
+      setupText.includes("independent third-party penetration test"),
+    "SetupScreen must display the Security Assurance and Limitations disclosure visibly"
+  );
 
   // 2. Install-method keyboard tab switching (ArrowRight -> macOS/Linux -> Windows PowerShell)
   const pipxTab = page.locator("#install-tab-pipx");

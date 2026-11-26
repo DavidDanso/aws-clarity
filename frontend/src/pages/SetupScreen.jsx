@@ -926,6 +926,30 @@ export default function SetupScreen({
               ))}
             </div>
           </section>
+
+          {/* Security Assurance & Independent-Testing Disclosure */}
+          <section
+            aria-labelledby="security-assurance-heading"
+            className="rounded-2xl border border-amber-500/30 bg-slate-900/50 p-4 sm:p-5 space-y-2.5"
+          >
+            <h2 id="security-assurance-heading" className="text-sm font-bold text-slate-100">
+              Security Assurance and Limitations
+            </h2>
+            <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
+              <p>
+                AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing,
+                and release verification. However, it has <strong>not</strong> undergone an independent
+                third-party penetration test or received a formal security certification.
+              </p>
+              <p>
+                AWS Clarity provides visibility and assessment of supported AWS configurations. It does not
+                guarantee that an AWS account is secure, replace AWS security services, or substitute for an
+                independent professional security assessment. Users should independently validate important
+                findings and carefully review remediation guidance before making changes to their AWS
+                environments.
+              </p>
+            </div>
+          </section>
         </main>
 
         {/* Minimal Footer */}

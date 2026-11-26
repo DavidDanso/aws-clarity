@@ -40,7 +40,12 @@ AWS Clarity is designed to be transparent about what it checks and what it does 
 - **Heuristic `INFO` findings:** Seven rules (`EC2-001`, `NAT-002`, `S3-004`, `LAM-001`, `DDB-002`, `SNAP-001`, `CW-002`) are non-penalizing (`0` score impact) review notes for patterns that are often legitimate.
 - **Optional S3 AWS request fees:** Default scans use 28 free control-plane read APIs (`$0` AWS API fees). Opting in to S3 (`--include-s3-checks`) calls `s3:ListAllMyBuckets` plus 5 `GetBucket*` APIs per bucket, which may incur small AWS S3 LIST/GET request charges outside your 12-month S3 Free Tier.
 - **What the health score does not mean:** The numeric score summarizes only AWS Clarity's supported v1 rules and available evidence—it is **not** a security certification, compliance audit, or guarantee of account security.
-- **No independent audit or certification:** AWS Clarity is an independent open-source project and has **not** undergone an independent penetration test, SOC 2 audit, or formal security certification.
+
+### Security Assurance and Limitations
+
+AWS Clarity has undergone extensive project-maintainer-led security hardening, automated testing, and release verification. However, it has **not** undergone an independent third-party penetration test or received a formal security certification.
+
+AWS Clarity provides visibility and assessment of supported AWS configurations. It does not guarantee that an AWS account is secure, replace AWS security services, or substitute for an independent professional security assessment. Users should independently validate important findings and carefully review remediation guidance before making changes to their AWS environments.
 
 ---
 
