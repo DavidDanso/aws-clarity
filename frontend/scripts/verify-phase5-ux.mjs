@@ -27,17 +27,35 @@ const dashSrc = fs.readFileSync(path.join(frontendRoot, "src", "pages", "Dashboa
 const cssSrc = fs.readFileSync(path.join(frontendRoot, "src", "index.css"), "utf8");
 const appSrc = fs.readFileSync(path.join(frontendRoot, "src", "App.jsx"), "utf8");
 
-// 1. Unpublished v1.1.0 honesty: must NOT direct users to download v1.0.0 wheel or invented v1.1.0 download URL
+// 1. Published v1.1.0 release accuracy: must link directly to published v1.1.0 release and never show stale unpublished notice
+const pyproject = fs.readFileSync(path.join(repoRoot, "pyproject.toml"), "utf8");
+const verMatch = pyproject.match(/^version\s*=\s*"([^"]+)"/m);
+assert.ok(verMatch, "Unable to parse version from pyproject.toml");
+const pkgVersion = verMatch[1];
+
 assert.ok(
   !setupSrc.includes("releases/download/v1.0.0"),
   "SetupScreen must not instruct visitors to install outdated v1.0.0 as hardened"
 );
 assert.ok(
-  !setupSrc.includes("releases/download/v1.1.0"),
-  "SetupScreen must not invent working download links for unpublished v1.1.0 artifacts"
+  !setupSrc.includes("/releases/latest"),
+  "SetupScreen must link to the explicit release tag rather than /releases/latest"
 );
-assert.ok(setupSrc.includes("not yet published"), "SetupScreen must clearly note v1.1.0 is not yet published");
-assert.ok(setupSrc.includes("aws_clarity-${PROPOSED_VERSION}-py3-none-any.whl"));
+assert.ok(
+  !setupSrc.toLowerCase().includes("not yet published") && !setupSrc.toLowerCase().includes("pending publication"),
+  "SetupScreen must not display outdated unpublished-release notices now that v1.1.0 is published"
+);
+assert.ok(
+  setupSrc.includes(`const RELEASE_VERSION = "${pkgVersion}";`),
+  `SetupScreen RELEASE_VERSION must match pyproject.toml (${pkgVersion})`
+);
+assert.ok(
+  setupSrc.includes("https://github.com/DavidDanso/aws-clarity/releases/tag/v${RELEASE_VERSION}"),
+  "SetupScreen must link directly to the published v1.1.0 GitHub Release tag"
+);
+assert.ok(setupSrc.includes("aws_clarity-${RELEASE_VERSION}-py3-none-any.whl"));
+assert.ok(setupSrc.includes("aws_clarity-${RELEASE_VERSION}.tar.gz") || setupSrc.includes("aws_clarity-{RELEASE_VERSION}.tar.gz"));
+assert.ok(setupSrc.includes("aws-clarity-local-{RELEASE_VERSION}.tar.gz"));
 
 // 2. Verify Before Installing commands & checksum vs signature clarity
 assert.ok(setupSrc.includes("Verify Before Installing"));

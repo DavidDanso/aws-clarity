@@ -316,9 +316,14 @@ try {
   const resp = await page.goto(localUrl, { waitUntil: "networkidle" });
   assert.equal(resp.status(), 200);
 
-  // 1. First-time onboarding, unpublished v1.1.0 notice, Verify Before Installing, Read-only callout, Production FAQ
+  // 1. First-time onboarding, published v1.1.0 link, Verify Before Installing, Read-only callout, Production FAQ
   const setupText = await page.evaluate(() => document.body.innerText);
-  assert.ok(setupText.includes("hardened v1.1.0 package not yet published"));
+  assert.ok(setupText.includes("Published release: AWS Clarity CLI v1.1.0"));
+  assert.ok(!setupText.toLowerCase().includes("not yet published"), "Outdated unpublished notice must not appear");
+  const v110Links = await page.locator('a[href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0"]').count();
+  assert.ok(v110Links >= 1, "SetupScreen must link directly to the published v1.1.0 GitHub Release");
+  const firstRel = await page.locator('a[href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0"]').first().getAttribute("rel");
+  assert.ok(firstRel && firstRel.includes("noopener") && firstRel.includes("noreferrer"));
   assert.ok(setupText.includes("Verify Before Installing"));
   assert.ok(setupText.includes("shasum -a 256 -c SHA256SUMS.txt"));
   assert.ok(setupText.includes("sha256sum -c SHA256SUMS.txt"));

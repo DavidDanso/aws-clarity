@@ -21,7 +21,7 @@ With **AWS Clarity Local-First**:
 - **Offline browser viewing:** The static website parses imported reports strictly in memory and enforces `Content-Security-Policy: connect-src 'none'` on production builds—no report uploads, no analytics, no central database.
 - **Cost-conscious by default:** Default scans run **9 zero-request-charge AWS control-plane services** (28 actions) and skip S3 (`SKIPPED_OPTIONAL`) unless you explicitly opt in (`--include-s3-checks`) after reviewing S3 API pricing.
 
-> **Current release & hosting status:** The hardened `v1.1.0` scanner package (read-only API allowlist, root-account block, pre-scan confirmation, and updated UI) has been tested locally and is **not yet published** on GitHub Releases; the existing `v1.0.0` release predates these hardening changes. Similarly, the currently deployed CloudFront site still serves pre-hardening `main` without the new CloudFront HTTP security headers policy until deployed.
+> **Current release:** The hardened **`v1.1.0`** local CLI scanner (read-only API allowlist, root-account block, pre-scan confirmation, SHA-256 checksums, and GitHub Actions SLSA build provenance) is published on [GitHub Releases (`v1.1.0`)](https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0). Avoid the older `v1.0.0` release, which predates these hardening controls. (`aws-clarity` is distributed via GitHub Releases and source checkout—not PyPI.)
 >
 > **Honest security note:** Local-first eliminates vendor backend exposure, but no software can guarantee zero breach risk. Protect your workstation and local report files, review the source code and IAM permissions before running against production, and verify `SHA256SUMS.txt` checksums before installing published releases.
 
@@ -47,8 +47,9 @@ AWS Clarity is designed to be transparent about what it checks and what it does 
 ## Quick Start
 
 ```bash
-# 1. Install the local CLI from a local checkout (Python 3.10+)
-#    (Hardened v1.1.0 release artifacts are not yet published on GitHub Releases)
+# 1. Install the local CLI (Python 3.10+) — download & verify v1.1.0 wheel from:
+#    https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0
+#    (or install directly from a cloned checkout below)
 python3 -m venv .venv && source .venv/bin/activate
 pip install .
 

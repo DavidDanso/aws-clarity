@@ -97,24 +97,31 @@ class TestReleaseVersionAndUrlParity(unittest.TestCase):
             f"{expected_download_base}/SHA256SUMS.txt",
         ]
 
-        # 1. Frontend SetupScreen.jsx must match pyproject.toml version & filenames
+        # 1. Frontend SetupScreen.jsx must match pyproject.toml version, link to published v1.1.0 release, and not show stale unpublished notice
         setup_src = (REPO_ROOT / "frontend" / "src" / "pages" / "SetupScreen.jsx").read_text(encoding="utf-8")
-        self.assertIn(f'const PROPOSED_VERSION = "{version}";', setup_src)
-        self.assertIn("aws_clarity-${PROPOSED_VERSION}-py3-none-any.whl", setup_src)
-        self.assertIn("aws_clarity-{PROPOSED_VERSION}.tar.gz", setup_src)
-        self.assertIn("aws-clarity-local-{PROPOSED_VERSION}.tar.gz", setup_src)
+        self.assertIn(f'const RELEASE_VERSION = "{version}";', setup_src)
+        self.assertIn("https://github.com/DavidDanso/aws-clarity/releases/tag/v${RELEASE_VERSION}", setup_src)
+        self.assertIn("aws_clarity-${RELEASE_VERSION}-py3-none-any.whl", setup_src)
+        self.assertIn("aws_clarity-{RELEASE_VERSION}.tar.gz", setup_src)
+        self.assertIn("aws-clarity-local-{RELEASE_VERSION}.tar.gz", setup_src)
         self.assertIn("SHA256SUMS.txt", setup_src)
-        # Must never use /releases/latest as the v1.1.0 URL or invent live download links before publication
         self.assertNotIn("/releases/latest", setup_src)
-        self.assertNotIn(f"releases/download/{expected_tag}", setup_src)
+        self.assertNotIn("not yet published", setup_src.lower())
+        self.assertNotIn("pending publication", setup_src.lower())
 
-        # 2. docs/GETTING_STARTED.md must match pyproject.toml version and prepared URLs
+        # 2. docs/GETTING_STARTED.md and README.md must reflect published v1.1.0 release accurately
         getting_started = (REPO_ROOT / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
         self.assertIn(expected_release_url, getting_started)
         for url in expected_asset_urls:
             self.assertIn(url, getting_started)
         self.assertIn(f"aws-clarity {version}", getting_started)
         self.assertNotIn("/releases/latest", getting_started)
+        self.assertNotIn("not yet published", getting_started.lower())
+        self.assertNotIn("pending publication", getting_started.lower())
+
+        readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn(expected_release_url, readme)
+        self.assertNotIn("not yet published", readme.lower())
 
         # 3. docs/V1.1.0_INSTALLATION_PREPARATION.md must match pyproject.toml version and prepared URLs
         prep_doc = (REPO_ROOT / "docs" / "V1.1.0_INSTALLATION_PREPARATION.md").read_text(encoding="utf-8")

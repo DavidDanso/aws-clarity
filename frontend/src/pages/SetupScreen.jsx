@@ -15,8 +15,9 @@ import {
 import { downloadLocalFile } from "../utils/reportSanitizer";
 import TrustModal from "../components/TrustModal";
 
-const PROPOSED_VERSION = "1.1.0";
-const PROPOSED_WHEEL_FILE = `aws_clarity-${PROPOSED_VERSION}-py3-none-any.whl`;
+const RELEASE_VERSION = "1.1.0";
+const RELEASE_WHEEL_FILE = `aws_clarity-${RELEASE_VERSION}-py3-none-any.whl`;
+const RELEASE_TAG_URL = `https://github.com/DavidDanso/aws-clarity/releases/tag/v${RELEASE_VERSION}`;
 const REPO_CLONE_URL = "https://github.com/DavidDanso/aws-clarity.git";
 
 const INSTALL_TABS = [
@@ -25,7 +26,7 @@ const INSTALL_TABS = [
     label: "pipx (Recommended)",
     hint: "Installs `aws-clarity` in an isolated CLI environment without modifying system Python (requires Python 3.10+ and pipx).",
     installCmd: `git clone ${REPO_CLONE_URL}\ncd aws-clarity\npipx install .`,
-    releaseWheelCmd: `pipx install ./${PROPOSED_WHEEL_FILE}`,
+    releaseWheelCmd: `pipx install ./${RELEASE_WHEEL_FILE}`,
     verifyCmd: "aws-clarity version",
     cliPrefix: "aws-clarity",
   },
@@ -34,7 +35,7 @@ const INSTALL_TABS = [
     label: "macOS / Linux (venv)",
     hint: "Uses Python 3.10+ built-in virtual environment — no pipx required.",
     installCmd: `git clone ${REPO_CLONE_URL}\ncd aws-clarity\npython3 -m venv ~/.aws-clarity\n~/.aws-clarity/bin/pip install .`,
-    releaseWheelCmd: `python3 -m venv ~/.aws-clarity && ~/.aws-clarity/bin/pip install ./${PROPOSED_WHEEL_FILE}`,
+    releaseWheelCmd: `python3 -m venv ~/.aws-clarity && ~/.aws-clarity/bin/pip install ./${RELEASE_WHEEL_FILE}`,
     verifyCmd: "~/.aws-clarity/bin/aws-clarity version",
     cliPrefix: "~/.aws-clarity/bin/aws-clarity",
   },
@@ -43,7 +44,7 @@ const INSTALL_TABS = [
     label: "Windows (PowerShell)",
     hint: "Uses Python 3.10+ built-in virtual environment in PowerShell.",
     installCmd: `git clone ${REPO_CLONE_URL}\ncd aws-clarity\npy -m venv "$HOME\\.aws-clarity"\n& "$HOME\\.aws-clarity\\Scripts\\pip.exe" install .`,
-    releaseWheelCmd: `py -m venv "$HOME\\.aws-clarity"\n& "$HOME\\.aws-clarity\\Scripts\\pip.exe" install .\\${PROPOSED_WHEEL_FILE}`,
+    releaseWheelCmd: `py -m venv "$HOME\\.aws-clarity"\n& "$HOME\\.aws-clarity\\Scripts\\pip.exe" install .\\${RELEASE_WHEEL_FILE}`,
     verifyCmd: `& "$HOME\\.aws-clarity\\Scripts\\aws-clarity.exe" version`,
     cliPrefix: `& "$HOME\\.aws-clarity\\Scripts\\aws-clarity.exe"`,
   },
@@ -65,8 +66,8 @@ const VERIFY_CHECKSUM_COMMANDS = [
   {
     id: "checksum-windows",
     os: "Windows (PowerShell)",
-    cmd: `(Get-FileHash .\\${PROPOSED_WHEEL_FILE} -Algorithm SHA256).Hash.ToLower()`,
-    note: `Compare the 64-character hex hash printed by PowerShell against the ${PROPOSED_WHEEL_FILE} line in SHA256SUMS.txt.`,
+    cmd: `(Get-FileHash .\\${RELEASE_WHEEL_FILE} -Algorithm SHA256).Hash.ToLower()`,
+    note: `Compare the 64-character hex hash printed by PowerShell against the ${RELEASE_WHEEL_FILE} line in SHA256SUMS.txt.`,
   },
 ];
 
@@ -365,29 +366,27 @@ export default function SetupScreen({
                 </div>
               </div>
 
-              {/* Honest Release-Pending Notice for Hardened v1.1.0 */}
-              <div className="rounded-xl border border-amber-500/35 bg-amber-950/25 px-3.5 py-3 text-xs space-y-1.5">
-                <p className="font-semibold text-amber-200">
-                  Release status: hardened v{PROPOSED_VERSION} package not yet published
+              {/* Published Hardened v1.1.0 Release Banner */}
+              <div className="rounded-xl border border-teal-500/35 bg-teal-950/25 px-3.5 py-3 text-xs space-y-1.5">
+                <p className="font-semibold text-teal-200">
+                  Published release: AWS Clarity CLI v{RELEASE_VERSION}
                 </p>
                 <p className="text-[11px] text-slate-200 leading-relaxed">
-                  The proposed hardened release artifacts (<code className="text-amber-200">{PROPOSED_WHEEL_FILE}</code>,{" "}
-                  <code className="text-slate-200">aws_clarity-{PROPOSED_VERSION}.tar.gz</code>,{" "}
-                  <code className="text-slate-200">aws-clarity-local-{PROPOSED_VERSION}.tar.gz</code>, and{" "}
-                  <code className="text-slate-200">SHA256SUMS.txt</code>) have been tested locally and are{" "}
-                  <strong>not yet published</strong> on GitHub Releases. The older published{" "}
-                  <code className="text-slate-300">v1.0.0</code> release predates the read-only API allowlist,
-                  root-account block, and pre-scan confirmation—install from the source checkout below or wait
-                  for <code className="text-amber-200">v{PROPOSED_VERSION}</code> on{" "}
+                  Download the hardened{" "}
                   <a
-                    href="https://github.com/DavidDanso/aws-clarity/releases"
+                    href={RELEASE_TAG_URL}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-teal-300 hover:text-teal-200 underline underline-offset-2"
+                    className="text-teal-300 hover:text-teal-200 font-semibold underline underline-offset-2"
                   >
-                    GitHub Releases
-                  </a>
-                  .
+                    v{RELEASE_VERSION} release on GitHub
+                  </a>{" "}
+                  (<code className="text-teal-200">{RELEASE_WHEEL_FILE}</code>,{" "}
+                  <code className="text-slate-200">aws_clarity-{RELEASE_VERSION}.tar.gz</code>,{" "}
+                  <code className="text-slate-200">aws-clarity-local-{RELEASE_VERSION}.tar.gz</code>, and{" "}
+                  <code className="text-slate-200">SHA256SUMS.txt</code> with GitHub Actions SLSA build
+                  provenance). Avoid older <code className="text-slate-300">v1.0.0</code>, which predates
+                  the read-only API allowlist, root-account block, and pre-scan confirmation.
                 </p>
               </div>
 
@@ -437,28 +436,11 @@ export default function SetupScreen({
                       <div className="space-y-2.5">
                         <p className="text-xs text-slate-300">{tab.hint}</p>
                         <div className="space-y-1.5">
-                          <p className="text-[11px] font-medium text-slate-400">
-                            Install from source checkout (available now):
+                          <p className="text-[11px] font-medium text-slate-300">
+                            Install the verified v{RELEASE_VERSION} wheel (recommended after checksum check below):
                           </p>
                           <div className="relative rounded-xl bg-slate-950 border border-slate-800 p-3 pr-20">
                             <pre tabIndex={0} className="text-xs text-slate-100 font-mono overflow-x-auto leading-relaxed">
-                              {tab.installCmd}
-                            </pre>
-                            <button
-                              type="button"
-                              onClick={() => handleCopy(`install-${tab.id}`, tab.installCmd, `${tab.label} install command`)}
-                              className="absolute top-2.5 right-2.5 text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer transition-colors"
-                            >
-                              {copiedKey === `install-${tab.id}` ? "Copied ✓" : "Copy"}
-                            </button>
-                          </div>
-                        </div>
-                        <div className="space-y-1.5">
-                          <p className="text-[11px] font-medium text-slate-400">
-                            After v{PROPOSED_VERSION} is published &amp; verified locally (not yet published):
-                          </p>
-                          <div className="relative rounded-xl bg-slate-950/70 border border-slate-800/80 p-3 pr-20">
-                            <pre tabIndex={0} className="text-xs text-slate-300 font-mono overflow-x-auto leading-relaxed">
                               {tab.releaseWheelCmd}
                             </pre>
                             <button
@@ -467,6 +449,23 @@ export default function SetupScreen({
                               className="absolute top-2.5 right-2.5 text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer transition-colors"
                             >
                               {copiedKey === `wheel-${tab.id}` ? "Copied ✓" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <p className="text-[11px] font-medium text-slate-400">
+                            Or install from a cloned source checkout:
+                          </p>
+                          <div className="relative rounded-xl bg-slate-950/70 border border-slate-800/80 p-3 pr-20">
+                            <pre tabIndex={0} className="text-xs text-slate-300 font-mono overflow-x-auto leading-relaxed">
+                              {tab.installCmd}
+                            </pre>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(`install-${tab.id}`, tab.installCmd, `${tab.label} install command`)}
+                              className="absolute top-2.5 right-2.5 text-[11px] font-medium px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 cursor-pointer transition-colors"
+                            >
+                              {copiedKey === `install-${tab.id}` ? "Copied ✓" : "Copy"}
                             </button>
                           </div>
                         </div>
@@ -485,13 +484,20 @@ export default function SetupScreen({
                   </span>
                 </div>
                 <p className="text-[11px] text-slate-300 leading-relaxed">
-                  Once <code className="text-teal-300">v{PROPOSED_VERSION}</code> is published, download{" "}
-                  <code className="text-slate-200">{PROPOSED_WHEEL_FILE}</code> and{" "}
-                  <code className="text-slate-200">SHA256SUMS.txt</code> from GitHub Releases and check the
-                  hash before installing. Note: a SHA-256 checksum confirms download integrity against the
-                  manifest—it is <strong>not</strong> a digital signature (once published, you can also run{" "}
-                  <code className="text-slate-200">gh attestation verify</code> to check GitHub Actions build
-                  provenance).
+                  Download <code className="text-slate-200">{RELEASE_WHEEL_FILE}</code> and{" "}
+                  <code className="text-slate-200">SHA256SUMS.txt</code> from{" "}
+                  <a
+                    href={RELEASE_TAG_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-teal-300 hover:text-teal-200 underline underline-offset-2"
+                  >
+                    GitHub Release v{RELEASE_VERSION}
+                  </a>{" "}
+                  and verify the hash before installing. Note: a SHA-256 checksum confirms download integrity
+                  against the manifest—it is <strong>not</strong> a digital signature (you can also run{" "}
+                  <code className="text-slate-200">gh attestation verify {RELEASE_WHEEL_FILE} --repo DavidDanso/aws-clarity</code>{" "}
+                  to check GitHub Actions build provenance).
                 </p>
                 <div className="space-y-2">
                   {VERIFY_CHECKSUM_COMMANDS.map((item) => (
@@ -522,7 +528,7 @@ export default function SetupScreen({
                 <p className="text-emerald-200/90 leading-relaxed">
                   <strong className="text-emerald-300">What happens next:</strong> Running{" "}
                   <code className="text-emerald-200">{activeInstall.verifyCmd}</code> prints{" "}
-                  <code className="text-slate-200">aws-clarity {PROPOSED_VERSION} (local-first, read-only, zero telemetry)</code>.
+                  <code className="text-slate-200">aws-clarity {RELEASE_VERSION} (local-first, read-only, zero telemetry)</code>.
                 </p>
               </div>
             </div>
