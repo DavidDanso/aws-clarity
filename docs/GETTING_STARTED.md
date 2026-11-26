@@ -2,7 +2,19 @@
 
 AWS Clarity runs **locally on your computer** using your existing AWS CLI or IAM Identity Center (AWS SSO) credentials. Your AWS credentials and account inventory never leave your environment.
 
-> **Release status notice:** The hardened **`v1.1.0`** scanner package (`aws_clarity-1.1.0-py3-none-any.whl`, `aws_clarity-1.1.0.tar.gz`, `aws-clarity-local-1.1.0.tar.gz`, `SHA256SUMS.txt`) has been verified locally and is **not yet published** on GitHub Releases. The previously published `v1.0.0` release predates the read-only API allowlist, root-account block, and pre-scan confirmation. Until `v1.1.0` is published, install from a cloned repository checkout below.
+> **Release status notice (PENDING PUBLICATION — NOT YET LIVE):** The hardened **`v1.1.0`** scanner package (`aws-clarity` `1.1.0` — `aws_clarity-1.1.0-py3-none-any.whl`, `aws_clarity-1.1.0.tar.gz`, `aws-clarity-local-1.1.0.tar.gz`, `SHA256SUMS.txt`) has been built and verified locally and is **not yet published** on GitHub Releases or PyPI. The previously published `v1.0.0` release predates the read-only API allowlist, root-account block, and pre-scan confirmation. Until `v1.1.0` is published, install from a cloned repository checkout below.
+
+### Prepared `v1.1.0` Release Location (Pending Publication — Not Yet Live)
+
+Once the owner publishes `v1.1.0` via GitHub Actions, the release page and verified distribution assets will be hosted at:
+
+- **Intended Release Page (pending publication):** `https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0`
+- **Intended Wheel Asset (pending publication):** `https://github.com/DavidDanso/aws-clarity/releases/download/v1.1.0/aws_clarity-1.1.0-py3-none-any.whl`
+- **Intended Source Distribution (pending publication):** `https://github.com/DavidDanso/aws-clarity/releases/download/v1.1.0/aws_clarity-1.1.0.tar.gz`
+- **Intended Standalone Source Tarball (pending publication):** `https://github.com/DavidDanso/aws-clarity/releases/download/v1.1.0/aws-clarity-local-1.1.0.tar.gz`
+- **Intended SHA-256 Manifest (pending publication):** `https://github.com/DavidDanso/aws-clarity/releases/download/v1.1.0/SHA256SUMS.txt`
+
+*(See [docs/V1.1.0_INSTALLATION_PREPARATION.md](./V1.1.0_INSTALLATION_PREPARATION.md) for platform-specific download, checksum verification, and install commands once published. PyPI is not listed because `aws-clarity` is not published on PyPI.)*
 
 ## Prerequisites
 
@@ -40,11 +52,14 @@ py -m venv "$HOME\.aws-clarity"
 & "$HOME\.aws-clarity\Scripts\pip.exe" install .
 ```
 
-Verify installation:
+Verify installation and CLI help:
 
 ```bash
 aws-clarity version
 # Expected: aws-clarity 1.1.0 (local-first, read-only, zero telemetry)
+
+aws-clarity --help
+aws-clarity scan --help
 ```
 
 ### Verify Before Installing (Once `v1.1.0` Release Artifacts Are Published)
