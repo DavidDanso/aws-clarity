@@ -42,7 +42,15 @@ Score = max(0, 100 - [10 * Critical + 4 * Warnings + 1 * Unused])
 
 ## Known Limitations (v1)
 
-- Does not scan AWS services outside the 10 listed above (e.g., EKS, ECS, KMS, Route 53, CloudFront, API Gateway, SQS, SNS).
-- Does not estimate dollar costs (no AWS Cost Explorer calls).
-- Does not inspect customer data contents (S3 objects, DB rows, Lambda code, log events).
-- All remediation is manual; AWS Clarity never modifies AWS resources.
+- **Supported services & resource types:** Covers only the **10 AWS services** and **17 resource types** listed above (43 resource rules + `CT-000`).
+- **Unsupported AWS services:** Does **not** inspect EKS, ECS, KMS, Route 53, CloudFront, API Gateway, SQS, SNS, Secrets Manager, ElastiCache, or any AWS service outside the 10 listed above.
+- **IAM policy document & boundary limits:** IAM rules (`IAM-001`–`IAM-011`) inspect attached AWS-managed policy ARNs and inline policy documents, but **cannot** inspect customer-managed policy document bodies (`iam:GetPolicyVersion` is intentionally not requested) and **cannot** evaluate IAM permission boundaries or AWS Organizations SCPs.
+- **IAM group inheritance:** IAM user rules do **not** detect permissions inherited through IAM groups (`iam:ListGroupsForUser` / `iam:ListGroupPolicies` are not requested).
+- **Account-level S3 Public Access Block:** S3 rules inspect bucket-level Public Access Block (`s3:GetBucketPublicAccessBlock`) and cannot detect account-level S3 Public Access Block overrides (`s3control:GetPublicAccessBlock`).
+- **CloudTrail Organizations & CloudTrail Lake:** CloudTrail checks inspect trails returned by `cloudtrail:DescribeTrails(includeShadowTrails=False)` and `cloudtrail:GetTrailStatus`. They do **not** detect AWS Organizations management-account trails covering a member account or CloudTrail Lake Event Data Stores—verify those separately before acting on `CT-000`.
+- **Regional timeout limits:** Local scans enforce a 90-second default time budget. If a large account or slow/unreachable region exceeds the timeout, coverage is marked `INCOMPLETE` and the health score is withheld; scope scans with `--regions us-east-1,eu-west-1` as needed.
+- **Heuristic `INFO` findings:** `EC2-001`, `NAT-002`, `S3-004`, `LAM-001`, `DDB-002`, `SNAP-001`, and `CW-002` are non-penalizing (`0` score impact) review notes for configurations that are frequently legitimate.
+- **Optional S3 request charges:** Default scans skip S3 (`SKIPPED_OPTIONAL`) to stay at `$0` AWS API fees. Opting in with `--include-s3-checks` calls `s3:ListAllMyBuckets` plus 5 `GetBucket*` APIs per bucket, which may incur small AWS S3 LIST/GET request charges outside the 12-month S3 Free Tier.
+- **No AWS cost estimation or automatic remediation:** Does not call AWS Cost Explorer or modify AWS resources. All remediation is manual.
+- **What the health score does not mean:** The numeric score summarizes only AWS Clarity's supported v1 rules and available evidence—it is never a security certification, compliance audit, or guarantee that an AWS account is secure.
+- **No independent penetration test or certification:** AWS Clarity is an independent open-source project and has not undergone a third-party penetration test, SOC 2 audit, or formal security certification.

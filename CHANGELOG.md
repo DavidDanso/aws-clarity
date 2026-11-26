@@ -47,6 +47,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and [Sem
 - Prepared HTTP security response headers (`aws_cloudfront_response_headers_policy`) in `infra/cloudfront.tf` (not yet applied to AWS).
 - Added independent audit guide (`docs/AUDIT.md`) and refined cost/security disclosures (`docs/COST_TRANSPARENCY.md`, `SECURITY.md`).
 
+### Usability, Onboarding & Accessibility (Phase 5)
+- Added 5-second plain-English overview grid on the landing screen answering scope, privacy, local execution, AWS cost, and out-of-scope boundaries.
+- Updated Step 1 onboarding with honest `v1.1.0` release-pending status (no silent fallback to pre-hardening `v1.0.0`, no invented release download URLs), local source install tabs (`pipx`, macOS/Linux venv, Windows PowerShell), and a visible **Verify Before Installing** section with macOS, Linux, and Windows PowerShell SHA-256 commands (explicitly noting checksums are not digital signatures).
+- Expanded Step 2 pre-scan guidance (SSO, regions, collected vs. excluded data, `ReadOnly` role-name honesty) and Step 3 offline guarantee ("You can turn off your Wi-Fi before dropping your report file. It works the same.").
+- Added an honest, balanced **Can I use AWS Clarity with a production AWS account?** FAQ.
+- Added structured, non-sensitive CLI scan progress (`[1/5]`–`[5/5]` and per-service status markers), a detailed final scan summary (severity + category counts, coverage, failed regions, optional S3 status, configurable `AWS_CLARITY_DASHBOARD_URL`), and actionable What/Why/Next error messages.
+- Improved dashboard state clarity (`CRITICAL`, `WARNING`, `UNUSED`, `INFO · Review Note`, `HEALTHY`, `INCOMPLETE`, `CHECK_FAILED`, `SKIPPED_OPTIONAL`, `No Resources`), added optional quick-wins disclosure, gated subtle verified-progress feedback strictly on complete verified Scan Diffs, and improved empty-account and zero-filter states.
+- Added WCAG accessibility improvements: skip-to-main-content controls, `<main>`/`<header>`/`<footer>` landmarks, dynamic SPA `<title>`, high-contrast `:focus-visible` outlines, modal/drawer keyboard focus management (`useDialogFocus`), coarse-pointer 44px touch targets, `prefers-reduced-motion` opt-in, and verified zero horizontal overflow from 320px to 1440px.
+- Expanded **Known Limitations** and troubleshooting documentation across `README.md` and `docs/`.
+
 ---
 
 ## [1.0.0] — 2026-11-22 (Published Tag `5917933`)

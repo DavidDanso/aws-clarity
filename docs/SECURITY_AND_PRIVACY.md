@@ -39,9 +39,11 @@
 - **Best-effort sanitization:** Use **Download Sanitized JSON** or **Download Sanitized CSV** to redact common identifiers before sharing, and **always review the exported file** before posting externally (no automated sanitizer can guarantee zero remaining sensitive context inside custom resource tags or descriptions).
 - **CSV Formula Injection Neutralization:** All CSV exports prefix cells starting with `=`, `+`, `-`, `@`, tab, or carriage return with a leading `'` to prevent spreadsheet formula execution.
 
-## 5. Static Hosting Metadata & Honest Security Limitations
+## 5. Static Hosting Metadata, Release Status & Honest Security Limitations
 
-- **Static host metadata:** While your AWS assessment report is never uploaded to any server, the static hosting provider serving the website (e.g., GitHub Pages or CDN) may still process ordinary web request metadata such as client IP address, User-Agent, and requested page URL.
-- Local-first eliminates vendor backend compromise as a vector for exposing customer AWS accounts.
-- It does **not** protect against a compromised workstation, malicious dependency/supply-chain updates, or insecure sharing of unredacted reports.
-- Always pin/verify versions and check `SHA256SUMS.txt` against public source code (note: checksums verify download integrity against a release, not that the code itself is free of defects).
+- **Offline browser guarantee:** Once the static website is loaded, you can turn off your Wi-Fi before dropping your JSON report file—the entire report import, inspection, Scan Diff, and local export flow runs offline in browser memory.
+- **Static host metadata:** While your AWS assessment report is never uploaded to any server, the static hosting provider serving the website (e.g., CloudFront or GitHub Pages) may still process ordinary web request metadata such as client IP address, User-Agent, and requested page URL when loading the site itself.
+- **Current deployment distinction:** The hardened local branch includes a CloudFront HTTP response headers policy (`infra/cloudfront.tf`) and `v1.1.0` scanner hardening (`api_guard.py`, root block, pre-scan confirmation), which are **not yet live** on `https://dmydkbmdw1lzr.cloudfront.net/` or published to GitHub Releases until explicitly deployed and released.
+- **Production account responsibility:** Local-first eliminates vendor backend compromise as a vector for exposing customer AWS accounts, **however** read-only configuration metadata can still be sensitive, supported v1 rules do not cover every AWS service or security issue, and the health score is not a security certification. Always use a dedicated read-only role/permission set and review the source code and permissions before running against production.
+- **No independent penetration test or certification:** AWS Clarity is an independent open-source project and has not undergone a third-party penetration test, SOC 2 audit, or formal certification.
+- **Workstation & supply-chain boundary:** Local-first does **not** protect against a compromised workstation, malicious dependency/supply-chain updates, or insecure sharing of unredacted reports. Always verify `SHA256SUMS.txt` checksums (and `gh attestation verify` once published); note that checksums verify download integrity against a manifest and are not a digital signature.

@@ -30,3 +30,9 @@ aws-clarity policy --zero-cost-only --output aws-clarity-policy-default.json
 # 34 actions (including optional S3 metadata checks)
 aws-clarity policy --output aws-clarity-policy-with-s3.json
 ```
+
+## Important Permission & Scope Notes
+
+- **Dedicated read-only role template:** Deploy [infra/aws-clarity-readonly-role.yaml](../infra/aws-clarity-readonly-role.yaml) in your own AWS account if you want a scoped, customer-owned read-only IAM role without granting cross-account trust to any third party.
+- **Role names do not prove permissions:** A role is not safe merely because its name contains `ReadOnly`. AWS Clarity does **not** evaluate your identity's full effective IAM permissions (SCPs, permission boundaries, and attached policies determine real access).
+- **What IAM checks cannot inspect:** Because AWS Clarity deliberately keeps IAM permissions minimal, it does **not** request `iam:GetPolicyVersion`, `iam:ListGroupsForUser`, or `organizations:*`. As a result, IAM checks cannot inspect customer-managed policy documents, IAM permission boundaries, or permissions inherited through IAM groups.

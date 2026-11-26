@@ -21,32 +21,53 @@ With **AWS Clarity Local-First**:
 - **Offline browser viewing:** The static website parses imported reports strictly in memory and enforces `Content-Security-Policy: connect-src 'none'` on production builds—no report uploads, no analytics, no central database.
 - **Cost-conscious by default:** Default scans run **9 zero-request-charge AWS control-plane services** (28 actions) and skip S3 (`SKIPPED_OPTIONAL`) unless you explicitly opt in (`--include-s3-checks`) after reviewing S3 API pricing.
 
-> **Honest security note:** Local-first eliminates vendor backend exposure, but no software can guarantee zero breach risk. Protect your workstation and local report files, inspect open-source updates, and verify `SHA256SUMS.txt` checksums before installing releases.
+> **Current release & hosting status:** The hardened `v1.1.0` scanner package (read-only API allowlist, root-account block, pre-scan confirmation, and updated UI) has been tested locally and is **not yet published** on GitHub Releases; the existing `v1.0.0` release predates these hardening changes. Similarly, the currently deployed CloudFront site still serves pre-hardening `main` without the new CloudFront HTTP security headers policy until deployed.
+>
+> **Honest security note:** Local-first eliminates vendor backend exposure, but no software can guarantee zero breach risk. Protect your workstation and local report files, review the source code and IAM permissions before running against production, and verify `SHA256SUMS.txt` checksums before installing published releases.
+
+---
+
+## Known Limitations (v1)
+
+AWS Clarity is designed to be transparent about what it checks and what it does **not** check:
+
+- **Supported scope:** Inspects **10 AWS services**, **17 resource types**, and **43 deterministic rules** (plus account-level `CT-000`): EC2, VPC, IAM, Lambda, RDS, DynamoDB, EBS, CloudWatch, CloudTrail (default), and optional S3 (`--include-s3-checks`).
+- **Unsupported AWS services:** Does not inspect EKS, ECS, KMS, Route 53, CloudFront, API Gateway, SQS, SNS, Secrets Manager, ElastiCache, or other AWS services outside the 10 listed above.
+- **IAM policy depth:** IAM checks inspect attached AWS-managed policy ARNs and inline policies, but **cannot** inspect customer-managed policy document bodies, IAM permission boundaries, SCPs, or permissions inherited through IAM groups.
+- **Account-level S3 Public Access Block:** S3 checks inspect bucket-level Block Public Access (`s3:GetBucketPublicAccessBlock`), not account-level `s3control:GetPublicAccessBlock` overrides.
+- **CloudTrail Organizations & CloudTrail Lake:** Checks account-local trails via `DescribeTrails(includeShadowTrails=False)` and `GetTrailStatus`; does not detect AWS Organizations management-account trails or CloudTrail Lake Event Data Stores.
+- **Regional time budget:** Default scans enforce a 90-second total budget; timed-out or inaccessible regions mark coverage `INCOMPLETE` and withhold the health score (use `--regions` for large accounts).
+- **Heuristic `INFO` findings:** Seven rules (`EC2-001`, `NAT-002`, `S3-004`, `LAM-001`, `DDB-002`, `SNAP-001`, `CW-002`) are non-penalizing (`0` score impact) review notes for patterns that are often legitimate.
+- **Optional S3 AWS request fees:** Default scans use 28 free control-plane read APIs (`$0` AWS API fees). Opting in to S3 (`--include-s3-checks`) calls `s3:ListAllMyBuckets` plus 5 `GetBucket*` APIs per bucket, which may incur small AWS S3 LIST/GET request charges outside your 12-month S3 Free Tier.
+- **What the health score does not mean:** The numeric score summarizes only AWS Clarity's supported v1 rules and available evidence—it is **not** a security certification, compliance audit, or guarantee of account security.
+- **No independent audit or certification:** AWS Clarity is an independent open-source project and has **not** undergone an independent penetration test, SOC 2 audit, or formal security certification.
 
 ---
 
 ## Quick Start
 
 ```bash
-# 1. Install the local CLI from source (Python 3.10+)
+# 1. Install the local CLI from a local checkout (Python 3.10+)
+#    (Hardened v1.1.0 release artifacts are not yet published on GitHub Releases)
 python3 -m venv .venv && source .venv/bin/activate
 pip install .
 
 # 2. Authenticate with your existing AWS CLI / IAM Identity Center profile
+#    (Recommended: use a dedicated read-only IAM role or SSO permission set)
 aws sso login --profile my-profile
 aws sts get-caller-identity --profile my-profile
 
 # 3. Verify active AWS identity & read-only permissions locally
 aws-clarity doctor --profile my-profile
 
-# 4. Run a local read-only scan (9 zero-request-charge services by default)
+# 4. Run a local read-only scan (prompts for pre-scan confirmation; 9 default services)
 aws-clarity scan --profile my-profile --output aws-clarity-report.json
 
-# Optional: include S3 bucket configuration checks (prompts for cost consent)
+# Optional: include S3 bucket configuration checks (prompts for S3 request-cost consent)
 aws-clarity scan --profile my-profile --include-s3-checks --output aws-clarity-report.json
 ```
 
-Then open the AWS Clarity website (or run `cd frontend && npm run dev` locally) and click **Import Assessment Report (.json)**—or click **Explore Demo** to inspect a static synthetic sample account with zero AWS credentials.
+Then open the AWS Clarity dashboard (or run `cd frontend && npm run dev` locally) and drop `aws-clarity-report.json`—you can even turn off your Wi-Fi before dropping the file—or click **Explore Live Demo** to inspect synthetic sample data with zero AWS credentials.
 
 ---
 
