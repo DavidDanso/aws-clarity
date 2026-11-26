@@ -9,8 +9,15 @@ Zero network or AWS calls.
 import os
 import re
 import sys
-import tomllib
 import unittest
+
+try:
+    import tomllib  # Python 3.11+
+except ModuleNotFoundError:  # pragma: no cover - Python 3.10 fallback
+    try:
+        import tomli as tomllib  # type: ignore[no-redef]
+    except ModuleNotFoundError:
+        tomllib = None
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -19,10 +26,71 @@ import local_engine
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 
+def _parse_pyproject_minimal(text: str) -> dict:
+    """Minimal stdlib-only TOML subset parser for pyproject.toml on Python 3.10.
+
+    Supports dotted [table] headers, string/inline-table values, and single-line or
+    multi-line string arrays — enough to validate pyproject.toml without external
+    dependencies when neither tomllib (3.11+) nor tomli is installed.
+    """
+    root: dict = {}
+    current = root
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        raw = lines[i].split("#", 1)[0].strip()
+        i += 1
+        if not raw:
+            continue
+        if raw.startswith("[") and raw.endswith("]"):
+            header = raw[1:-1].strip()
+            current = root
+            for part in header.split("."):
+                part = part.strip().strip('"').strip("'")
+                current = current.setdefault(part, {})
+            continue
+        if "=" not in raw:
+            continue
+        key, val = [s.strip() for s in raw.split("=", 1)]
+        key = key.strip('"').strip("'")
+        if val.startswith("["):
+            buf = val
+            while buf.count("[") > buf.count("]") and i < len(lines):
+                buf += " " + lines[i].split("#", 1)[0].strip()
+                i += 1
+            current[key] = re.findall(r'"([^"]*)"', buf)
+        elif val.startswith("{"):
+            pairs = re.findall(r'([A-Za-z0-9_.-]+)\s*=\s*"([^"]*)"', val)
+            current[key] = dict(pairs)
+        elif val.startswith('"') and val.endswith('"'):
+            current[key] = val[1:-1]
+        elif val.startswith("'") and val.endswith("'"):
+            current[key] = val[1:-1]
+        else:
+            current[key] = val
+    return root
+
+
+def _load_pyproject(path: str) -> dict:
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    if tomllib is not None:
+        return tomllib.loads(raw.decode("utf-8"))
+    return _parse_pyproject_minimal(raw.decode("utf-8"))
+
+
 class TestPhase4ReleaseIntegrityAndSupplyChain(unittest.TestCase):
     def test_pyproject_includes_all_runtime_modules_and_matches_cli_version(self):
-        with open(os.path.join(REPO_ROOT, "pyproject.toml"), "rb") as fh:
-            data = tomllib.load(fh)
+        pyproject_path = os.path.join(REPO_ROOT, "pyproject.toml")
+        data = _load_pyproject(pyproject_path)
+        # Also verify the Python 3.10 fallback parser agrees with tomllib on every critical field
+        with open(pyproject_path, encoding="utf-8") as fh:
+            fallback = _parse_pyproject_minimal(fh.read())
+        self.assertEqual(fallback["project"]["version"], data["project"]["version"])
+        self.assertEqual(
+            set(fallback["tool"]["setuptools"]["py-modules"]),
+            set(data["tool"]["setuptools"]["py-modules"]),
+        )
 
         project = data["project"]
         self.assertEqual(project["name"], "aws-clarity")
@@ -45,7 +113,7 @@ class TestPhase4ReleaseIntegrityAndSupplyChain(unittest.TestCase):
         script_path = os.path.join(REPO_ROOT, "scripts", "build-release-artifacts.sh")
         with open(script_path, encoding="utf-8") as fh:
             src = fh.read()
-        self.assertIn("tomllib", src, "Build script must derive version dynamically from pyproject.toml")
+        self.assertIn("pyproject.toml", src, "Build script must derive version dynamically from pyproject.toml")
         self.assertIn("backend/api_guard.py", src, "Standalone tarball must include backend/api_guard.py")
         self.assertIn("LICENSE", src, "Standalone tarball must include LICENSE")
         self.assertIn("SHA256SUMS.txt", src)

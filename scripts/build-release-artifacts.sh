@@ -5,7 +5,18 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
-VERSION="$("${PYTHON_BIN}" -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+VERSION="$("${PYTHON_BIN}" -c '
+import re
+try:
+    import tomllib
+    print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])
+except ModuleNotFoundError:
+    txt = open("pyproject.toml", encoding="utf-8").read()
+    m = re.search(r"(?ms)^\[project\].*?^\s*version\s*=\s*\"([^\"]+)\"", txt)
+    if not m:
+        raise SystemExit("Unable to read [project].version from pyproject.toml")
+    print(m.group(1))
+')"
 OUT_DIR="${OUT_DIR:-dist-release}"
 ARCHIVE_NAME="aws-clarity-local-${VERSION}.tar.gz"
 
