@@ -322,7 +322,7 @@ try {
   assert.equal(await page.locator("#step-3-trigger").getAttribute("aria-expanded"), "false", "Step 3 must be collapsed by default");
 
   const setupText = await page.evaluate(() => document.body.innerText);
-  assert.ok(setupText.includes("Understand your AWS configuration. Know what needs attention."));
+  assert.ok(setupText.includes("Understand your AWS environment. Find what needs attention."));
   assert.ok(setupText.includes("Published release: AWS Clarity CLI v1.1.0"));
   assert.ok(!setupText.toLowerCase().includes("not yet published"), "Outdated unpublished notice must not appear");
   const v110Links = await page.locator('a[href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0"]').count();
@@ -354,7 +354,7 @@ try {
   assert.ok((await page.locator("#install-panel-windows").innerText()).includes("Scripts\\pip.exe"));
 
   // 3. Advance to Step 2 via manual continuation button, verify Read-only role callout & optional S3 toggle
-  await page.locator('button:has-text("I\'ve installed the CLI")').click();
+  await page.locator('button:has-text("Continue to AWS scan")').click();
   assert.equal(await page.locator("#step-2-trigger").getAttribute("aria-expanded"), "true");
   const step2Text = await page.locator("#step-2-panel").innerText();
   assert.ok(step2Text.includes("Recommended: use a dedicated read-only role first"));
@@ -364,7 +364,7 @@ try {
   assert.ok((await page.locator("#step-2-panel").innerText()).includes("--include-s3-checks"));
 
   // 3b. Jump directly to Step 3 via Hero secondary CTA and verify offline Wi-Fi guarantee
-  await page.locator('button:has-text("Already have a report? Import it")').click();
+  await page.locator('button:has-text("I already have a report")').click();
   assert.equal(await page.locator("#step-3-trigger").getAttribute("aria-expanded"), "true");
   assert.ok((await page.locator("#step-3-panel").innerText()).includes("You can turn off your Wi-Fi before dropping your report file. It works the same."));
 

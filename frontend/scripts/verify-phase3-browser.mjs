@@ -396,7 +396,7 @@ try {
   await page.waitForSelector("#trust-modal-title", { timeout: 3000 });
   await page.locator('button:has-text("Clear Diff History")').click();
   await page.locator('button:has-text("Clear All Local Browser Data")').click();
-  await page.waitForSelector('h1:has-text("Understand your AWS configuration")', { timeout: 5000 });
+  await page.waitForSelector('h1:has-text("Understand your AWS environment")', { timeout: 5000 });
 
   const externalReqs = postLoadRequests.filter((r) => !r.url.startsWith("blob:") && !r.url.startsWith("data:"));
   assert.equal(externalReqs.length, 0, `Unexpected network activity: ${JSON.stringify(externalReqs)}`);
@@ -407,7 +407,7 @@ try {
   await page.waitForSelector('h2:has-text("All Resources")', { timeout: 5000 });
   await page.reload({ waitUntil: "networkidle" });
   const reloadedText = await page.evaluate(() => document.body.innerText);
-  assert.ok(reloadedText.includes("Understand your AWS configuration") && !reloadedText.includes("CANARY_TAG_TOKEN"));
+  assert.ok(reloadedText.includes("Understand your AWS environment") && !reloadedText.includes("CANARY_TAG_TOKEN"));
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(150);

@@ -144,11 +144,43 @@
   }
 }
 
-/* Fluid onboarding headline (max <= 2.5x min so 200% zoom always works; WCAG 1.4.4) */
+/* Fluid onboarding headline (32px mobile -> 52px desktop; max <= 2.5x min for 200% zoom, WCAG 1.4.4) */
 .clarity-hero-title {
-  font-size: clamp(2rem, 1.45rem + 2.4vw, 3rem);
-  line-height: 1.12;
-  letter-spacing: -0.025em;
+  font-size: clamp(2rem, 1.35rem + 2.3vw, 3.25rem);
+  line-height: 1.08;
+  letter-spacing: -0.028em;
+}
+
+/* Shared responsive page shell: consistent left/right grid edge from 320px through 1440px+ */
+.clarity-shell {
+  width: min(calc(100% - 2rem), 1180px);
+  margin-inline: auto;
+}
+
+@media (min-width: 640px) {
+  .clarity-shell {
+    width: min(calc(100% - 3rem), 1180px);
+  }
+}
+
+/* Non-color active step indicator using border (survives Forced Colors Mode; WCAG 1.4.1) */
+.clarity-step-btn {
+  position: relative;
+}
+
+.clarity-step-btn[aria-current="step"]::before {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  border-block-end: 3px solid #2dd4bf;
+}
+
+@media (min-width: 1024px) {
+  .clarity-step-btn[aria-current="step"]::before {
+    inset: 0 auto 0 0;
+    border-block-end: 0;
+    border-inline-start: 3px solid #2dd4bf;
+  }
 }
 
 /* Offset in-page scrolled targets so headings breathe nicely below top edge */
