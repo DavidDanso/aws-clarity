@@ -316,26 +316,33 @@ try {
   const resp = await page.goto(localUrl, { waitUntil: "networkidle" });
   assert.equal(resp.status(), 200);
 
-  // 1. First-time onboarding, published v1.1.0 link, Verify Before Installing, Read-only callout, Production FAQ
+  // 1. Guided 3-step onboarding defaults: Step 1 expanded, Steps 2 & 3 collapsed
+  assert.equal(await page.locator("#step-1-trigger").getAttribute("aria-expanded"), "true", "Step 1 must be expanded by default");
+  assert.equal(await page.locator("#step-2-trigger").getAttribute("aria-expanded"), "false", "Step 2 must be collapsed by default");
+  assert.equal(await page.locator("#step-3-trigger").getAttribute("aria-expanded"), "false", "Step 3 must be collapsed by default");
+
   const setupText = await page.evaluate(() => document.body.innerText);
+  assert.ok(setupText.includes("Understand your AWS configuration. Know what needs attention."));
   assert.ok(setupText.includes("Published release: AWS Clarity CLI v1.1.0"));
   assert.ok(!setupText.toLowerCase().includes("not yet published"), "Outdated unpublished notice must not appear");
   const v110Links = await page.locator('a[href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0"]').count();
   assert.ok(v110Links >= 1, "SetupScreen must link directly to the published v1.1.0 GitHub Release");
   const firstRel = await page.locator('a[href="https://github.com/DavidDanso/aws-clarity/releases/tag/v1.1.0"]').first().getAttribute("rel");
   assert.ok(firstRel && firstRel.includes("noopener") && firstRel.includes("noreferrer"));
-  assert.ok(setupText.includes("Verify Before Installing"));
-  assert.ok(setupText.includes("shasum -a 256 -c SHA256SUMS.txt"));
-  assert.ok(setupText.includes("sha256sum -c SHA256SUMS.txt"));
-  assert.ok(setupText.includes("Get-FileHash"));
-  assert.ok(setupText.includes("Recommended: use a dedicated read-only role first"));
-  assert.ok(setupText.includes("You can turn off your Wi-Fi before dropping your report file. It works the same."));
+  assert.ok(setupText.includes("Your AWS access stays under your control"));
   assert.ok(setupText.includes("Can I use AWS Clarity with a production AWS account?"));
   assert.ok(
     setupText.includes("Security Assurance and Limitations") &&
       setupText.includes("independent third-party penetration test"),
     "SetupScreen must display the Security Assurance and Limitations disclosure visibly"
   );
+
+  // Expand Step 1 Verify Before Installing disclosure & verify checksum commands
+  await page.locator('button:has-text("Verify Before Installing")').click();
+  const step1VerifiedText = await page.locator("#step-1-panel").innerText();
+  assert.ok(step1VerifiedText.includes("shasum -a 256 -c SHA256SUMS.txt"));
+  assert.ok(step1VerifiedText.includes("sha256sum -c SHA256SUMS.txt"));
+  assert.ok(step1VerifiedText.includes("Get-FileHash"));
 
   // 2. Install-method keyboard tab switching (ArrowRight -> macOS/Linux -> Windows PowerShell)
   const pipxTab = page.locator("#install-tab-pipx");
@@ -346,10 +353,20 @@ try {
   assert.equal(await page.locator("#install-tab-windows").getAttribute("aria-selected"), "true");
   assert.ok((await page.locator("#install-panel-windows").innerText()).includes("Scripts\\pip.exe"));
 
-  // 3. S3 checkbox highlights --include-s3-checks
+  // 3. Advance to Step 2 via manual continuation button, verify Read-only role callout & optional S3 toggle
+  await page.locator('button:has-text("I\'ve installed the CLI")').click();
+  assert.equal(await page.locator("#step-2-trigger").getAttribute("aria-expanded"), "true");
+  const step2Text = await page.locator("#step-2-panel").innerText();
+  assert.ok(step2Text.includes("Recommended: use a dedicated read-only role first"));
+  await page.locator('button:has-text("Optional S3 checks")').click();
   const s3Box = page.locator("#include-s3-checkbox");
   await s3Box.check();
-  assert.ok((await page.evaluate(() => document.body.innerText)).includes("--include-s3-checks"));
+  assert.ok((await page.locator("#step-2-panel").innerText()).includes("--include-s3-checks"));
+
+  // 3b. Jump directly to Step 3 via Hero secondary CTA and verify offline Wi-Fi guarantee
+  await page.locator('button:has-text("Already have a report? Import it")').click();
+  assert.equal(await page.locator("#step-3-trigger").getAttribute("aria-expanded"), "true");
+  assert.ok((await page.locator("#step-3-panel").innerText()).includes("You can turn off your Wi-Fi before dropping your report file. It works the same."));
 
   // 4. Production account FAQ expands and displays honest balanced answer
   await page.locator('summary:has-text("Can I use AWS Clarity with a production AWS account?")').click();

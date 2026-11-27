@@ -307,13 +307,19 @@ try {
   assert.ok(cspRes.meta.includes("connect-src 'none'"));
   assert.equal(cspRes.blocked, true, "CSP connect-src 'none' must actively block outbound fetch");
 
-  // 2. Step 2 visible callout + absolute https:// links
+  // 2. Guided Step 2 read-only role callout + absolute https:// links across landing page
+  await page.locator("#step-2-trigger").click();
+  await page.waitForSelector('#step-2-panel:not([hidden])', { timeout: 3000 });
   const step2 = await page.evaluate(() => ({
     hasCallout: document.body.innerText.includes("Recommended: use a dedicated read-only role first"),
     allHttps: Array.from(document.querySelectorAll("a")).every((a) => (a.getAttribute("href") || "").startsWith("https://")),
   }));
   assert.equal(step2.hasCallout, true);
   assert.equal(step2.allHttps, true);
+
+  // Jump to Step 3 for report import tests
+  await page.locator("#step-3-trigger").click();
+  await page.waitForSelector('#step-3-panel:not([hidden])', { timeout: 3000 });
 
   trackingPostLoad = true;
 
@@ -390,7 +396,7 @@ try {
   await page.waitForSelector("#trust-modal-title", { timeout: 3000 });
   await page.locator('button:has-text("Clear Diff History")').click();
   await page.locator('button:has-text("Clear All Local Browser Data")').click();
-  await page.waitForSelector('text=Run a read-only scan', { timeout: 5000 });
+  await page.waitForSelector('h1:has-text("Understand your AWS configuration")', { timeout: 5000 });
 
   const externalReqs = postLoadRequests.filter((r) => !r.url.startsWith("blob:") && !r.url.startsWith("data:"));
   assert.equal(externalReqs.length, 0, `Unexpected network activity: ${JSON.stringify(externalReqs)}`);
@@ -401,7 +407,7 @@ try {
   await page.waitForSelector('h2:has-text("All Resources")', { timeout: 5000 });
   await page.reload({ waitUntil: "networkidle" });
   const reloadedText = await page.evaluate(() => document.body.innerText);
-  assert.ok(reloadedText.includes("Run a read-only scan") && !reloadedText.includes("CANARY_TAG_TOKEN"));
+  assert.ok(reloadedText.includes("Understand your AWS configuration") && !reloadedText.includes("CANARY_TAG_TOKEN"));
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(150);
